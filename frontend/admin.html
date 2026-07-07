@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>פאנל מנהל — מערכת תזמון RFID</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .user-row .badge { cursor: default; }
+    .empty-state { text-align:center; padding: 40px 20px; color: var(--text-muted); }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    select.role-sel { padding: 5px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<!-- ניווט עליון -->
+<nav class="navbar">
+  <div class="navbar-brand">
+    <span class="logo">📡</span>
+    <span>פאנל מנהל</span>
+  </div>
+  <div class="navbar-actions">
+    <div class="badge badge-warning">מנהל</div>
+    <a href="app.html" class="btn btn-ghost" style="padding:6px 12px; font-size:13px">אפליקציה</a>
+    <button class="btn btn-ghost" onclick="doLogout()" style="padding:6px 12px; font-size:13px">התנתק</button>
+  </div>
+</nav>
+
+<div class="container" style="padding-top:20px">
+
+  <!-- סיכום -->
+  <div class="stats-summary">
+    <div class="stat-card"><div class="stat-val" id="count-pending">—</div><div class="stat-lbl">ממתינים</div></div>
+    <div class="stat-card"><div class="stat-val" id="count-approved">—</div><div class="stat-lbl">מאושרים</div></div>
+    <div class="stat-card"><div class="stat-val" id="count-total">—</div><div class="stat-lbl">סה"כ משתמשים</div></div>
+    <div class="stat-card"><div class="stat-val" id="count-races">—</div><div class="stat-lbl">מרוצים</div></div>
+  </div>
+
+  <!-- אישורים ממתינים -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>⏳ אישורים ממתינים</h2>
+      <span class="badge badge-warning" id="pending-badge">0</span>
+    </div>
+    <div id="pending-list">
+      <div class="empty-state"><div class="icon">✅</div>אין בקשות ממתינות.</div>
+    </div>
+  </div>
+
+  <!-- כל המשתמשים -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>👥 כל המשתמשים</h2>
+      <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
+    </div>
+    <div id="users-list">
+      <div class="empty-state"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- היסטוריית מרוצים -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>🏁 היסטוריית מרוצים</h2>
+      <button class="btn btn-ghost" onclick="loadRaces()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
+    </div>
+    <div id="races-list">
+      <div class="empty-state"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- הגדרות מערכת -->
+  <div class="card">
+    <h2 class="mb-16">⚙ הגדרות מערכת</h2>
+
+    <div class="section mb-12">
+      <h3 class="mb-8">יצירת חשבון מנהל ראשון</h3>
+      <p style="font-size:13px; margin-bottom:12px">
+        הרשם דרך האפליקציה, ואז ב-Firebase Console → Firestore → users/{uid} הגדר:
+      </p>
+      <div style="background:var(--surface); border-radius:8px; padding:12px; font-size:13px; font-family:monospace; color:#a5b4fc; overflow-x:auto; direction:ltr; text-align:left">
+        role = "admin" , approved = true
+      </div>
+    </div>
+
+    <div class="section">
+      <h3 class="mb-8">קידום משתמש לתפקיד מנהל</h3>
+      <div class="flex gap-8" style="flex-wrap:wrap">
+        <input id="promote-uid" class="form-input" style="flex:1; min-width:200px; direction:ltr" placeholder="UID של המשתמש">
+        <button class="btn btn-warning" onclick="promoteToAdmin()">הגדר כמנהל</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="toast-container"></div>
+
+<script src="js/firebase-config.js"></script>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+  import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+  import {
+    getFirestore, collection, getDocs, doc, getDoc,
+    updateDoc, deleteDoc
+  } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+  const fbApp = initializeApp(FIREBASE_CONFIG);
+  const auth  = getAuth(fbApp);
+  const db    = getFirestore(fbApp);
+  let currentAdmin = null;
+
+  onAuthStateChanged(auth, async (user) => {
+    if (!user) { window.location.href = 'index.html'; return; }
+    const snap = await getDoc(doc(db, 'users', user.uid));
+    if (!snap.exists() || snap.data().role !== 'admin') {
+      showToast('גישת מנהל בלבד', 'error');
+      setTimeout(() => { signOut(auth); window.location.href = 'index.html'; }, 1500);
+      return;
+    }
+    currentAdmin = { ...snap.data(), uid: user.uid };
+    loadUsers();
+    loadRaces();
+  });
+
+  window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
+
+  window.loadUsers = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const allUsers = [];
+      snap.forEach(d => allUsers.push({ ...d.data(), uid: d.id }));
+
+      const pending  = allUsers.filter(u => !u.approved && u.role !== 'admin');
+      const approved = allUsers.filter(u => u.approved  || u.role === 'admin');
+
+      document.getElementById('count-pending').textContent  = pending.length;
+      document.getElementById('count-approved').textContent = approved.length;
+      document.getElementById('count-total').textContent    = allUsers.length;
+      document.getElementById('pending-badge').textContent  = pending.length;
+
+      renderPendingList(pending);
+      renderUsersList(allUsers);
+    } catch(e) { showToast('שגיאה בטעינת משתמשים: ' + e.message, 'error'); }
+  };
+
+  function roleLabel(role) {
+    return { admin:'מנהל', operator:'מגבש', evaluator:'מעריך' }[role] || role;
+  }
+
+  function renderPendingList(users) {
+    const container = document.getElementById('pending-list');
+    if (users.length === 0) {
+      container.innerHTML = '<div class="empty-state"><div class="icon">✅</div>אין בקשות ממתינות.</div>'; return;
+    }
+    container.innerHTML = users.map(u => `
+      <div class="user-row" id="pending-${u.uid}">
+        <div class="user-info">
+          <div class="user-name">${escHtml(u.name || 'לא ידוע')}</div>
+          <div class="user-email">${escHtml(u.email)}</div>
+          <div style="font-size:11px; margin-top:4px">
+            <span class="badge badge-muted">${roleLabel(u.role)}</span>
+            <span class="badge badge-info">צוות ${u.team || '—'}</span>
+            <span style="color:var(--text-dim); margin-right:6px; direction:ltr; display:inline-block">UID: ${u.uid.slice(0,8)}…</span>
+          </div>
+        </div>
+        <div class="user-actions">
+          <button class="btn btn-success" onclick="approveUser('${u.uid}')" style="padding:7px 14px">✓ אשר</button>
+          <button class="btn btn-danger"  onclick="rejectUser('${u.uid}')"  style="padding:7px 14px">✕ דחה</button>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  function renderUsersList(users) {
+    const container = document.getElementById('users-list');
+    if (users.length === 0) { container.innerHTML = '<div class="empty-state">לא נמצאו משתמשים.</div>'; return; }
+    const sorted = [...users].sort((a,b) => (a.name||'').localeCompare(b.name||''));
+    container.innerHTML = sorted.map(u => {
+      const statusBadge = u.role === 'admin'
+        ? '<span class="badge badge-warning">מנהל</span>'
+        : u.approved ? '<span class="badge badge-success">מאושר</span>' : '<span class="badge badge-danger">ממתין</span>';
+      const teamOptions = Array.from({length:15}, (_,i) => {
+        const v = i+1;
+        return `<option value="${v}" ${Number(u.team)===v ? 'selected':''}>${v}</option>`;
+      }).join('');
+      return `
+        <div class="user-row">
+          <div class="user-info">
+            <div class="user-name">${escHtml(u.name || 'לא ידוע')}</div>
+            <div class="user-email">${escHtml(u.email)} · צוות ${u.team || '—'}</div>
+          </div>
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+            ${statusBadge}
+            <select class="role-sel" onchange="changeRole('${u.uid}', this.value)" ${u.uid === currentAdmin?.uid ? 'disabled' : ''}>
+              <option value="operator"  ${u.role==='operator'  ? 'selected':''}>מגבש</option>
+              <option value="evaluator" ${u.role==='evaluator' ? 'selected':''}>מעריך</option>
+              <option value="admin"     ${u.role==='admin'     ? 'selected':''}>מנהל</option>
+            </select>
+            <select class="role-sel" onchange="changeTeam('${u.uid}', this.value)" title="צוות">
+              <option value="">—</option>
+              ${teamOptions}
+            </select>
+            ${u.uid !== currentAdmin?.uid ? `
+            <button class="btn btn-ghost" onclick="deleteUserRecord('${u.uid}')"
+              style="font-size:12px; padding:5px 10px; color:var(--danger); border-color:var(--danger)">🗑</button>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  window.approveUser = async (uid) => {
+    try { await updateDoc(doc(db,'users',uid),{approved:true}); showToast('המשתמש אושר ✓','success'); loadUsers(); }
+    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+  window.rejectUser = async (uid) => {
+    if (!confirm('לדחות ולמחוק משתמש זה?')) return;
+    try { await deleteDoc(doc(db,'users',uid)); showToast('המשתמש נדחה והוסר.','info'); loadUsers(); }
+    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+  window.changeRole = async (uid, newRole) => {
+    try { await updateDoc(doc(db,'users',uid),{role:newRole}); showToast('תפקיד עודכן: '+roleLabel(newRole),'success'); }
+    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+  window.changeTeam = async (uid, newTeam) => {
+    const teamNum = newTeam ? parseInt(newTeam) : null;
+    try { await updateDoc(doc(db,'users',uid),{team: teamNum || ''}); showToast('צוות עודכן: ' + (teamNum || '—'),'success'); }
+    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+  window.deleteUserRecord = async (uid) => {
+    if (!confirm('למחוק רשומת משתמש זו? (חשבון Firebase Auth נשאר)')) return;
+    try { await deleteDoc(doc(db,'users',uid)); showToast('רשומה נמחקה.','info'); loadUsers(); }
+    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+  window.promoteToAdmin = async () => {
+    const uid = document.getElementById('promote-uid').value.trim();
+    if (!uid) { showToast('הזן UID','error'); return; }
+    try {
+      await updateDoc(doc(db,'users',uid),{role:'admin',approved:true});
+      showToast('המשתמש קודם לתפקיד מנהל ✓','success');
+      document.getElementById('promote-uid').value = '';
+      loadUsers();
+    } catch(e) { showToast('שגיאה: '+e.message,'error'); }
+  };
+
+  window.loadRaces = async () => {
+    try {
+      const snap = await getDocs(collection(db, 'races'));
+      const races = [];
+      snap.forEach(d => races.push({ ...d.data(), id: d.id }));
+      document.getElementById('count-races').textContent = races.length;
+      const container = document.getElementById('races-list');
+      if (races.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">🏁</div>לא נרשמו מרוצים עדיין.</div>'; return;
+      }
+      container.innerHTML = races.sort((a,b)=>(b.round||0)-(a.round||0)).map(r => `
+        <div class="user-row">
+          <div class="user-info">
+            <div class="user-name">סבב #${r.round} — ${r.mode==='laps'?'הקפות':'הגעה'}</div>
+            <div class="user-email">
+              ${r.tags?.length||0} תגיות · סטטוס: ${r.status==='running'?'פעיל':'עצור'}
+              ${r.durationMs ? ' · ' + Math.round(r.durationMs/1000) + ' שניות' : ''}
+            </div>
+          </div>
+          <div class="user-actions">
+            <button class="btn btn-info" onclick="viewRaceDetail('${r.id}')" style="padding:6px 12px; font-size:13px">פרטים</button>
+          </div>
+        </div>
+      `).join('');
+    } catch(e) { showToast('שגיאה בטעינת מרוצים: '+e.message,'error'); }
+  };
+
+  window.viewRaceDetail = async (raceId) => {
+    const snap = await getDoc(doc(db,'races',raceId));
+    if (!snap.exists()) return;
+    const data = snap.data();
+    const tags = data.tags || [];
+    const info = tags.map((t,i) =>
+      `${i+1}. קבוצה:${t.teamId} משתתף:${t.participantId} | ${t.firstMs}ms | ${t.rssi}dBm | ${(t.comments||[]).join(', ')}`
+    ).join('\n');
+    alert(`מירוץ ${raceId}\nמצב: ${data.mode==='laps'?'הקפות':'הגעה'}\nתגיות:\n${info}`);
+  };
+
+  function escHtml(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  window.showToast = (msg, type='info') => {
+    const c = document.getElementById('toast-container');
+    const el = document.createElement('div');
+    el.className = `toast ${type}`; el.textContent = msg;
+    c.appendChild(el); setTimeout(() => el.remove(), 3500);
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>מערכת תזמון RFID — כניסה</title>
+<link rel="stylesheet" href="css/main.css">
+  <script>
+    // מצב חוץ — ברירת מחדל מופעל
+    if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+  </script>
+  <style>
+    .role-option {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 16px;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: 0.2s;
+      margin-bottom: 8px;
+      text-align: right;
+    }
+    .role-option:hover { border-color: var(--accent); }
+    .role-option input[type=radio] { accent-color: var(--accent); width: 18px; height: 18px; }
+    .role-option.selected { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+    .role-icon { font-size: 22px; }
+    .role-info h4 { margin-bottom: 2px; font-size: 15px; }
+    .role-info p  { font-size: 12px; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="auth-page">
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div class="icon">📡</div>
+      <h1>מערכת תזמון RFID</h1>
+      <p>מערכת תזמון תחרויות</p>
+      <p id="app-version" style="font-size:12px; color:var(--text-dim); margin-top:6px">גרסה: —</p>
+      <div style="margin-top:10px">
+        <a href="demo.html" class="btn btn-info" style="font-size:13px; padding:8px 14px; text-decoration:none">
+          🎮 מעבר למצב דמו (ללא Firebase)
+        </a>
+      </div>
+    </div>
+
+    <!-- לשוניות -->
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="login-pane">התחברות</button>
+      <button class="tab-btn"        data-tab="reg-pane">הרשמה</button>
+    </div>
+
+    <!-- ══ כניסה ══ -->
+    <div id="login-pane" class="tab-pane">
+      <div id="login-msg" class="alert" style="display:none"></div>
+
+      <div class="form-group">
+        <label class="form-label">אימייל</label>
+        <input id="login-email" type="email" class="form-input" placeholder="you@example.com"
+               autocomplete="email" onkeydown="if(event.key==='Enter') loginUser()">
+      </div>
+      <div class="form-group">
+        <label class="form-label">סיסמה</label>
+        <input id="login-pass" type="password" class="form-input" placeholder="••••••••"
+               autocomplete="current-password" onkeydown="if(event.key==='Enter') loginUser()">
+      </div>
+
+      <button id="login-btn" class="btn btn-primary w-full" data-label="כניסה" onclick="loginUser()">
+        כניסה
+      </button>
+    </div>
+
+    <!-- ══ הרשמה ══ -->
+    <div id="reg-pane" class="tab-pane" style="display:none">
+      <div id="reg-msg" class="alert" style="display:none"></div>
+      <div id="reg-form">
+        <div class="form-group">
+          <label class="form-label">שם מלא</label>
+          <input id="reg-name" type="text" class="form-input" placeholder="השם שלך" autocomplete="name">
+        </div>
+        <div class="form-group">
+          <label class="form-label">אימייל</label>
+          <input id="reg-email" type="email" class="form-input" placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="form-group">
+          <label class="form-label">סיסמה</label>
+          <input id="reg-pass" type="password" class="form-input" placeholder="לפחות 8 תווים" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label class="form-label">אימות סיסמה</label>
+          <input id="reg-pass2" type="password" class="form-input" placeholder="חזור על הסיסמה" autocomplete="new-password">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">צוות (1-15)</label>
+          <select id="reg-team" class="form-select">
+            <option value="">— בחר צוות —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">בחירת תפקיד</label>
+
+          <label class="role-option" id="role-opt-operator">
+            <input type="radio" name="role" value="operator" id="role-operator" onchange="updateRoleSelected()">
+            <span class="role-icon">🎮</span>
+            <div class="role-info">
+              <h4>מגבש</h4>
+              <p>שליטה בהתחלה/עצירת מירוץ, ניהול הגדרות קורא RFID</p>
+            </div>
+          </label>
+
+          <label class="role-option" id="role-opt-evaluator">
+            <input type="radio" name="role" value="evaluator" id="role-evaluator" onchange="updateRoleSelected()">
+            <span class="role-icon">📊</span>
+            <div class="role-info">
+              <h4>מעריך</h4>
+              <p>צפייה בטבלת דירוג חי, הוספת תיוגים והערות (עד 3 מעריכים לצוות)</p>
+            </div>
+          </label>
+        </div>
+
+        <!-- סלקטור נסתר לתפקיד -->
+        <select id="reg-role" style="display:none"></select>
+
+        <button id="reg-btn" class="btn btn-primary w-full" data-label="יצירת חשבון" onclick="registerUser()">
+          יצירת חשבון
+        </button>
+        <p style="font-size:12px; color:var(--text-muted); text-align:center; margin-top:12px;">
+          ⚠️ החשבון שלך טעון אישור מנהל לפני הכניסה.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Config חייב להיטען לפני ה-module -->
+<script src="js/firebase-config.js"></script>
+<script type="module" src="js/auth.js"></script>
+
+<script>
+  function updateRoleSelected() {
+    const radios = document.querySelectorAll('input[name=role]');
+    radios.forEach(r => {
+      const opt = document.getElementById('role-opt-' + r.value);
+      if (opt) opt.classList.toggle('selected', r.checked);
+    });
+    const chosen = document.querySelector('input[name=role]:checked');
+    const sel = document.getElementById('reg-role');
+    if (chosen && sel) sel.value = chosen.value;
+  }
+
+  window.addEventListener('DOMContentLoaded', () => {
+    // populate role hidden select
+    const sel = document.getElementById('reg-role');
+    ['operator','evaluator'].forEach(r => {
+      const o = document.createElement('option');
+      o.value = r; o.text = r;
+      sel.appendChild(o);
+    });
+    // populate team selector (1-15)
+    const teamSel = document.getElementById('reg-team');
+    for (let i = 1; i <= 15; i++) {
+      const o = document.createElement('option');
+      o.value = i; o.textContent = 'צוות ' + i;
+      teamSel.appendChild(o);
+    }
+
+    // הצגת גרסה מהקונפיג (לצורך מעקב דיפלוי)
+    const verEl = document.getElementById('app-version');
+    if (verEl) {
+      const ver = (window.APP_CONFIG && window.APP_CONFIG.appVersion) ? window.APP_CONFIG.appVersion : 'dev';
+      verEl.textContent = `גרסה: ${ver}`;
+    }
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,2722 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RFID Race — הדגמה</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    @media (max-width: 520px) {
+      .navbar-brand .brand-title { display: none; }
+      #conn-label { display: none; }
+    }
+
+    /* ── תחנות ── */
+    .station-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .station-card-btn {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 14px 10px;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      text-align: center;
+      width: 100%;
+    }
+    .station-card-btn:hover { border-color: var(--accent); background: rgba(99,102,241,0.08); }
+    .station-card-btn .st-icon { font-size: 30px; }
+    .station-card-btn .st-name { font-size: 13px; font-weight: 700; color: var(--text); }
+
+    /* ── ציונים 1-7 ── */
+    .score-btn-row { display:flex; gap:8px; flex-wrap:wrap; }
+    .score-btn {
+      min-width:36px; height:36px; border-radius:8px; border:2px solid var(--border);
+      background:var(--surface); color:var(--text); font-weight:800; font-size:15px; cursor:pointer;
+      transition: transform 0.08s, border-color 0.15s;
+    }
+    .score-btn:hover { transform: scale(1.05); }
+    .score-cell { display:inline-flex; align-items:center; justify-content:center; min-width:34px; height:28px; border-radius:6px; font-weight:800; color:#000; padding:0 8px; }
+    .ev-subpage { display:none; }
+    .ev-subpage.active { display:block; }
+    .ev-menu-dropdown { display:none; position:absolute; top:calc(100% + 4px); right:0; background:var(--surface); border:1px solid var(--border); border-radius:10px; z-index:200; min-width:190px; box-shadow:0 6px 24px rgba(0,0,0,0.4); overflow:hidden; }
+    .ev-menu-item { display:block; width:100%; text-align:right; padding:11px 16px; background:none; border:none; border-bottom:1px solid var(--border); color:var(--text); cursor:pointer; font-size:14px; font-family:inherit; }
+    .ev-menu-item:last-child { border-bottom:none; }
+    .ev-menu-item:hover { background:rgba(99,102,241,0.12); }
+    .ev-menu-item.active { color:var(--accent); font-weight:700; }
+    #ev-menu-btn { color:var(--text) !important; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:7px 14px; }
+
+    #station-modal .modal-box { max-width: 820px; max-height: 92vh; }
+    .station-video-wrap {
+      position: relative; padding-bottom: 56.25%; height: 0;
+      overflow: hidden; border-radius: 10px; background: #000; margin-bottom: 16px;
+    }
+    .station-video-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: none; }
+    .station-tips { list-style: none; padding: 0; margin: 0; }
+    .station-tips li { padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+    .station-tips li:last-child { border-bottom: none; }
+    .station-tips li::before { content: '✓ '; color: var(--success); font-weight: 700; }
+
+    .demo-banner {
+      background: linear-gradient(90deg, #7c3aed, #4f46e5);
+      color: #fff;
+      text-align: center;
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+    .demo-banner a { color: #c4b5fd; text-decoration: underline; cursor: pointer; }
+
+    .demo-role-btn {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      cursor: pointer;
+      width: 100%;
+      margin-bottom: 10px;
+      transition: 0.2s;
+      text-align: right;
+    }
+    .demo-role-btn:hover { border-color: var(--accent); background: rgba(99,102,241,0.06); }
+    .demo-role-btn .role-icon { font-size: 26px; }
+    .demo-role-btn .role-name { font-weight: 700; font-size: 16px; }
+    .demo-role-btn .role-desc { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    #app-shell { display: none; }
+    #login-shell { display: block; }
+
+    #leaderboard-wrap { max-height: 50vh; overflow-y: auto; }
+    .epc-raw { font-size: 11px; color: var(--text-dim); font-family: monospace; direction: ltr; }
+    .laps-badge { display:inline-block; padding:2px 8px; background:rgba(99,102,241,0.2); color:#a5b4fc; border-radius:999px; font-size:12px; font-weight:700; }
+    #chart-canvas-wrap { position:relative; height:280px; }
+    .no-data { color:var(--text-muted); text-align:center; padding:40px; font-size:15px; }
+
+    .gear-row { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+    .gear-row:last-child { border-bottom:none; }
+    .gear-label { width:130px; font-size:13px; color:var(--text-muted); flex-shrink:0; }
+    .gear-val { font-weight:600; min-width:40px; }
+
+    .user-row-demo { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid var(--border); gap:12px; flex-wrap:wrap; }
+    .user-row-demo:last-child { border-bottom:none; }
+    select.role-sel { padding:5px 10px; background:var(--surface); border:1px solid var(--border); border-radius:6px; color:var(--text); font-size:13px; cursor:pointer; }
+
+    .page { display: none; }
+    .page.active { display: block; }
+
+    .lb-table th { text-align: right; }
+    .hist-cell { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+
+    /* ── מצב חוץ ── */
+    body.outdoor-mode { --bg:#fff; --surface:#f0f0f0; --border:#888; --text:#000; --text-muted:#333; --text-dim:#555; }
+    body.outdoor-mode .navbar { background:#000080; }
+    body.outdoor-mode .navbar-brand span,
+    body.outdoor-mode #conn-label { color:#fff; }
+    body.outdoor-mode .btn-ghost { color:#fff; border-color:rgba(255,255,255,.5); }
+    body.outdoor-mode .timer-display { color:#000; text-shadow:none; font-size:54px; }
+    body.outdoor-mode .stat-card { background:#e8e8ff; border:2px solid #000080; }
+    body.outdoor-mode .stat-val  { color:#000080; font-weight:900; font-size:28px; }
+    body.outdoor-mode .stat-lbl  { color:#333; font-weight:700; }
+    body.outdoor-mode .section   { background:#fff; border:1px solid #999; }
+    body.outdoor-mode table      { background:#fff; }
+    body.outdoor-mode thead tr   { background:#000080; }
+    body.outdoor-mode thead th   { color:#fff; }
+    body.outdoor-mode tbody tr:nth-child(even) { background:#eef; }
+    body.outdoor-mode tbody td   { color:#000; }
+    body.outdoor-mode .place-1 td { background:#ffe066 !important; color:#000 !important; font-weight:800; }
+    body.outdoor-mode .place-2 td { background:#d0d0d0 !important; color:#000 !important; }
+    body.outdoor-mode .place-3 td { background:#ffd0a0 !important; color:#000 !important; }
+    body.outdoor-mode .place-badge { background:#000080; color:#fff; font-size:16px; padding:5px 12px; }
+    body.outdoor-mode #outdoor-btn { background:#ffdd00; color:#000; border-color:#000; font-weight:800; }
+    body.outdoor-mode .btn-success { background:#006600; color:#fff; font-size:22px; }
+    body.outdoor-mode .btn-danger  { background:#cc0000; color:#fff; font-size:22px; }
+    body.outdoor-mode .hist-cell   { color:#333; }
+  </style>
+</head>
+<body>
+
+<!-- ══ סרגל הדגמה ══ -->
+<div class="demo-banner">
+  🎮 מצב הדגמה — אין צורך ב-Firebase או ESP32. כל הנתונים מדומים. &nbsp;|&nbsp;
+  <a onclick="resetToLogin()">← החלף תפקיד</a>
+</div>
+
+<!-- ══ מסך כניסה ══ -->
+<div id="login-shell">
+  <div class="auth-page">
+    <div class="auth-card">
+      <div class="auth-logo">
+        <div class="icon">📡</div>
+        <h1>RFID Race</h1>
+        <p>הדגמה — לחץ על תפקיד כדי להיכנס</p>
+      </div>
+
+      <!-- בחירת מגבש -->
+      <button class="demo-role-btn" onclick="toggleUserPicker('operator-picker')">
+        <span class="role-icon">🎮</span>
+        <div>
+          <div class="role-name">מגבש</div>
+          <div class="role-desc">שליטה במירוץ, התחל/עצור, הגדרות טכנאי</div>
+        </div>
+      </button>
+      <div id="operator-picker" style="display:none; margin:-6px 0 10px; border:1px solid var(--border); border-radius:8px; overflow:hidden"></div>
+
+      <!-- בחירת מעריך -->
+      <button class="demo-role-btn" onclick="toggleUserPicker('evaluator-picker')">
+        <span class="role-icon">📊</span>
+        <div>
+          <div class="role-name">מעריך</div>
+          <div class="role-desc">טבלת דירוג חי, תיוגים, גרף תוצאות</div>
+        </div>
+      </button>
+      <div id="evaluator-picker" style="display:none; margin:-6px 0 10px; border:1px solid var(--border); border-radius:8px; overflow:hidden"></div>
+
+      <button class="demo-role-btn" onclick="enterAs('admin', null)">
+        <span class="role-icon">🛡️</span>
+        <div>
+          <div class="role-name">מנהל</div>
+          <div class="role-desc">אישור משתמשים, ניהול תפקידים, היסטוריית מרוצים</div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ מעטפת האפליקציה ══ -->
+<div id="app-shell">
+
+  <!-- ניווט עליון -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <span class="logo">📡</span>
+      <span class="brand-title">RFID Race</span>
+    </div>
+    <div class="navbar-actions">
+      <div class="conn-indicator">
+        <div class="conn-dot" id="conn-dot" style="background:var(--success); box-shadow:0 0 6px var(--success)"></div>
+        <span id="conn-label" style="font-size:12px">ESP32 מדומה</span>
+      </div>
+      <div class="badge badge-info" id="role-badge"></div>
+      <button class="btn btn-ghost" id="outdoor-btn" onclick="toggleOutdoorModeDemo()" style="padding:6px 12px; font-size:13px" title="מצב חוץ — ניגודיות גבוהה">☀️</button>
+      <button class="btn btn-ghost" onclick="resetToLogin()" style="padding:6px 12px; font-size:13px">← חזור</button>
+    </div>
+  </nav>
+
+  <!-- לשוניות מגבש / מעריך -->
+  <div id="view-tabs" class="tab-bar" style="display:none; max-width:900px; margin:16px auto 0; padding:0 16px">
+    <button class="tab-btn active" data-view="operator-page">🎮 מגבש</button>
+    <button class="tab-btn" data-view="evaluator-page">📊 מעריך</button>
+  </div>
+
+  <div class="container" style="padding-top:16px; padding-bottom:80px">
+
+    <!-- ════ תצוגת מגבש ════ -->
+    <div id="operator-page" class="page active">
+
+      <!-- כרטיסי סטטוס -->
+      <div class="stat-grid mb-16">
+        <div class="stat-card">
+          <div class="stat-val" id="op-round">#0</div>
+          <div class="stat-lbl">סבב</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="op-status" style="font-size:18px">🔴 עצור</div>
+          <div class="stat-lbl">סטטוס</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="op-tags">0</div>
+          <div class="stat-lbl">תגיות</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="op-mode-label" style="font-size:16px">הגעה</div>
+          <div class="stat-lbl">מצב</div>
+        </div>
+      </div>
+
+      <!-- טיימר -->
+      <div class="section" style="text-align:center; padding:24px 16px; margin-bottom:16px">
+        <div class="timer-display" id="timer-display">00:00</div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+        </div>
+        <div style="font-size:13px; color:var(--text-muted); margin-top:8px">
+          ספירה לאחור / זמן שעבר
+        </div>
+      </div>
+
+      <!-- כפתורים גדולים -->
+      <div class="grid-2 mb-12">
+        <button id="btn-start" class="btn btn-success btn-xl" onclick="simStart()">▶ התחל</button>
+        <button id="btn-stop"  class="btn btn-danger  btn-xl" onclick="simStop()">⏹ עצור</button>
+      </div>
+      <div style="text-align:center; margin-bottom:20px">
+        <button class="btn btn-ghost" onclick="simClear()" style="color:var(--danger); border-color:var(--danger)">🗑 מחק הכל</button>
+      </div>
+
+      <!-- הגדרות מירוץ -->
+      <div class="section mb-12">
+        <h3 class="mb-8">⚙ הגדרות מירוץ</h3>
+        <div class="gear-row">
+          <span class="gear-label">מצב מירוץ</span>
+          <select id="mode-select" class="form-select" style="width:180px" onchange="simSetMode()">
+            <option value="0">סדר הגעה</option>
+            <option value="1">ספירת הקפות</option>
+          </select>
+        </div>
+        <div class="gear-row">
+          <span class="gear-label">זמן מקסימלי (שניות)</span>
+          <input id="dur-input" type="number" class="form-input" style="width:100px" value="30">
+          <button class="btn btn-primary" onclick="simSetDuration()" style="padding:8px 14px">עדכן</button>
+        </div>
+      </div>
+
+      <!-- הגדרות טכנאי (מתקפל) -->
+      <div class="mb-12">
+        <div class="collapsible-header" onclick="toggleCollapsible('tech-body','tech-arrow')">
+          <span>🔧 הגדרות טכנאי</span>
+          <span class="collapsible-arrow" id="tech-arrow">▼</span>
+        </div>
+        <div class="collapsible-body" id="tech-body">
+          <div class="gear-row">
+            <span class="gear-label">עוצמת שידור (dBm)</span>
+            <input id="pwr-input" type="number" class="form-input" style="width:80px" value="26" min="5" max="32">
+            <span class="gear-val" id="pwr-val-label">26 dBm</span>
+            <button class="btn btn-primary" onclick="simSetPower()" style="padding:8px 14px">הגדר</button>
+          </div>
+          <div class="gear-row">
+            <span class="gear-label">אנטנות</span>
+            <div class="ant-grid" id="ant-buttons"></div>
+          </div>
+          <div class="gear-row" style="justify-content:flex-start; padding-top:12px">
+            <button class="btn btn-ghost" id="btn-reboot-esp32" onclick="simReboot()" style="color:var(--warning); border-color:var(--warning); font-size:13px">
+              🔄 איפוס ESP32 (מדומה)
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- רשימת משתתפים (גלובלית להערות כלליות) -->
+      <div class="mb-12">
+        <div class="collapsible-header" onclick="toggleCollapsible('gp-body','gp-arrow')">
+          <span>👥 רשימת משתתפים (להערות כלליות)</span>
+          <span class="collapsible-arrow" id="gp-arrow">▼</span>
+        </div>
+        <div class="collapsible-body" id="gp-body">
+          <div style="font-size:13px; color:var(--text-muted); margin:8px 0 10px">
+            צוות: <strong id="gp-team-display">—</strong> &nbsp;·&nbsp; מספר משתתף אחד בכל שורה:
+          </div>
+          <textarea id="gp-input" class="form-input" rows="6" style="width:100%; font-family:monospace; resize:vertical" placeholder="1&#10;2&#10;3&#10;4"></textarea>
+          <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="saveGeneralParticipants()" style="padding:8px 16px">💾 שמור רשימה</button>
+            <span id="gp-count-info" style="font-size:13px; color:var(--text-muted); align-self:center"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- מידע תחנות -->
+      <div class="section mb-12">
+        <h3 class="mb-8">📋 מידע על תחנות</h3>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">בחר תחנה לצפייה בהסבר וסרטון הדרכה</p>
+        <div class="station-grid" id="station-grid"></div>
+      </div>
+
+    </div><!-- /operator-page -->
+
+
+    <!-- ════ תצוגת מעריך ════ -->
+    <div id="evaluator-page" class="page">
+
+      <!-- כרטיסי סטטוס -->
+      <div class="stat-grid mb-16">
+        <div class="stat-card">
+          <div class="stat-val" id="ev-round">#0</div>
+          <div class="stat-lbl">סבב</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ev-status" style="font-size:18px">🔴 עצור</div>
+          <div class="stat-lbl">סטטוס</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ev-timer">00:00</div>
+          <div class="stat-lbl">זמן</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-val" id="ev-tags">0</div>
+          <div class="stat-lbl">תגיות</div>
+        </div>
+      </div>
+
+      <!-- תפריט דפי מעריך -->
+      <div style="display:flex; justify-content:flex-start; margin-bottom:16px; position:relative" id="ev-menu-wrap">
+        <button class="btn btn-ghost" onclick="toggleEvMenu()" id="ev-menu-btn" style="gap:6px; display:flex; align-items:center">
+          <span id="ev-menu-current-icon">🏠</span>
+          <span id="ev-menu-current-label">ראשי</span>
+          <span style="font-size:11px; opacity:0.7">▼</span>
+        </button>
+        <div class="ev-menu-dropdown" id="ev-menu-dropdown">
+          <button class="ev-menu-item active" data-evtab="ev-main" onclick="switchEvTab('ev-main')">🏠 ראשי</button>
+          <button class="ev-menu-item" data-evtab="ev-summary" onclick="switchEvTab('ev-summary')">📊 סיכום ציונים</button>
+        </div>
+      </div>
+
+      <!-- ══ דף ראשי ══ -->
+      <div class="ev-subpage active" id="ev-main">
+
+      <!-- תיוגים -->
+      <div class="section mb-16">
+        <h3 class="mb-8">💬 הערות בתחנה הנוכחית</h3>
+        <p style="font-size:13px; margin-bottom:10px">לחץ על <strong>+</strong> ליד משתתף, ואז בחר תיוג.</p>
+        <div class="tag-pills mb-12" id="comment-pill-bar"></div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
+          <input id="custom-comment-input" class="form-input" style="flex:1; min-width:160px; padding:8px 12px; font-size:14px" placeholder="כתוב הערה חופשית…" onkeydown="if(event.key==='Enter') applyCustomComment()">
+          <button class="btn btn-primary" onclick="applyCustomComment()" style="padding:8px 16px; white-space:nowrap">➕ הוסף</button>
+        </div>
+        <div id="selected-tag-info" style="font-size:13px; color:var(--text-muted)">לא נבחר משתתף.</div>
+      </div>
+
+      <!-- טבלת דירוג -->
+      <div class="section">
+        <div class="flex flex-center flex-between mb-12">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+            <h3 style="margin:0">🏆 טבלת דירוג חי</h3>
+            <span class="badge badge-info" id="lb-round-badge" style="font-size:13px">סבב #0</span>
+          </div>
+          <button class="btn btn-ghost" onclick="showChartModal()" style="font-size:13px; padding:6px 12px">📈 גרף</button>
+        </div>
+        <div id="leaderboard-wrap">
+          <div class="no-data" id="lb-no-data">ממתין לנתוני מירוץ… לחץ ▶ התחל להתחיל סימולציה.</div>
+          <table class="lb-table" id="lb-table" style="display:none">
+            <thead>
+              <tr>
+                <th>מיקום</th>
+                <th>משתתף</th>
+                <th id="lb-col-score">זמן ראשון</th>
+                <th>ממוצע</th>
+                <th>ציון תחנה</th>
+                <th>הערות</th>
+              </tr>
+            </thead>
+            <tbody id="lb-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- ציון סופי לתחנה — מוצמד לטבלת הדירוג -->
+      <div class="section mb-16" style="margin-top:16px">
+        <h3 class="mb-4">🎯 ציון סופי לתחנה</h3>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:10px">ערך-חוסן · לחץ שורה בטבלה לבחירת משתתף</p>
+        <div class="score-btn-row mb-12" id="score-btn-row"></div>
+        <div id="score-selected-info" style="font-size:13px; color:var(--text-muted)">לא נבחר משתתף.</div>
+      </div>
+
+      <!-- הערות כלליות -->
+      <div class="section mb-16" style="margin-top:16px">
+        <h3 class="mb-8">📝 הערות כלליות</h3>
+        <p style="font-size:13px; margin-bottom:10px">לחץ על <strong>+</strong> ליד משתתף בטבלה למטה, ואז בחר תיוג או כתוב הערה.</p>
+        <div class="tag-pills mb-12" id="gn-pill-bar"></div>
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
+          <input id="gn-custom-input" class="form-input" style="flex:1; min-width:160px; padding:8px 12px; font-size:14px" placeholder="כתוב הערה חופשית…" onkeydown="if(event.key==='Enter') applyGeneralCustomNote()">
+          <button class="btn btn-primary" onclick="applyGeneralCustomNote()" style="padding:8px 16px; white-space:nowrap">➕ הוסף</button>
+        </div>
+        <div id="gn-selected-info" style="font-size:13px; color:var(--text-muted)">לא נבחר משתתף.</div>
+      </div>
+
+      <!-- טבלת משתתפים גלובלית -->
+      <div class="section mb-16">
+        <div class="flex flex-center flex-between mb-12">
+          <h3>📋 משתתפים והערות כלליות</h3>
+          <span class="badge badge-info" id="gn-count-badge">0</span>
+        </div>
+        <div id="gn-table-wrap">
+          <div class="no-data" id="gn-no-data">אין משתתפים — הזן רשימה בדף המגבש.</div>
+          <table class="lb-table" id="gn-table" style="display:none">
+            <thead>
+              <tr>
+                <th>משתתף</th>
+                <th>הערות</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="gn-body"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- כפתורי הורדה וסנכרון (בסוף הדף) -->
+      <div class="grid-2 mt-16">
+        <button class="btn btn-info btn-xl" onclick="simDownloadCsv()">📥 הורד CSV</button>
+        <button class="btn btn-info btn-xl" onclick="simSyncSheets()">📊 סנכרן Sheets</button>
+      </div>
+
+      </div><!-- /ev-main -->
+
+      <!-- ══ דף סיכום ציונים ══ -->
+      <div class="ev-subpage" id="ev-summary" style="display:none">
+        <div class="section">
+          <div class="flex flex-center flex-between mb-12">
+            <h3>📊 סיכום ציונים — כל התחנות</h3>
+            <span class="badge badge-info" id="summary-count-badge">0</span>
+          </div>
+          <div id="summary-wrap">
+            <div class="no-data" id="summary-no-data">אין נתונים — הזן רשימת משתתפים והרץ סבבים.</div>
+            <div style="overflow-x:auto">
+              <table class="lb-table" id="summary-table" style="display:none; min-width:600px">
+                <thead id="summary-thead"></thead>
+                <tbody id="summary-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /evaluator-page -->
+
+
+    <!-- ════ פאנל מנהל ════ -->
+    <div id="admin-page" class="page">
+
+      <!-- סיכום -->
+      <div class="stat-grid mb-16" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+        <div class="stat-card"><div class="stat-val">2</div><div class="stat-lbl">ממתינים</div></div>
+        <div class="stat-card"><div class="stat-val">5</div><div class="stat-lbl">מאושרים</div></div>
+        <div class="stat-card"><div class="stat-val">7</div><div class="stat-lbl">סה"כ משתמשים</div></div>
+        <div class="stat-card"><div class="stat-val" id="admin-races-count">0</div><div class="stat-lbl">מרוצים</div></div>
+      </div>
+
+      <!-- אישורים ממתינים -->
+      <div class="card mb-16">
+        <div class="flex flex-center flex-between mb-12">
+          <h2>⏳ אישורים ממתינים</h2>
+          <span class="badge badge-warning" id="pending-count-badge">2</span>
+        </div>
+        <div id="pending-list">
+          <div class="user-row-demo">
+            <div>
+              <div style="font-weight:600">אבי כהן</div>
+              <div style="font-size:12px; color:var(--text-muted)">avi@example.com</div>
+              <div style="margin-top:4px"><span class="badge badge-muted">מגבש</span></div>
+            </div>
+            <div style="display:flex; gap:8px">
+              <button class="btn btn-success" onclick="demoApprove(this,'אבי כהן')" style="padding:7px 14px">✓ אשר</button>
+              <button class="btn btn-danger"  onclick="demoReject(this,'אבי כהן')"  style="padding:7px 14px">✕ דחה</button>
+            </div>
+          </div>
+          <div class="user-row-demo">
+            <div>
+              <div style="font-weight:600">מאיה לוי</div>
+              <div style="font-size:12px; color:var(--text-muted)">maya@example.com</div>
+              <div style="margin-top:4px"><span class="badge badge-muted">מעריכה</span></div>
+            </div>
+            <div style="display:flex; gap:8px">
+              <button class="btn btn-success" onclick="demoApprove(this,'מאיה לוי')" style="padding:7px 14px">✓ אשר</button>
+              <button class="btn btn-danger"  onclick="demoReject(this,'מאיה לוי')"  style="padding:7px 14px">✕ דחה</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- כל המשתמשים -->
+      <div class="card mb-16">
+        <h2 class="mb-12">👥 כל המשתמשים</h2>
+        <div id="users-list"></div>
+      </div>
+
+      <!-- איפוס גיבוש -->
+      <div class="card mb-16" style="border:1px solid var(--danger)">
+        <div class="flex flex-center flex-between mb-8">
+          <h2>🔄 איפוס גיבוש</h2>
+        </div>
+        <p style="font-size:14px; color:var(--text-muted); margin-bottom:16px">מאפס את כל נתוני הגיבוש — ציונים, הערות, סבבים ומרוצים. פעולה זו מתחילה אירוע מחדש ואינה הפיכה.</p>
+        <button class="btn btn-danger" style="width:100%; padding:14px; font-size:16px; font-weight:700" onclick="adminResetEvent()">🔄 איפוס גיבוש</button>
+      </div>
+
+      <!-- חיבור לבקרי ESP32 -->
+      <div class="card mb-16">
+        <div class="flex flex-center flex-between mb-8">
+          <h2>📡 חיבור לבקרי ESP32</h2>
+          <label class="flex flex-center gap-8" style="font-size:14px">
+            <input type="checkbox" id="esp32-enabled-toggle" onchange="adminEsp32ToggleEnabled(this.checked)">
+            <span>הפעל מצב בקרים</span>
+          </label>
+        </div>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
+          כאשר המצב פעיל — לחיצה על "התחל מרוץ" / "עצור" / "איפוס" תשלח פקודות HTTP אמיתיות לבקר התחנה המתאימה, והמערכת תקרא תגים ישירות ממנו.
+          כל ESP32 מייצג תחנה, ומחובר לאותה רשת Wi-Fi של המכשיר עליו פועלת האפליקציה.
+        </p>
+        <p style="font-size:12px; color:var(--warning); margin-bottom:12px">
+          ⚠ הדפדפן חוסם HTTP מדף HTTPS. הפעל את האפליקציה מקומית (<code>python -m http.server</code> / Live Server) כדי שהקריאות לבקרים יעבדו.
+        </p>
+        <div id="esp32-stations-list" style="display:flex; flex-direction:column; gap:8px"></div>
+        <div class="flex gap-8" style="margin-top:12px; flex-wrap:wrap">
+          <button class="btn btn-primary" onclick="adminEsp32SaveAddrs()">💾 שמור כתובות</button>
+          <button class="btn btn-secondary" onclick="adminEsp32ResetDefaults()">🔄 ברירת מחדל (mDNS)</button>
+        </div>
+      </div>
+
+      <!-- היסטוריית מרוצים -->
+      <div class="card mb-16">
+        <h2 class="mb-12">🏁 היסטוריית מרוצים</h2>
+        <div id="race-history-list">
+          <div style="color:var(--text-muted); text-align:center; padding:30px">אין מרוצים עדיין — התחל מירוץ מתצוגת המגבש.</div>
+        </div>
+      </div>
+
+      <!-- קידום מנהל -->
+      <div class="card">
+        <h2 class="mb-12">⚙ הגדרות מערכת</h2>
+        <div class="section">
+          <h3 class="mb-8">קידום משתמש לתפקיד מנהל</h3>
+          <div class="flex gap-8" style="flex-wrap:wrap">
+            <input id="promote-uid" class="form-input" style="flex:1; min-width:180px" placeholder="UID או אימייל של המשתמש">
+            <button class="btn btn-warning" onclick="demoPromote()">הגדר כמנהל</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /admin-page -->
+
+  </div><!-- /container -->
+</div><!-- /app-shell -->
+
+<!-- ════ חלון גרף ════ -->
+<div class="modal-overlay" id="chart-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>📈 התקדמות משתתפים</h3>
+      <button class="modal-close" onclick="closeChartModal()">✕</button>
+    </div>
+    <div id="chart-canvas-wrap">
+      <canvas id="chart-canvas"></canvas>
+    </div>
+  </div>
+</div>
+
+<!-- ════ חלון תחנה ════ -->
+<div class="modal-overlay" id="station-modal" onclick="if(event.target===this)closeStationModal()">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="station-modal-title"></h3>
+      <button class="modal-close" onclick="closeStationModal()">✕</button>
+    </div>
+    <div id="station-modal-body"></div>
+  </div>
+</div>
+
+<!-- הודעות קופצות -->
+<div id="toast-container"></div>
+
+<script src="js/firebase-config.js"></script>
+<script src="js/esp32-client.js"></script>
+<script>
+// ── הגדרות ────────────────────────────────────────────
+const COMMENT_TAGS = ['טכניקה', 'מצוינות', 'מהירות', 'עבודת צוות', 'דיוק', 'מנהיגות'];
+const ANTENNAS     = 8;
+
+// ── נתוני תחנות (ערוך כאן את התחנות שלך) ─────────────
+const STATIONS = [
+  {
+    id: 1,
+    name: 'מילוי שק',
+    icon: '🎒',
+    desc: 'תיאור תחנת מילוי שק — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['הקפידו על ציוד מגן לפני תחילת הפעילות', 'שימו לב לסדר הפעולות', 'עבדו בצוות']
+  },
+  {
+    id: 2,
+    name: 'ספרינטים',
+    icon: '🏃',
+    desc: 'תיאור תחנת ספרינטים — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['חממו לפני הריצה', 'שמרו על קצב אחיד', 'ודאו שהמסלול פנוי']
+  },
+  {
+    id: 3,
+    name: 'דמקה',
+    icon: '♟️',
+    desc: 'תיאור תחנת דמקה — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['חשבו לפני שאתם פועלים', 'תקשורת צוותית חיונית', 'אל תדלגו על שלבים']
+  },
+  {
+    id: 4,
+    name: 'אלונקה סוציומטרי',
+    icon: '🚑',
+    desc: 'תיאור תחנת אלונקה סוציומטרי — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['בדקו ציוד לפני התחלה', 'תקשורת טובה היא המפתח', 'הקשיבו לפקודות']
+  },
+  {
+    id: 5,
+    name: 'עצבים מברזל',
+    icon: '💪',
+    desc: 'תיאור תחנת עצבים מברזל — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['ריכוז מלא', 'נשימות עמוקות לפני ביצוע', 'אל תמהרו']
+  },
+  {
+    id: 6,
+    name: 'זחילות',
+    icon: '🪖',
+    desc: 'תיאור תחנת זחילות — כתוב כאן הסבר מפורט על המשימה, הציוד הנדרש, וסדר הפעולות.',
+    video: 'https://www.youtube.com/embed/dQw4w9WgXcQ',
+    tips: ['שמרו גוף נמוך', 'הגנו על הראש', 'שמרו על מרחק מהמכשולים']
+  }
+];
+
+// ── פונקציות תחנות ────────────────────────────────────
+function renderStationGrid() {
+  const grid = document.getElementById('station-grid');
+  if (!grid) return;
+  grid.innerHTML = STATIONS.map(s => `
+    <button class="station-card-btn" onclick="openStationModal(${s.id})">
+      <span class="st-icon">${s.icon}</span>
+      <span class="st-name">${s.name}</span>
+    </button>
+  `).join('');
+}
+
+function openStationModal(id) {
+  const s = STATIONS.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('station-modal-title').textContent = s.icon + ' ' + s.name;
+  document.getElementById('station-modal-body').innerHTML = `
+    <div class="station-video-wrap">
+      <iframe src="${s.video}?rel=0" allowfullscreen></iframe>
+    </div>
+    <p style="line-height:1.7; margin-bottom:16px">${s.desc}</p>
+    ${s.tips.length ? `<h4 style="margin-bottom:10px">💡 טיפים</h4>
+    <ul class="station-tips">${s.tips.map(t => `<li>${t}</li>`).join('')}</ul>` : ''}
+  `;
+  document.getElementById('station-modal').classList.add('open');
+}
+
+function closeStationModal() {
+  document.getElementById('station-modal').classList.remove('open');
+  document.getElementById('station-modal-body').innerHTML = ''; // עצור סרטון
+}
+
+// ── מצב חוץ ──────────────────────────────────────────
+(function() {
+  // ברירת מחדל: מצב חוץ (ניגודיות גבוהה) — מכובה רק אם המשתמש כיבה במפורש
+  if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+})();
+window.toggleOutdoorModeDemo = function() {
+  const on = document.body.classList.toggle('outdoor-mode');
+  localStorage.setItem('outdoorMode', on ? '1' : '0');
+  showToast(on ? '☀️ מצב חוץ — ניגודיות גבוהה' : '🌙 מצב לילה (כהה)', 'info');
+};
+
+// ── משתתפים מדומים ───────────────────────────────────
+const MOCK_TAGS = [
+  { epc: 'E2003412011A0012', teamId: '01', participantId: '0012', rssi: -48, antenna: 1 },
+  { epc: 'E2003412022B0034', teamId: '02', participantId: '0034', rssi: -55, antenna: 2 },
+  { epc: 'E2003412030C0056', teamId: '03', participantId: '0056', rssi: -61, antenna: 1 },
+  { epc: 'E2003412011A0078', teamId: '01', participantId: '0078', rssi: -43, antenna: 3 },
+  { epc: 'E2003412044D0099', teamId: '04', participantId: '0099', rssi: -70, antenna: 2 },
+  { epc: 'E2003412055E0101', teamId: '05', participantId: '0101', rssi: -52, antenna: 4 },
+];
+
+// ── מצב ──────────────────────────────────────────────
+let scanning     = false;
+let round        = 0;
+let roundByGroup = {}; // { [stationId]: lastRoundNumber }
+let startTime    = 0;
+let durationMs   = 30000;
+let raceMode     = 0;     // 0=הגעה, 1=הקפות
+let txPower      = 26;
+let antennaState = [true, true, false, false];
+let leaderboard  = [];
+let selectedEpc  = null;
+let chartInst    = null;
+let tickTimer    = null;
+let tagTimer     = null;
+let currentRole  = '';
+let raceHistory  = [];
+let autoSheetsTimer = null;
+let lastAutoSheetsHash = '';
+let demoSheetsSyncedKeys = new Set();
+const DEMO_SHEETS_SYNC_ENABLED = !!(typeof APP_CONFIG !== 'undefined' && APP_CONFIG.enableDemoSheetsSync === true);
+let esp32PollTimer = null;      // polling loop during scanning via ESP32
+let esp32PollBusy  = false;     // re-entrancy guard
+let esp32LastError = null;      // remember last poll failure
+const ESP32_POLL_MS = 500;
+
+// ── בחירת משתמש לפני כניסה ────────────────────────────
+function toggleUserPicker(pickerId) {
+  const roleKey      = { 'operator-picker': 'operator', 'evaluator-picker': 'evaluator' };
+  const roleMatches  = { 'operator': ['מגבש','מגבשת'], 'evaluator': ['מעריך','מעריכה'] };
+  const el = document.getElementById(pickerId);
+  if (!el) return;
+  if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+  // סגור את השני
+  ['operator-picker','evaluator-picker'].forEach(id => {
+    const other = document.getElementById(id);
+    if (other && id !== pickerId) other.style.display = 'none';
+  });
+  const role  = roleKey[pickerId];
+  const users = DEMO_USERS.filter(u => roleMatches[role].includes(u.role));
+  if (!users.length) { enterAs(role, null); return; }
+  el.innerHTML = users.map((u, i) => `
+    <div onclick="enterAs('${role}', ${DEMO_USERS.indexOf(u)})"
+         style="padding:10px 16px; cursor:pointer; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:var(--surface)"
+         onmouseover="this.style.background='rgba(99,102,241,0.1)'" onmouseout="this.style.background='var(--surface)'">
+      <span style="font-weight:600">${u.name}</span>
+      <span class="badge badge-info">צוות ${u.team || '—'}</span>
+    </div>
+  `).join('');
+  el.style.display = 'block';
+}
+
+// ── כניסה לתפקיד ──────────────────────────────────────
+function enterAs(role, userIdx) {
+  // קבע צוות מה-DEMO_USERS אם נבחר משתמש
+  if (userIdx != null && DEMO_USERS[userIdx]) {
+    operatorTeam = Number(DEMO_USERS[userIdx].team) || null;
+  }
+  currentRole = role;
+  document.getElementById('login-shell').style.display  = 'none';
+  document.getElementById('app-shell').style.display    = 'block';
+
+  const badge = document.getElementById('role-badge');
+  const labels = { operator:'מגבש', evaluator:'מעריך', admin:'מנהל' };
+  badge.textContent = labels[role];
+  badge.className   = 'badge ' + (role === 'admin' ? 'badge-warning' : role === 'operator' ? 'badge-info' : 'badge-success');
+
+  // ודא שלא נשאר inline style מוסתר על הדפים
+  ['operator-page','evaluator-page','admin-page'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = '';
+  });
+
+  if (role === 'admin') {
+    showPage('admin-page');
+    document.getElementById('view-tabs').style.display = 'none';
+    renderAdminUsers();
+    adminEsp32RenderList();
+  } else {
+    // מגבש ומעריך — שני הטאבים גלויים, ניתן לעבור ביניהם חופשי
+    document.getElementById('view-tabs').style.display = '';
+    const startPage = role === 'evaluator' ? 'evaluator-page' : 'operator-page';
+    showPage(startPage);
+    // סנכרן הדגשת הטאב
+    document.querySelectorAll('[data-view]').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === startPage);
+    });
+  }
+
+  initAntennaButtons();
+  refreshEsp32UiLabels();
+  initCommentPills();
+  renderStationGrid();
+  loadGeneralData();
+  loadStationScores();
+  initScoreButtons();
+  refreshGeneralUI();
+  renderScoreTable();
+  renderSummaryTable();
+  startUiTick();
+}
+
+function resetToLogin() {
+  stopRace();
+  // נקה מצב תפקיד ובחירות כדי למנוע דליפת הרשאות/נתונים בין sessions
+  currentRole = '';
+  selectedEpc = null;
+  selectedGeneralPid = null;
+  closeEvMenu();
+  document.getElementById('login-shell').style.display = 'block';
+  document.getElementById('app-shell').style.display   = 'none';
+}
+
+// ── מעבר בין דפים ────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+document.querySelectorAll('[data-view]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    showPage(btn.dataset.view);
+  });
+});
+
+// סגור תפריט מעריך בלחיצה מחוצה לו
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('ev-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) closeEvMenu();
+});
+
+// ── סימולציית מירוץ ───────────────────────────────────
+// ── שיתוף נתונים בין טאבים דרך localStorage ──────────
+function broadcastRaceState() {
+  const state = {
+    scanning,
+    round,
+    startTime,
+    durationMs,
+    raceMode,
+    activeGroup,
+    leaderboard: leaderboard.map(r => ({ ...r })),
+    snapshots: roundSnapshotsByGroup,
+    roundByGroup,
+    ts: Date.now()
+  };
+  localStorage.setItem('demo_race_state', JSON.stringify(state));
+}
+
+function readRaceStateFromStorage() {
+  try {
+    const raw = localStorage.getItem('demo_race_state');
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch(e) { return null; }
+}
+
+// מאזין לשינויים מטאב אחר
+window.addEventListener('storage', (e) => {
+  if (currentRole !== 'evaluator') return; // רק מעריך מקשיב
+
+  // ── רשימת משתתפים / הערות / צוות / ציונים — עדכון מיידי ──
+  if (e.key === GN_LS_PARTICIPANTS || e.key === GN_LS_NOTES || e.key === GN_LS_TEAM) {
+    // המגבש טוען ישירות מ-localStorage; טוענים שוב כדי לא להסתמך על state ישן
+    loadGeneralData();
+    // אם המשתתף הנבחר הוסר — אפס
+    if (selectedGeneralPid != null && !generalParticipants.some(p => p.pid === selectedGeneralPid)) {
+      selectedGeneralPid = null;
+    }
+    refreshGeneralUI();
+    renderScoreTable();
+    renderSummaryTable();
+    return;
+  }
+  if (e.key === SCORE_LS_KEY) {
+    loadStationScores();
+    renderGeneralTable();
+    renderScoreTable();
+    renderSummaryTable();
+    return;
+  }
+
+  if (e.key !== 'demo_race_state') return;
+  const state = readRaceStateFromStorage();
+  if (!state) {
+    // null = איפוס מלא (מחק הכל)
+    leaderboard = [];
+    roundSnapshotsByGroup = {};
+    roundByGroup = {};
+    round = 0;
+    scanning = false;
+    updateLeaderboard();
+    updateStatCards();
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+    return;
+  }
+  const prevRound = round;
+  scanning   = state.scanning;
+  startTime  = state.startTime;
+  durationMs = state.durationMs;
+  raceMode   = state.raceMode;
+  if (state.roundByGroup) roundByGroup = state.roundByGroup;
+  // המעריך שולט על תחנתו עצמאית — הסבב המוצג הוא של התחנה הנוכחית שלו
+  round = state.scanning && state.activeGroup === activeGroup
+    ? state.round
+    : (roundByGroup[activeGroup] || 0);
+  // אם הסבב ירד (איפוס) — נקה את הסנאפשוטים
+  if (state.round === 0 && prevRound > 0) {
+    roundSnapshotsByGroup = {};
+    leaderboard = [];
+    if (chartInst) { chartInst.destroy(); chartInst = null; }
+  } else if (!(state.scanning && (!state.leaderboard || state.leaderboard.length === 0))) {
+    // לא למחוק טבלה בתחילת סבב חדש עד שמגיעה תגית ראשונה
+    leaderboard = state.leaderboard || [];
+  }
+  // סנכרן סנאפשוטים מהמגבש (לגרף התקדמות)
+  if (state.snapshots) {
+    // מזג סנאפשוטים חדשים לתוך הקיימים (לא מחיק סנאפשוטים שהמעריך ערך בעצמו)
+    Object.keys(state.snapshots).forEach(grp => {
+      if (!roundSnapshotsByGroup[grp]) roundSnapshotsByGroup[grp] = [];
+      (state.snapshots[grp] || []).forEach(snap => {
+        const exists = roundSnapshotsByGroup[grp].some(s => s.round === snap.round);
+        if (!exists) roundSnapshotsByGroup[grp].push(snap);
+      });
+    });
+  }
+  updateLeaderboard();
+  updateStatCards();
+});
+
+function saveCurrentRoundSnapshot() {
+  // שמור/עדכן snapshot של הסבב הנוכחי
+  if (round < 1) return;
+  const visRows = getVisibleLeaderboard();
+  if (visRows.length === 0) return;
+  roundSnapshotsByGroup[activeGroup] = roundSnapshotsByGroup[activeGroup] || [];
+  const existingIdx = roundSnapshotsByGroup[activeGroup].findIndex(s => s.round === round);
+  const newSnap = {
+    round,
+    mode: raceMode === 1 ? 'laps' : 'arrival',
+    rows: visRows.map((r, i) => ({
+      teamId: r.teamId,
+      stationId: r.stationId || activeGroup,
+      participantId: r.participantId,
+      epc: r.epc,
+      place: i + 1,
+      firstMs: r.firstMs,
+      lastMs: r.lastMs || r.firstMs,
+      laps: r.laps || 1,
+      rssi: r.rssi || 0,
+      antenna: r.antenna || 0,
+      comments: (r.comments || []).slice()
+    }))
+  };
+  if (existingIdx >= 0) {
+    // עדכן snapshot קיים (לדוגמא כשנוספו תיוגים)
+    roundSnapshotsByGroup[activeGroup][existingIdx] = newSnap;
+  } else {
+    roundSnapshotsByGroup[activeGroup].push(newSnap);
+  }
+}
+
+// ── ESP32 integration helpers ───────────────────────
+function esp32Active() {
+  return !!(window.ESP32 && window.ESP32.isEnabled());
+}
+
+// Refresh the navbar/gear labels to reflect real vs simulated mode.
+function refreshEsp32UiLabels() {
+  const lbl  = document.getElementById('conn-label');
+  const dot  = document.getElementById('conn-dot');
+  const reb  = document.getElementById('btn-reboot-esp32');
+  const live = esp32Active();
+  if (lbl) lbl.textContent = live ? 'ESP32 מחובר' : 'ESP32 מדומה';
+  if (dot) {
+    const color = live ? 'var(--success)' : 'var(--warning)';
+    dot.style.background = color;
+    dot.style.boxShadow  = '0 0 6px ' + color;
+  }
+  if (reb) reb.textContent = live ? '🔄 איפוס ESP32' : '🔄 איפוס ESP32 (מדומה)';
+}
+
+function esp32StationNum() {
+  // activeGroup is a zero-padded string like '01'..'08' — convert to int
+  return parseInt(activeGroup, 10) || 1;
+}
+
+// Convert ESP32 /tags payload into the app's leaderboard row shape.
+// Preserves evaluator comments already on matching rows.
+function esp32TagsToRows(payload) {
+  const tags = (payload && payload.tags) || [];
+  const mode = (payload && payload.mode) || (raceMode === 1 ? 'laps' : 'arrival');
+  const rows = tags.map(t => {
+    const epc = String(t.epc || '');
+    const teamId = epc.length >= 6 ? epc.slice(-6, -4) : '';
+    const participantId = epc.length >= 4 ? epc.slice(-4) : '';
+    const existing = leaderboard.find(x => x.epc === epc);
+    return {
+      epc,
+      teamId,
+      participantId,
+      stationId: activeGroup,
+      firstMs: Number(t.first_ms || 0),
+      lastMs:  Number(t.last_ms  || t.first_ms || 0),
+      laps:    Number(t.count    || 1),
+      rssi:    Number(t.rssi     || 0),
+      antenna: Number(t.antenna  || 0),
+      comments: existing && Array.isArray(existing.comments) ? existing.comments.slice() : [],
+      place:   0
+    };
+  });
+  if (mode === 'laps') {
+    rows.sort((a, b) => b.laps - a.laps || a.lastMs - b.lastMs);
+  } else {
+    rows.sort((a, b) => a.firstMs - b.firstMs);
+  }
+  rows.forEach((r, i) => r.place = i + 1);
+  return rows;
+}
+
+async function esp32PollOnce() {
+  if (esp32PollBusy) return;
+  esp32PollBusy = true;
+  try {
+    const resp = await window.ESP32.tags(esp32StationNum());
+    esp32LastError = null;
+    leaderboard = esp32TagsToRows(resp);
+    updateLeaderboard();
+    updateStatCards();
+    broadcastRaceState();
+  } catch (e) {
+    if (esp32LastError !== e.message) {
+      esp32LastError = e.message;
+      showToast('לא ניתן להגיע לבקר ESP32 של התחנה', 'error');
+    }
+  } finally {
+    esp32PollBusy = false;
+  }
+}
+
+function esp32StartPolling() {
+  if (esp32PollTimer) clearInterval(esp32PollTimer);
+  esp32PollOnce();
+  esp32PollTimer = setInterval(esp32PollOnce, ESP32_POLL_MS);
+}
+
+function esp32StopPolling() {
+  if (esp32PollTimer) { clearInterval(esp32PollTimer); esp32PollTimer = null; }
+}
+
+function simStart() {
+  if (scanning) return;
+  // stopRace() כבר שמר snapshot של הסבב הקודם — אין צורך לשמור שוב כאן
+  round = (roundByGroup[activeGroup] || 0) + 1;
+  roundByGroup[activeGroup] = round;
+  leaderboard = [];
+  scanning  = true;
+  startTime = Date.now();
+  updateStatCards();
+  showToast('המירוץ התחיל — סבב #' + round, 'success');
+  startUiTick();
+
+  if (esp32Active()) {
+    const mode = raceMode === 1 ? 'laps' : 'arrival';
+    // Build EPC list from the operator's participant roster so the ESP32
+    // simulates exactly the right tags (EPC = E2003412 + team(2) + pid(4)).
+    const participantEpcs = generalParticipants.map(p => {
+      const team = String(p.team).padStart(2, '0');
+      const pid  = String(p.pid).padStart(4, '0');
+      return 'E2003412' + team + pid;
+    });
+    window.ESP32.start(esp32StationNum(), round, mode, participantEpcs)
+      .then(() => { esp32StartPolling(); })
+      .catch(err => {
+        scanning = false;
+        showToast('בקר ESP32 לא מגיב: ' + err.message, 'error');
+        const bs = document.getElementById('btn-start'); if (bs) bs.disabled = false;
+      });
+  } else {
+    scheduleTagArrivals();
+  }
+
+  broadcastRaceState();
+  if (DEMO_SHEETS_SYNC_ENABLED) {
+    if (autoSheetsTimer) clearInterval(autoSheetsTimer);
+    autoSheetsTimer = setInterval(() => simSyncSheets(true), 2500);
+  }
+  document.getElementById('btn-start').disabled = true;
+  document.getElementById('btn-stop').disabled  = false;
+}
+
+function simStop() {
+  stopRace();
+  showToast('המירוץ נעצר', 'info');
+}
+
+function stopRace() {
+  if (!scanning && leaderboard.length === 0) return;
+  scanning = false;
+  if (tagTimer) { clearTimeout(tagTimer); tagTimer = null; }
+  if (autoSheetsTimer) { clearInterval(autoSheetsTimer); autoSheetsTimer = null; }
+  if (esp32Active()) {
+    // Stop polling immediately, then tell the controller, then do one last poll
+    esp32StopPolling();
+    window.ESP32.stop(esp32StationNum())
+      .catch(() => {})
+      .then(() => esp32PollOnce())
+      .catch(() => {});
+  }
+  updateStatCards();
+  updateLeaderboard();
+  simSyncSheets(true);
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled  = false;
+}
+
+function scheduleTagArrivals() {
+  if (!scanning) return;
+  const shuffled = [...MOCK_TAGS].sort(() => Math.random() - 0.5);
+  const baseDelay = raceMode === 1 ? 2000 : 1800;
+
+  shuffled.forEach((tag, i) => {
+    const delay = baseDelay * (i + 1) * (0.8 + Math.random() * 0.4);
+    tagTimer = setTimeout(() => {
+      if (!scanning) return;
+      const now = Date.now() - startTime;
+
+      if (raceMode === 0) {
+        const exists = leaderboard.find(t => t.epc === tag.epc);
+        if (!exists) {
+          leaderboard.push({ ...tag, firstMs: now, lastMs: now, place: leaderboard.length + 1, laps: 1, comments: [] });
+          updateLeaderboard();
+          updateStatCards();
+        }
+      } else {
+        const entry = leaderboard.find(t => t.epc === tag.epc);
+        if (entry) { entry.laps++; entry.lastMs = now; }
+        else { leaderboard.push({ ...tag, firstMs: now, lastMs: now, place: leaderboard.length + 1, laps: 1, comments: [] }); }
+        leaderboard.sort((a, b) => b.laps - a.laps || a.lastMs - b.lastMs);
+        leaderboard.forEach((t, i) => t.place = i + 1);
+        updateLeaderboard();
+        updateStatCards();
+
+        const nextLap = 4000 + Math.random() * 6000;
+        setTimeout(() => {
+          if (!scanning) return;
+          const now2 = Date.now() - startTime;
+          const e = leaderboard.find(t => t.epc === tag.epc);
+          if (e) { e.laps++; e.lastMs = now2; }
+          leaderboard.sort((a, b) => b.laps - a.laps || a.lastMs - b.lastMs);
+          leaderboard.forEach((t, i) => t.place = i + 1);
+          updateLeaderboard();
+          updateStatCards();
+        }, delay + nextLap);
+      }
+    }, delay);
+  });
+}
+
+function startUiTick() {
+  if (tickTimer) clearInterval(tickTimer);
+  tickTimer = setInterval(uiTick, 250);
+}
+
+function uiTick() {
+  if (!scanning) { updateTimerDisplay(0, false); return; }
+  const elapsed   = Date.now() - startTime;
+  const remaining = Math.max(0, durationMs - elapsed);
+  updateTimerDisplay(remaining, true);
+  if (remaining === 0) {
+    stopRace();
+    showToast('הזמן נגמר! המירוץ הסתיים.', 'info');
+  }
+}
+
+function updateTimerDisplay(ms, isRunning) {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60).toString().padStart(2, '0');
+  const sec = (totalSec % 60).toString().padStart(2, '0');
+  const str = `${min}:${sec}`;
+
+  ['timer-display', 'ev-timer'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = str;
+  });
+
+  const timerEl = document.getElementById('timer-display');
+  if (timerEl) {
+    if (!isRunning)       timerEl.className = 'timer-display';
+    else if (ms < 10000)  timerEl.className = 'timer-display expired';
+    else if (ms < 30000)  timerEl.className = 'timer-display warning';
+    else                  timerEl.className = 'timer-display running';
+  }
+
+  const elapsed = isRunning ? durationMs - ms : 0;
+  const pct     = durationMs > 0 ? Math.min(100, (elapsed / durationMs) * 100) : 0;
+  const pb = document.getElementById('progress-bar');
+  if (pb) {
+    pb.style.width = pct + '%';
+    pb.className   = 'progress-bar-fill' + (pct > 90 ? ' expired' : pct > 70 ? ' warning' : '');
+  }
+}
+
+function updateStatCards() {
+  const st = scanning ? '🟢 סורק' : '🔴 עצור';
+  const md = raceMode === 1 ? 'הקפות' : 'הגעה';
+  ['op-round','ev-round'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = '#'+round; });
+  ['op-status','ev-status'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = st; });
+  ['op-tags','ev-tags'].forEach(id => { const el = document.getElementById(id); if(el) el.textContent = leaderboard.length; });
+  const ml = document.getElementById('op-mode-label'); if(ml) ml.textContent = md;
+}
+
+// ── טבלת דירוג ───────────────────────────────────────
+function updateLeaderboard() {
+  const noData  = document.getElementById('lb-no-data');
+  const table   = document.getElementById('lb-table');
+  const tbody   = document.getElementById('lb-body');
+  const colHead = document.getElementById('lb-col-score');
+  if (!tbody) return;
+
+  if (leaderboard.length === 0) {
+    noData.style.display = ''; table.style.display = 'none'; return;
+  }
+  noData.style.display = 'none'; table.style.display = '';
+
+  const hasLaps = raceMode === 1;
+  if (colHead) colHead.textContent = hasLaps ? 'הקפות' : 'זמן ראשון';
+
+  tbody.innerHTML = '';
+  leaderboard.forEach((r, idx) => {
+    const place = r.place || idx + 1;
+    const tr = document.createElement('tr');
+    tr.className = place <= 3 ? `place-${place}` : '';
+
+    const timeStr = hasLaps
+      ? `<span class="laps-badge">${r.laps} הקפות</span>`
+      : `<code style="font-size:12px; direction:ltr; display:inline-block">${fmtTime(r.firstMs)}</code>`;
+
+    const comments = (r.comments || []).map(c =>
+      `<span class="tag-pill" style="font-size:11px;padding:3px 8px">${c}</span>`
+    ).join('');
+
+    const stScore = (stationScores[activeGroup] || {})[Number(r.participantId)];
+    const stScoreCell = (stScore != null)
+      ? `<span class="score-cell" style="background:${scoreColor(stScore)}">${stScore}</span>`
+      : '<span style="color:var(--text-muted); font-size:12px">—</span>';
+
+    tr.innerHTML = `
+      <td><span class="place-badge">${place}</span></td>
+      <td><strong>${r.teamId}</strong></td>
+      <td>
+        <div>${r.participantId}</div>
+        <div class="epc-raw">${r.epc}</div>
+      </td>
+      <td>${timeStr}</td>
+      <td class="hist-cell">—</td>
+      <td class="hist-cell">${stScoreCell}</td>
+      <td style="color:var(--text-muted)">${r.rssi} dBm</td>
+      <td>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">
+          ${comments}
+          <button onclick="selectParticipant('${r.epc}','${r.participantId}')"
+            style="font-size:11px;padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:999px;cursor:pointer;color:var(--text-muted)">+</button>
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function fmtTime(ms) {
+  const s = Math.floor(ms / 1000);
+  return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;
+}
+
+// ── הערות כלליות (גלובליות, ללא תלות בתחנה) ──────────
+const GN_LS_PARTICIPANTS = 'demo_general_participants';
+const GN_LS_NOTES        = 'demo_general_notes';
+const GN_LS_TEAM         = 'demo_operator_team';
+let generalParticipants = []; // [{ pid, team }]
+let generalNotes        = {}; // { pid: [note, ...] }
+let selectedGeneralPid  = null;
+let gnSyncedKeys        = new Set(); // pid|noteIndex
+let operatorTeam        = null; // מספר צוות קבוע של המגבש
+
+function loadGeneralData() {
+  try {
+    const p = JSON.parse(localStorage.getItem(GN_LS_PARTICIPANTS) || '[]');
+    if (Array.isArray(p)) generalParticipants = p;
+  } catch (e) { generalParticipants = []; }
+  try {
+    const n = JSON.parse(localStorage.getItem(GN_LS_NOTES) || '{}');
+    if (n && typeof n === 'object') generalNotes = n;
+  } catch (e) { generalNotes = {}; }
+  const t = localStorage.getItem(GN_LS_TEAM);
+  if (t) operatorTeam = parseInt(t, 10);
+}
+
+function persistGeneralData() {
+  localStorage.setItem(GN_LS_PARTICIPANTS, JSON.stringify(generalParticipants));
+  localStorage.setItem(GN_LS_NOTES, JSON.stringify(generalNotes));
+  if (operatorTeam != null) localStorage.setItem(GN_LS_TEAM, String(operatorTeam));
+}
+
+function saveGeneralParticipants() {
+  if (currentRole !== 'operator') { showToast('רק מגבש יכול לעדכן את רשימת המשתתפים', 'error'); return; }
+  const ta = document.getElementById('gp-input');
+  if (!ta) return;
+  if (operatorTeam == null) { showToast('צוות לא הוגדר — כנס מחדש ובחר משתמש', 'error'); return; }
+  const team = operatorTeam;
+  const lines = ta.value.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const parsed = [];
+  const seen = new Set();
+  const errors = [];
+  lines.forEach((line, i) => {
+    const pid = parseInt(line, 10);
+    if (!Number.isFinite(pid) || pid <= 0) { errors.push(`שורה ${i+1}: מספר לא תקין`); return; }
+    if (seen.has(pid)) { errors.push(`שורה ${i+1}: משתתף ${pid} כפול`); return; }
+    seen.add(pid);
+    parsed.push({ pid, team });
+  });
+  if (errors.length) { showToast(errors[0], 'error'); return; }
+  const prevPids = new Set(generalParticipants.map(p => p.pid));
+  generalParticipants = parsed;
+  // משתתפים שהוסרו — נקה את הנתונים הלוקאליים שלהם
+  // (הנתונים שכבר סונכרנו ל-Sheets נשארים שם; פה רק מעלימים מהתצוגה באפליקציה)
+  const removed = [];
+  prevPids.forEach(pid => { if (!seen.has(pid)) removed.push(pid); });
+  removed.forEach(pid => {
+    delete generalNotes[pid];
+    Object.keys(stationScores).forEach(st => {
+      if (stationScores[st] && stationScores[st][pid] != null) {
+        delete stationScores[st][pid];
+        if (!Object.keys(stationScores[st]).length) delete stationScores[st];
+      }
+    });
+  });
+  if (removed.length && selectedGeneralPid != null && removed.includes(selectedGeneralPid)) {
+    selectedGeneralPid = null;
+  }
+  persistGeneralData();
+  persistStationScores();
+  refreshGeneralUI();
+  renderScoreTable();
+  renderSummaryTable();
+  // שידור למעריך שהרשימה התעדכנה
+  broadcastRaceState();
+  showToast(`נשמרו ${parsed.length} משתתפים${removed.length ? ` (${removed.length} הוסרו)` : ''}`, 'success');
+}
+
+function refreshGeneralUI() {
+  const teamDisp = document.getElementById('gp-team-display');
+  if (teamDisp) teamDisp.textContent = operatorTeam != null ? operatorTeam : '—';
+  // טקסטרייה — רק מספרי משתתפים
+  const ta = document.getElementById('gp-input');
+  if (ta && document.activeElement !== ta) {
+    ta.value = generalParticipants.map(p => p.pid).join('\n');
+  }
+  const info = document.getElementById('gp-count-info');
+  if (info) info.textContent = generalParticipants.length ? `${generalParticipants.length} משתתפים נשמרו` : '';
+  renderGeneralTable();
+  initGeneralPills();
+  renderScoreTable();
+  renderSummaryTable();
+}
+
+function initGeneralPills() {
+  const c = document.getElementById('gn-pill-bar');
+  if (!c) return;
+  c.innerHTML = '';
+  COMMENT_TAGS.forEach(tag => {
+    const el = document.createElement('span');
+    el.className = 'tag-pill';
+    el.textContent = tag;
+    el.onclick = () => applyGeneralTag(tag);
+    c.appendChild(el);
+  });
+}
+
+function renderGeneralTable() {
+  const noData = document.getElementById('gn-no-data');
+  const table  = document.getElementById('gn-table');
+  const tbody  = document.getElementById('gn-body');
+  const badge  = document.getElementById('gn-count-badge');
+  if (!tbody) return;
+  if (!generalParticipants.length) {
+    if (noData) noData.style.display = '';
+    if (table)  table.style.display  = 'none';
+    if (badge)  badge.textContent    = '0';
+    return;
+  }
+  if (noData) noData.style.display = 'none';
+  if (table)  table.style.display  = '';
+  const sorted = generalParticipants.slice().sort((a,b) => a.team - b.team || a.pid - b.pid);
+  if (badge) badge.textContent = String(sorted.length);
+  tbody.innerHTML = sorted.map(p => {
+    const notes = generalNotes[p.pid] || [];
+    const pills = notes.map((n, i) =>
+      `<span class="tag-pill" style="font-size:11px;padding:3px 8px" title="לחץ למחיקה" onclick="removeGeneralNote(${p.pid}, ${i})">${escapeHtml(n)} ✕</span>`
+    ).join(' ');
+    const isSel = selectedGeneralPid === p.pid;
+    const sc = (stationScores[activeGroup] || {})[p.pid];
+    return `
+      <tr style="cursor:pointer;${isSel ? 'background:rgba(99,102,241,0.12)' : ''}${sc != null ? `;border-right:3px solid ${scoreColor(sc)}` : ''}" onclick="if(!event.target.closest('.tag-pill')) selectGeneralParticipant(${p.pid})" title="לחץ לבחירה">
+        <td><strong>${p.pid}</strong></td>
+        <td>${pills || '<span style="color:var(--text-muted); font-size:12px">—</span>'}</td>
+        <td>${isSel ? '<span style="color:var(--accent); font-weight:700">✓</span>' : '<span style="color:var(--text-muted)">+</span>'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function selectGeneralParticipant(pid) {
+  selectedGeneralPid = pid;
+  const p = generalParticipants.find(x => x.pid === pid);
+  const info = document.getElementById('gn-selected-info');
+  if (info && p) info.textContent = `נבחר: משתתף ${p.pid} (צוות ${p.team})`;
+  renderGeneralTable();
+  renderScoreTable();
+  showToast(`משתתף ${pid} נבחר`, 'info');
+}
+
+function applyGeneralTag(tag) {
+  if (selectedGeneralPid == null) { showToast('בחר משתתף קודם (לחץ + ליד שורה)', 'error'); return; }
+  const arr = generalNotes[selectedGeneralPid] = generalNotes[selectedGeneralPid] || [];
+  if (arr.includes(tag)) { showToast('התיוג כבר קיים', 'info'); return; }
+  arr.push(tag);
+  persistGeneralData();
+  renderGeneralTable();
+  showToast(`"${tag}" נוסף למשתתף ${selectedGeneralPid}`, 'success');
+}
+
+function applyGeneralCustomNote() {
+  const inp = document.getElementById('gn-custom-input');
+  if (!inp) return;
+  const txt = (inp.value || '').trim();
+  if (!txt) return;
+  if (selectedGeneralPid == null) { showToast('בחר משתתף קודם', 'error'); return; }
+  const arr = generalNotes[selectedGeneralPid] = generalNotes[selectedGeneralPid] || [];
+  arr.push(txt);
+  inp.value = '';
+  persistGeneralData();
+  renderGeneralTable();
+  showToast(`הערה נוספה למשתתף ${selectedGeneralPid}`, 'success');
+}
+
+function removeGeneralNote(pid, idx) {
+  const arr = generalNotes[pid];
+  if (!arr || !arr[idx]) return;
+  arr.splice(idx, 1);
+  if (!arr.length) delete generalNotes[pid];
+  persistGeneralData();
+  renderGeneralTable();
+}
+
+function clearGeneralData() {
+  generalParticipants = [];
+  generalNotes = {};
+  selectedGeneralPid = null;
+  operatorTeam = null;
+  gnSyncedKeys.clear();
+  localStorage.removeItem(GN_LS_PARTICIPANTS);
+  localStorage.removeItem(GN_LS_NOTES);
+  localStorage.removeItem(GN_LS_TEAM);
+  stationScores = {};
+  scoreSyncedKeys.clear();
+  localStorage.removeItem(SCORE_LS_KEY);
+  refreshGeneralUI();
+  renderScoreTable();
+  renderSummaryTable();
+}
+
+// ── ציון סופי לתחנה ──────────────────────────────────
+const SCORE_LS_KEY = 'demo_station_scores';
+let stationScores = {}; // { [stationId]: { [pid]: score } }
+let scoreSyncedKeys = new Set();
+
+function loadStationScores() {
+  try {
+    const s = JSON.parse(localStorage.getItem(SCORE_LS_KEY) || '{}');
+    if (s && typeof s === 'object') stationScores = s;
+  } catch (e) { stationScores = {}; }
+}
+
+function persistStationScores() {
+  localStorage.setItem(SCORE_LS_KEY, JSON.stringify(stationScores));
+}
+
+function scoreColor(n) {
+  // 1=אדום (hue 0), 4=כתום-צהוב (hue 60), 7=ירוק (hue 120)
+  const hue = Math.max(0, Math.min(6, (n - 1))) * 20;
+  return `hsl(${hue}, 80%, 50%)`;
+}
+
+function initScoreButtons() {
+  const row = document.getElementById('score-btn-row');
+  if (!row) return;
+  row.innerHTML = '';
+  for (let n = 1; n <= 7; n++) {
+    const b = document.createElement('button');
+    b.className = 'score-btn';
+    b.textContent = n;
+    b.style.borderColor = scoreColor(n);
+    b.style.color = scoreColor(n);
+    b.onclick = () => applyScore(n);
+    row.appendChild(b);
+  }
+}
+
+function applyScore(score) {
+  if (selectedGeneralPid == null) { showToast('בחר משתתף קודם (לחץ + ליד שורה)', 'error'); return; }
+  const p = generalParticipants.find(x => x.pid === selectedGeneralPid);
+  if (!p) { showToast('משתתף לא נמצא ברשימה', 'error'); return; }
+  stationScores[activeGroup] = stationScores[activeGroup] || {};
+  stationScores[activeGroup][selectedGeneralPid] = score;
+  persistStationScores();
+  renderGeneralTable();
+  renderScoreTable();
+  renderSummaryTable();
+  updateLeaderboard();
+  showToast(`ציון ${score} נשמר למשתתף ${selectedGeneralPid} · ${getStationLabel(activeGroup)}`, 'success');
+}
+
+function removeScore(pid) {
+  if (!stationScores[activeGroup]) return;
+  delete stationScores[activeGroup][pid];
+  if (!Object.keys(stationScores[activeGroup]).length) delete stationScores[activeGroup];
+  persistStationScores();
+  renderGeneralTable();
+  renderScoreTable();
+  renderSummaryTable();
+  updateLeaderboard();
+}
+
+function renderScoreTable() {
+  const info = document.getElementById('score-selected-info');
+  if (info) {
+    if (selectedGeneralPid != null) {
+      const p = generalParticipants.find(x => x.pid === selectedGeneralPid);
+      const curScore = (stationScores[activeGroup] || {})[selectedGeneralPid];
+      info.textContent = p
+        ? `נבחר: משתתף ${p.pid} (צוות ${p.team}) · ${getStationLabel(activeGroup)}${curScore != null ? ` · ציון נוכחי: ${curScore}` : ''}`
+        : 'לא נבחר משתתף.';
+    } else {
+      info.textContent = 'לא נבחר משתתף.';
+    }
+  }
+}
+
+// ── תפריט דפי מעריך ──────────────────────────────────
+const EV_PAGES = {
+  'ev-main':    { icon: '🏠', label: 'ראשי' },
+  'ev-summary': { icon: '📊', label: 'סיכום ציונים' },
+};
+
+function toggleEvMenu() {
+  const d = document.getElementById('ev-menu-dropdown');
+  if (!d) return;
+  d.style.display = d.style.display === 'block' ? 'none' : 'block';
+}
+
+function closeEvMenu() {
+  const d = document.getElementById('ev-menu-dropdown');
+  if (d) d.style.display = 'none';
+}
+
+function switchEvTab(tabId) {
+  document.querySelectorAll('.ev-menu-item').forEach(b => {
+    b.classList.toggle('active', b.dataset.evtab === tabId);
+  });
+  document.querySelectorAll('.ev-subpage').forEach(p => {
+    const on = p.id === tabId;
+    p.classList.toggle('active', on);
+    p.style.display = on ? '' : 'none';
+  });
+  const meta = EV_PAGES[tabId] || {};
+  const iconEl  = document.getElementById('ev-menu-current-icon');
+  const labelEl = document.getElementById('ev-menu-current-label');
+  if (iconEl)  iconEl.textContent  = meta.icon  || '';
+  if (labelEl) labelEl.textContent = meta.label || tabId;
+  closeEvMenu();
+  if (tabId === 'ev-summary') renderSummaryTable();
+}
+
+// ── טבלת סיכום ציונים — כל התחנות ─────────────────────
+function renderSummaryTable() {
+  const tableEl = document.getElementById('summary-table');
+  const noData  = document.getElementById('summary-no-data');
+  const thead   = document.getElementById('summary-thead');
+  const tbody   = document.getElementById('summary-tbody');
+  const badge   = document.getElementById('summary-count-badge');
+  if (!tableEl || !thead || !tbody) return;
+
+  if (!generalParticipants.length) {
+    if (noData)  noData.style.display  = '';
+    tableEl.style.display = 'none';
+    if (badge) badge.textContent = '0';
+    return;
+  }
+
+  // אסוף תחנות שיש להן נתונים (snapshot או ציון)
+  const activeStations = new Set();
+  Object.keys(roundSnapshotsByGroup || {}).forEach(st => {
+    if ((roundSnapshotsByGroup[st] || []).length) activeStations.add(st);
+  });
+  Object.keys(stationScores || {}).forEach(st => {
+    if (Object.keys(stationScores[st] || {}).length) activeStations.add(st);
+  });
+  const stations = Array.from(activeStations).sort();
+
+  if (!stations.length) {
+    if (noData)  noData.style.display  = '';
+    tableEl.style.display = 'none';
+    if (badge) badge.textContent = String(generalParticipants.length);
+    return;
+  }
+
+  if (noData) noData.style.display = 'none';
+  tableEl.style.display = '';
+  if (badge) badge.textContent = String(generalParticipants.length);
+
+  // כותרת
+  let headHtml = '<tr><th>צוות</th><th>משתתף</th>';
+  stations.forEach(st => {
+    headHtml += `<th>ת${st} מיקום</th><th>ת${st} ציון</th>`;
+  });
+  headHtml += '<th>ציון ממוצע</th></tr>';
+  thead.innerHTML = headHtml;
+
+  // שורות
+  const sorted = generalParticipants.slice().sort((a,b) => a.team - b.team || a.pid - b.pid);
+  tbody.innerHTML = sorted.map(p => {
+    let row = `<tr><td>${p.team}</td><td><strong>${p.pid}</strong></td>`;
+    const scores = [];
+    stations.forEach(st => {
+      const snaps = roundSnapshotsByGroup[st] || [];
+      const lastSnap = snaps.length ? snaps[snaps.length - 1] : null;
+      const placeRow = lastSnap ? (lastSnap.rows || []).find(r => Number(r.participantId) === p.pid && Number(r.teamId) === p.team) : null;
+      const place = placeRow ? placeRow.place : null;
+      const score = (stationScores[st] || {})[p.pid];
+      if (score != null) scores.push(score);
+      const placeCell = place != null ? `#${place}` : '—';
+      const scoreCell = score != null ? `<span class="score-cell" style="background:${scoreColor(score)}">${score}</span>` : '—';
+      row += `<td>${placeCell}</td><td>${scoreCell}</td>`;
+    });
+    const avg = scores.length ? (scores.reduce((a,b) => a+b, 0) / scores.length) : null;
+    const avgCell = avg != null ? `<span class="score-cell" style="background:${scoreColor(Math.round(avg))}">${avg.toFixed(1)}</span>` : '—';
+    row += `<td>${avgCell}</td></tr>`;
+    return row;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ── תיוגים ────────────────────────────────────────────
+function initCommentPills() {
+  const c = document.getElementById('comment-pill-bar');
+  if (!c) return;
+  c.innerHTML = '';
+  COMMENT_TAGS.forEach(tag => {
+    const el = document.createElement('span');
+    el.className   = 'tag-pill';
+    el.textContent = tag;
+    el.onclick = () => applyTag(tag);
+    c.appendChild(el);
+  });
+}
+
+function selectParticipant(epc, partId) {
+  selectedEpc = epc;
+  const info = document.getElementById('selected-tag-info');
+  if (info) info.textContent = `נבחר: משתתף ${partId} (${epc})`;
+  showToast(`משתתף ${partId} נבחר — לחץ על תיוג להוסיף`, 'info');
+}
+
+function applyTag(tag) {
+  if (!selectedEpc) { showToast('בחר משתתף קודם (לחץ + ליד השורה)', 'error'); return; }
+  const entry = leaderboard.find(r => r.epc === selectedEpc);
+  if (!entry) { showToast('משתתף לא נמצא', 'error'); return; }
+  entry.comments = entry.comments || [];
+  if (!entry.comments.includes(tag)) entry.comments.push(tag);
+
+  // עדכן את התיוג גם בסנאפשוט השמור (אם קיים)
+  const snaps = roundSnapshotsByGroup[activeGroup] || [];
+  snaps.forEach(snap => {
+    const row = (snap.rows || []).find(r => r.epc === selectedEpc);
+    if (row) {
+      row.comments = row.comments || [];
+      if (!row.comments.includes(tag)) row.comments.push(tag);
+    }
+  });
+
+  // שמור snapshot עדכני אם המירוץ פעיל (או עדכן את הקיים)
+  saveCurrentRoundSnapshot();
+
+  updateLeaderboard();
+  broadcastRaceState();
+  showToast(`תיוג "${tag}" נוסף למשתתף ${entry.participantId}`, 'success');
+}
+
+// ── כפתורי אנטנות ─────────────────────────────────────
+function initAntennaButtons() {
+  const c = document.getElementById('ant-buttons');
+  if (!c) return;
+  c.innerHTML = '';
+  antennaState.forEach((on, i) => {
+    const btn = document.createElement('button');
+    btn.className   = 'ant-btn' + (on ? ' on' : '');
+    btn.textContent = 'ANT ' + (i + 1);
+    btn.onclick = () => {
+      antennaState[i] = !antennaState[i];
+      btn.className = 'ant-btn' + (antennaState[i] ? ' on' : '');
+      showToast(`ANT ${i+1} ${antennaState[i] ? 'מופעלת' : 'מכובה'}`, 'info');
+    };
+    c.appendChild(btn);
+  });
+}
+
+// ── פקדי מגבש (סימולציה) ──────────────────────────────
+function simSetMode() {
+  raceMode = parseInt(document.getElementById('mode-select').value);
+  const lbl = document.getElementById('op-mode-label');
+  if (lbl) lbl.textContent = raceMode === 1 ? 'הקפות' : 'הגעה';
+  showToast('מצב עודכן', 'success');
+}
+
+function simSetDuration() {
+  const s = parseInt(document.getElementById('dur-input').value);
+  if (s > 0) { durationMs = s * 1000; showToast('זמן הוגדר: ' + s + ' שניות', 'success'); }
+}
+
+function simSetPower() {
+  txPower = parseInt(document.getElementById('pwr-input').value);
+  document.getElementById('pwr-val-label').textContent = txPower + ' dBm';
+  showToast('עוצמת שידור הוגדרה: ' + txPower + ' dBm', 'success');
+}
+
+function simReboot() {
+  if (!confirm('לבצע איפוס בקר ESP32 של התחנה? המירוץ יעצור.')) return;
+  stopRace();
+  if (esp32Active()) {
+    window.ESP32.reset(esp32StationNum())
+      .then(() => showToast('איפוס ESP32 בוצע על בקר התחנה', 'success'))
+      .catch(err => showToast('איפוס נכשל: ' + err.message, 'error'));
+  } else {
+    showToast('איפוס ESP32 בוצע (סימולציה)', 'info');
+  }
+}
+
+function simClear() {
+  if (currentRole !== 'operator' && currentRole !== 'admin') { showToast('אין הרשאה', 'error'); return; }
+  if (!confirm('⚠️ למחוק את כל נתוני המירוץ?')) return;
+  // עצור מירוץ בלי לשמור snapshot (איפוס מלא)
+  scanning = false;
+  if (tagTimer) { clearTimeout(tagTimer); tagTimer = null; }
+  if (autoSheetsTimer) { clearInterval(autoSheetsTimer); autoSheetsTimer = null; }
+  if (esp32Active()) {
+    esp32StopPolling();
+    window.ESP32.clear(esp32StationNum()).catch(() => {});
+  }
+  leaderboard = [];
+  roundSnapshotsByGroup = {};
+  roundByGroup = {};
+  round = 0;
+  raceHistory = [];
+  demoSheetsSyncedKeys.clear();
+  lastAutoSheetsHash = '';
+  selectedEpc = null;
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const btnStart = document.getElementById('btn-start');
+  const btnStop  = document.getElementById('btn-stop');
+  if (btnStart) btnStart.disabled = false;
+  if (btnStop)  btnStop.disabled  = false;
+  const adminCnt = document.getElementById('admin-races-count');
+  if (adminCnt) adminCnt.textContent = '0';
+  const histEl = document.getElementById('race-history-list');
+  if (histEl) histEl.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:30px">אין מרוצים עדיין — התחל מירוץ מתצוגת המגבש.</div>';
+  updateStatCards();
+  updateLeaderboard();
+  // אפס גם הערות כלליות ורשימת משתתפים (איפוס מלא)
+  clearGeneralData();
+  // שדר איפוס לטאב המעריך
+  localStorage.removeItem('demo_race_state');
+  broadcastRaceState();
+  showToast('הנתונים נמחקו', 'info');
+}
+
+function simDownloadCsv() {
+  const snapshots = roundSnapshotsByGroup[activeGroup] || [];
+  if (snapshots.length === 0) { showToast('אין נתונים לייצוא', 'error'); return; }
+  let csv = 'Round,Place,Team,Participant,EPC,Mode,FirstSeen_ms,Laps,Antenna,RSSI_dBm,Comments\r\n';
+  snapshots.forEach(s => {
+    (s.rows || []).forEach(r => {
+      csv += `${s.round},${r.place},${r.teamId},${r.participantId},${r.epc},${s.mode},${r.firstMs || 0},${r.laps || 1},${r.antenna || ''},${r.rssi || ''},"${(r.comments || []).join('|')}"\r\n`;
+    });
+  });
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `race_log_group${activeGroup}_all_rounds.csv`;
+  a.click();
+  showToast('קובץ CSV הורד', 'success');
+}
+
+async function simSyncSheets(isAuto = false) {
+  // Demo auto-sync is disabled by default to avoid accidental duplicate writes.
+  // Manual sync button should still work.
+  if (!DEMO_SHEETS_SYNC_ENABLED && isAuto) {
+    return;
+  }
+  if (!DEMO_SHEETS_SYNC_ENABLED && !isAuto) {
+    showToast('שים לב: מצב demo לא מסנכרן אוטומטית. מתבצע עכשיו סנכרון ידני חד-פעמי.', 'info');
+  }
+  // בסנכרון ידני — שלח הכל מחדש (כולל סבבים קודמים)
+  if (!isAuto) demoSheetsSyncedKeys.clear();
+
+  if (typeof APP_CONFIG === 'undefined' || !APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+    if (!isAuto) showToast('הגדר APP_CONFIG.sheetsApiUrl ו-sheetsApiKey כדי לסנכרן', 'error');
+    return;
+  }
+
+  // בנה רשימת נתונים: snapshots שמורים + נתונים חיים
+  const snapshots = (roundSnapshotsByGroup[activeGroup] || []).slice();
+  const liveRows = getVisibleLeaderboard();
+
+  // אם יש נתונים חיים (בזמן ריצה או אחרי עצירה) — הוסף אותם
+  if (liveRows.length > 0) {
+    // בדוק אם הסבב הנוכחי כבר ב-snapshots
+    const alreadySaved = snapshots.some(s => s.round === round);
+    if (!alreadySaved) {
+      snapshots.push({
+        round,
+        mode: raceMode === 1 ? 'laps' : 'arrival',
+        rows: liveRows.map((r, i) => ({ ...r, place: i + 1 }))
+      });
+    }
+  }
+
+  if (snapshots.length === 0 && liveRows.length === 0) {
+    if (!isAuto) showToast('אין נתונים לסנכרון', 'error');
+    return;
+  }
+
+  // אם אין snapshots אבל יש נתונים חיים — השתמש בהם ישירות
+  if (snapshots.length === 0 && liveRows.length > 0) {
+    snapshots.push({
+      round,
+      mode: raceMode === 1 ? 'laps' : 'arrival',
+      rows: liveRows.map((r, i) => ({ ...r, place: i + 1 }))
+    });
+  }
+
+  const hash = JSON.stringify(snapshots);
+  if (isAuto && hash === lastAutoSheetsHash) return;
+  lastAutoSheetsHash = hash;
+
+  try {
+    let total = 0;
+    for (const s of snapshots) {
+      const rows = (s.rows || []);
+      const uniqueRows = [];
+      const seenInThisRound = new Set();
+      for (const r of rows) {
+        const rowKey = `${Number(s.round || round)}|${String(r.epc || '')}|${Number(r.firstMs || 0)}`;
+        if (seenInThisRound.has(rowKey)) continue;
+        // בסנכרון ידני — שלח הכל (כולל שורות שנשלחו בעבר)
+        if (isAuto && demoSheetsSyncedKeys.has(rowKey)) continue;
+        seenInThisRound.add(rowKey);
+        uniqueRows.push(r);
+      }
+
+      for (const r of uniqueRows) {
+        const rowKey = `${Number(s.round || round)}|${String(r.epc || '')}|${Number(r.firstMs || 0)}`;
+        const bodyObj = {
+          place: Number(r.place || 0),
+          epc: String(r.epc || ''),
+          first_ms: Number(r.firstMs || 0),
+          antenna: Number(r.antenna || 0),
+          rssi: Number(r.rssi || 0),
+          round: Number(s.round || round),
+          last_ms: Number(r.lastMs || r.firstMs || 0),
+          count: 1,
+          mode: s.mode || (raceMode === 1 ? 'laps' : 'arrival'),
+          laps: Number(r.laps || 0),
+          comments: Array.isArray(r.comments) ? r.comments.join('|') : (r.comments || ''),
+          station: activeGroup || '',
+          evaluator_name: currentRole === 'evaluator' ? 'Demo Evaluator' : '',
+          evaluator_team: activeGroup || ''
+        };
+        if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+          bodyObj.key = APP_CONFIG.sheetsApiKey;
+        }
+
+        const res = await fetch(APP_CONFIG.sheetsApiUrl, {
+          method: 'POST',
+          body: JSON.stringify(bodyObj)
+        });
+        if (!res.ok && !isAuto) {
+          showToast('שגיאת Sheets: HTTP ' + res.status, 'error');
+          return;
+        }
+        if (res.ok) demoSheetsSyncedKeys.add(rowKey);
+        total++;
+      }
+    }
+    // ── סנכרון הערות כלליות (משתתפים גלובליים) ──
+    let gnTotal = 0;
+    if (!isAuto) gnSyncedKeys.clear();
+    for (const p of generalParticipants) {
+      const notes = generalNotes[p.pid] || [];
+      for (let i = 0; i < notes.length; i++) {
+        const key = `gn|${p.pid}|${i}|${notes[i]}`;
+        if (isAuto && gnSyncedKeys.has(key)) continue;
+        const bodyObj = {
+          type: 'general_note',
+          participant_id: p.pid,
+          team_id: p.team,
+          note: notes[i],
+          note_index: i,
+          ts_ms: Date.now()
+        };
+        if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+          bodyObj.key = APP_CONFIG.sheetsApiKey;
+        }
+        try {
+          const res = await fetch(APP_CONFIG.sheetsApiUrl, {
+            method: 'POST',
+            body: JSON.stringify(bodyObj)
+          });
+          if (res.ok) { gnSyncedKeys.add(key); gnTotal++; }
+        } catch (_) { /* בלעי בלי לעצור */ }
+      }
+    }
+
+    // ── סנכרון ציוני תחנה ──
+    let scTotal = 0;
+    if (!isAuto) scoreSyncedKeys.clear();
+    for (const stId of Object.keys(stationScores)) {
+      const byPid = stationScores[stId] || {};
+      for (const pidStr of Object.keys(byPid)) {
+        const pid = parseInt(pidStr, 10);
+        const score = byPid[pidStr];
+        const p = generalParticipants.find(x => x.pid === pid);
+        const key = `sc|${stId}|${pid}|${score}`;
+        if (isAuto && scoreSyncedKeys.has(key)) continue;
+        const bodyObj = {
+          type: 'station_score',
+          participant_id: pid,
+          team_id: p ? p.team : '',
+          station: stId,
+          score: score,
+          ts_ms: Date.now()
+        };
+        if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+          bodyObj.key = APP_CONFIG.sheetsApiKey;
+        }
+        try {
+          const res = await fetch(APP_CONFIG.sheetsApiUrl, {
+            method: 'POST',
+            body: JSON.stringify(bodyObj)
+          });
+          if (res.ok) { scoreSyncedKeys.add(key); scTotal++; }
+        } catch (_) { /* המשך */ }
+      }
+    }
+
+    if (!isAuto) {
+      const sumTotal = total + gnTotal + scTotal;
+      if (sumTotal === 0) showToast('אין רשומות חדשות לסנכרון', 'info');
+      else showToast(`סונכרנו ${total} רשומות מירוץ + ${gnTotal} הערות + ${scTotal} ציונים ✓`, 'success');
+    }
+  } catch (e) {
+    if (!isAuto) showToast('לא ניתן להגיע ל-Sheets API', 'error');
+  }
+}
+
+// ── גרף ──────────────────────────────────────────────
+function showChartModal() {
+  document.getElementById('chart-modal').classList.add('open');
+  buildChart();
+}
+function closeChartModal() {
+  document.getElementById('chart-modal').classList.remove('open');
+}
+
+function buildChart() {
+  const ctx = document.getElementById('chart-canvas');
+  if (!ctx) return;
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  if (leaderboard.length === 0) return;
+
+  const labels   = leaderboard.map(r => `צ${r.teamId} מ${r.participantId}`);
+  const hasLaps  = raceMode === 1;
+  const dataVals = hasLaps ? leaderboard.map(r => r.laps || 0) : leaderboard.map(r => (r.firstMs||0) / 1000);
+  const colors   = leaderboard.map((_, i) => `hsl(${(i*137)%360},70%,55%)`);
+
+  chartInst = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ label: hasLaps ? 'הקפות' : 'זמן (שניות)', data: dataVals, backgroundColor: colors, borderRadius: 6, borderWidth: 0 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: c => hasLaps ? `${c.raw} הקפות` : `${c.raw.toFixed(2)} שניות` } }
+      },
+      scales: {
+        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } },
+        x: { grid: { display: false }, ticks: { color: '#94a3b8', font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// ── פעולות מנהל ──────────────────────────────────────
+const DEMO_USERS = [
+  { name:'יוסי כץ',     email:'yossi@team.com',  role:'מגבש',   team:1,  approved:true },
+  { name:'שירה בן דוד', email:'shira@team.com',  role:'מעריכה', team:1,  approved:true },
+  { name:'רוני אזולאי', email:'roni@team.com',   role:'מגבש',   team:2,  approved:true },
+  { name:'דנה פרץ',     email:'dana@team.com',   role:'מעריכה', team:2,  approved:true },
+  { name:'מנהל ראשי',   email:'admin@team.com',  role:'מנהל',   team:'', approved:true },
+];
+
+function renderAdminUsers() {
+  const c = document.getElementById('users-list');
+  if (!c) return;
+  const teamOptions = (selected) => Array.from({length:15},(_,i)=>{
+    const v=i+1; return `<option value="${v}" ${Number(selected)===v?'selected':''}>${v}</option>`;
+  }).join('');
+  c.innerHTML = DEMO_USERS.map((u, idx) => {
+    const badge = u.role === 'מנהל'
+      ? '<span class="badge badge-warning">מנהל</span>'
+      : '<span class="badge badge-success">מאושר</span>';
+    return `
+      <div class="user-row-demo">
+        <div>
+          <div style="font-weight:600">${u.name}</div>
+          <div style="font-size:12px;color:var(--text-muted)">${u.email} · צוות ${u.team || '—'}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${badge}
+          <select class="role-sel" onchange="DEMO_USERS[${idx}].role=this.options[this.selectedIndex].text; showToast('תפקיד שונה ל: '+this.options[this.selectedIndex].text,'success')">
+            <option ${u.role==='מגבש'   ?'selected':''}>מגבש</option>
+            <option ${u.role==='מעריכה' ?'selected':''}>מעריכה</option>
+            <option ${u.role==='מנהל'   ?'selected':''}>מנהל</option>
+          </select>
+          <select class="role-sel" title="צוות" onchange="DEMO_USERS[${idx}].team=this.value; renderAdminUsers(); showToast('צוות עודכן: '+this.value,'success')">
+            <option value="">—</option>
+            ${teamOptions(u.team)}
+          </select>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function demoApprove(btn, name) {
+  const row = btn.closest('.user-row-demo');
+  row.innerHTML = `<div style="padding:8px;color:var(--success)">✓ ${name} אושר/ה</div>`;
+  const c = document.getElementById('pending-count-badge');
+  c.textContent = Math.max(0, parseInt(c.textContent) - 1);
+  showToast(name + ' אושר/ה ✓', 'success');
+}
+
+function demoReject(btn, name) {
+  btn.closest('.user-row-demo').remove();
+  const c = document.getElementById('pending-count-badge');
+  c.textContent = Math.max(0, parseInt(c.textContent) - 1);
+  showToast(name + ' נדחה/תה והוסר/ה', 'info');
+}
+
+function demoPromote() {
+  const val = document.getElementById('promote-uid').value.trim();
+  if (!val) { showToast('הזן UID או אימייל', 'error'); return; }
+  document.getElementById('promote-uid').value = '';
+  showToast(`"${val}" קודם לתפקיד מנהל (הדגמה)`, 'success');
+}
+
+function saveRaceToHistory() {
+  raceHistory.push({ round, mode: raceMode === 1 ? 'הקפות' : 'הגעה', tags: leaderboard.length });
+  const c   = document.getElementById('race-history-list');
+  const cnt = document.getElementById('admin-races-count');
+  if (cnt) cnt.textContent = raceHistory.length;
+  if (!c) return;
+  c.innerHTML = [...raceHistory].reverse().map(r => `
+    <div class="user-row-demo">
+      <div>
+        <div style="font-weight:600">סבב #${r.round} — ${r.mode}</div>
+        <div style="font-size:12px;color:var(--text-muted)">${r.tags} משתתפים</div>
+      </div>
+      <span class="badge badge-info">הושלם</span>
+    </div>`).join('');
+}
+
+// ── עזר ───────────────────────────────────────────────
+window.toggleCollapsible = (bodyId, arrowId) => {
+  const body  = document.getElementById(bodyId);
+  const arrow = document.getElementById(arrowId);
+  if (!body) return;
+  const open = body.classList.toggle('open');
+  if (arrow) arrow.classList.toggle('open', open);
+};
+
+window.showToast = (msg, type = 'info') => {
+  const c  = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className   = `toast ${type}`;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+};
+
+
+// PATCH_FEEDBACK_GROUPS_DEMO
+const GROUP_COUNT = 8;
+const PARTICIPANTS_PER_GROUP = 20;
+let activeGroup = '01';
+let roundSnapshotsByGroup = {};
+
+function getStationLabel(groupId) {
+  const id = parseInt(groupId, 10);
+  const st = STATIONS.find(s => s.id === id);
+  return st ? st.name : ('תחנה ' + String(groupId).padStart(2, '0'));
+}
+
+function ensureGroupSelector() {
+  if (currentRole === 'admin') return;
+  const navActions = document.querySelector('.navbar-actions');
+  if (!navActions) return;
+  let wrap = document.getElementById('group-selector-wrap');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.id = 'group-selector-wrap';
+    wrap.style.display = 'flex';
+    wrap.style.alignItems = 'center';
+    wrap.style.gap = '6px';
+      wrap.innerHTML = '<select id="group-select" class="form-select" style="width:160px;padding:6px 10px"></select>';
+    const badge = document.getElementById('role-badge');
+    if (badge && badge.parentNode === navActions) navActions.insertBefore(wrap, badge);
+    else navActions.prepend(wrap);
+    const sel = document.getElementById('group-select');
+    sel.addEventListener('change', (e) => setActiveGroup(e.target.value));
+  }
+  const sel = document.getElementById('group-select');
+  if (sel && sel.options.length === 0) {
+    for (let i = 1; i <= GROUP_COUNT; i++) {
+      const v = String(i).padStart(2, '0');
+      const st = STATIONS.find(s => s.id === i);
+      const o = document.createElement('option');
+      o.value = v;
+      o.textContent = st ? st.name : ('תחנה ' + v);
+      sel.appendChild(o);
+    }
+  }
+  if (sel) sel.value = activeGroup;
+}
+
+function buildMockGroupPool(groupId) {
+  // RSSI ואנטנה קבועים — תוצאות עקביות בין סבבים
+  const FIXED_RSSI    = [-48,-52,-59,-44,-63,-55,-41,-67,-50,-57];
+  const FIXED_ANTENNA = [  1,  2,  1,  3,  2,  4,  1,  2,  3,  4];
+  // teamId תמיד מייצג צוות קבוע (לא תחנה). אם לא נבחר — ברירת מחדל '01'
+  const teamNum = operatorTeam != null ? String(operatorTeam).padStart(2,'0') : '01';
+  const pool = [];
+  for (let i = 0; i < 10; i++) {
+    const participantId = String(i + 1).padStart(4, '0');
+    pool.push({
+      epc: `E2003412${teamNum}${participantId}`,
+      teamId: teamNum,     // צוות קבוע
+      stationId: groupId,  // תחנה נוכחית
+      participantId,
+      rssi: FIXED_RSSI[i],
+      antenna: FIXED_ANTENNA[i]
+    });
+  }
+  return pool;
+}
+
+function getVisibleLeaderboard() {
+  const result = leaderboard
+    .filter(r => (r.stationId || r.teamId) === activeGroup) // סנן לפי תחנה
+    .slice()
+    .sort((a, b) => raceMode === 1 ? (b.laps - a.laps || a.lastMs - b.lastMs) : a.firstMs - b.firstMs);
+  return result;
+}
+
+function setActiveGroup(groupId) {
+  activeGroup = groupId;
+  selectedEpc = null;
+  // אפס/טען את מספר הסבב לפי התחנה (אלא אם סריקה פעילה — לא נוגעים)
+  if (!scanning) {
+    round = roundByGroup[groupId] || 0;
+    leaderboard = [];
+  }
+  selectedGeneralPid = null;
+  const info = document.getElementById('selected-tag-info');
+  const teamLbl = operatorTeam != null ? operatorTeam : '—';
+  if (info) info.textContent = `צוות ${teamLbl} · תחנה ${groupId}. לא נבחר משתתף.`;
+  const gnInfo = document.getElementById('gn-selected-info');
+  if (gnInfo) gnInfo.textContent = 'לא נבחר משתתף.';
+  updateLeaderboard();
+  updateStatCards();
+  renderGeneralTable();
+  renderScoreTable();
+  renderSummaryTable();
+}
+
+// ── חישוב היסטוריה לפי EPC מהסנאפשוטים ─────────────
+function buildDemoEpcHistory(epc) {
+  const snaps = roundSnapshotsByGroup[activeGroup] || [];
+  return snaps.map(s => {
+    const idx = (s.rows || []).findIndex(r => r.epc === epc);
+    return idx >= 0 ? idx + 1 : null;
+  }).filter(x => x !== null);
+}
+
+const _enterAsOrig = enterAs;
+enterAs = function(role, userIdx) {
+  _enterAsOrig(role, userIdx);
+  ensureGroupSelector();
+  if (role !== 'admin') setActiveGroup(activeGroup);
+};
+
+const _resetOrig = resetToLogin;
+resetToLogin = function() {
+  _resetOrig();
+  activeGroup = '01';
+};
+
+scheduleTagArrivals = function() {
+  if (!scanning) return;
+  // 10 משתתפים — סדר הגעה אקראי בכל סבב (גם ג'יטר קל בזמנים)
+  const pool = buildMockGroupPool(activeGroup);
+  // Fisher-Yates shuffle
+  for (let k = pool.length - 1; k > 0; k--) {
+    const j = Math.floor(Math.random() * (k + 1));
+    [pool[k], pool[j]] = [pool[j], pool[k]];
+  }
+  const BASE_INTERVAL = 900; // ms בין כל הגעה
+  const JITTER        = 400; // ms סטייה אקראית (±)
+  pool.forEach((tag, i) => {
+    const jitter = Math.floor((Math.random() - 0.5) * 2 * JITTER);
+    const delay  = Math.max(150, BASE_INTERVAL * (i + 1) + jitter);
+    tagTimer = setTimeout(() => {
+      if (!scanning) return;
+      const now = Date.now() - startTime;
+      if (raceMode === 0) {
+        const exists = leaderboard.find(t => t.epc === tag.epc);
+        if (!exists) leaderboard.push({ ...tag, firstMs: now, lastMs: now, laps: 1, comments: [] });
+      } else {
+        const entry = leaderboard.find(t => t.epc === tag.epc);
+        if (entry) { entry.laps++; entry.lastMs = now; }
+        else leaderboard.push({ ...tag, firstMs: now, lastMs: now, laps: 1, comments: [] });
+        leaderboard.sort((a, b) => b.laps - a.laps || a.lastMs - b.lastMs);
+        leaderboard.forEach((t, idx) => t.place = idx + 1);
+      }
+      updateLeaderboard();
+      updateStatCards();
+      broadcastRaceState(); // שדר לטאב המעריך
+    }, delay);
+  });
+};
+
+initAntennaButtons = function() {
+  if (!Array.isArray(antennaState) || antennaState.length < 8) {
+    antennaState = Array.from({ length: 8 }, (_, i) => antennaState?.[i] ?? (i < 4));
+  }
+  const c = document.getElementById('ant-buttons');
+  if (!c) return;
+  c.innerHTML = '';
+  antennaState.forEach((on, i) => {
+    const btn = document.createElement('button');
+    btn.className = 'ant-btn' + (on ? ' on' : '');
+    btn.textContent = 'ANT ' + (i + 1);
+    btn.onclick = () => {
+      antennaState[i] = !antennaState[i];
+      btn.className = 'ant-btn' + (antennaState[i] ? ' on' : '');
+      showToast(`ANT ${i + 1} ${antennaState[i] ? 'מופעלת' : 'מכובה'}`, 'info');
+    };
+    c.appendChild(btn);
+  });
+};
+
+updateStatCards = function() {
+  const st = scanning ? '🟢 סורק' : '🔴 עצור';
+  const md = raceMode === 1 ? 'הקפות' : 'הגעה';
+  const visible = getVisibleLeaderboard();
+  const stationLabel = activeGroup ? ` · ת${activeGroup}` : '';
+  ['op-round','ev-round'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = '#' + round + stationLabel; });
+  ['op-status','ev-status'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = st; });
+  ['op-tags','ev-tags'].forEach(id => { const el = document.getElementById(id); if (el) el.textContent = visible.length; });
+  const ml = document.getElementById('op-mode-label'); if (ml) ml.textContent = md;
+  const rb = document.getElementById('lb-round-badge'); if (rb) rb.textContent = 'סבב #' + round;
+};
+
+updateLeaderboard = function() {
+  const noData = document.getElementById('lb-no-data');
+  const table = document.getElementById('lb-table');
+  const tbody = document.getElementById('lb-body');
+  const colHead = document.getElementById('lb-col-score');
+  if (!tbody) return;
+  const rows = getVisibleLeaderboard();
+  if (rows.length === 0) {
+    noData.style.display = '';
+    table.style.display = 'none';
+    noData.textContent = `אין נתונים ל${getStationLabel(activeGroup)} כרגע.`;
+    return;
+  }
+  noData.style.display = 'none';
+  table.style.display = '';
+  const hasLaps = raceMode === 1;
+  if (colHead) colHead.textContent = hasLaps ? 'הקפות' : 'זמן ראשון';
+  tbody.innerHTML = '';
+  rows.forEach((r, idx) => {
+    const place = idx + 1;
+    const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.onclick = (ev) => {
+      if (ev.target.closest('button')) return;
+      selectParticipant(r.epc, r.participantId);
+      // בחר גם לציון — אם המשתתף ברשימה הכללית
+      const gp = generalParticipants.find(p => Number(p.pid) === Number(r.participantId));
+      if (gp) selectGeneralParticipant(gp.pid);
+    };
+    tr.className = place <= 3 ? `place-${place}` : '';
+    const timeStr = hasLaps
+      ? `<span class="laps-badge">${r.laps} הקפות</span>`
+      : `<code style="font-size:12px; direction:ltr; display:inline-block">${fmtTime(r.firstMs)}</code>`;
+    const comments = (r.comments || []).map(c => `<span class="tag-pill" style="font-size:11px;padding:3px 8px">${c}</span>`).join('');
+
+    // היסטוריית מיקומים
+    const hist = buildDemoEpcHistory(r.epc);
+    const avgPlaceStr  = hist.length > 0
+      ? (hist.reduce((s, v) => s + v, 0) / hist.length).toFixed(1)
+      : '—';
+
+    const stScore = (stationScores[activeGroup] || {})[Number(r.participantId)];
+    const stScoreCell = (stScore != null)
+      ? `<span class="score-cell" style="background:${scoreColor(stScore)}">${stScore}</span>`
+      : '<span style="color:var(--text-muted); font-size:12px">—</span>';
+
+    tr.innerHTML = `
+      <td><span class="place-badge">${place}</span></td>
+      <td>${r.participantId}</td>
+      <td>${timeStr}</td>
+      <td class="hist-cell">${avgPlaceStr}</td>
+      <td class="hist-cell">${stScoreCell}</td>
+      <td><div style="display:flex;flex-wrap:wrap;gap:4px;align-items:center">${comments}
+      <button onclick="selectParticipant('${r.epc}','${r.participantId}')" style="font-size:11px;padding:2px 8px;background:var(--surface);border:1px solid var(--border);border-radius:999px;cursor:pointer;color:var(--text-muted)">+</button>
+      </div></td>`;
+    tbody.appendChild(tr);
+  });
+};
+
+stopRace = function() {
+  const wasScanning = scanning;
+  // שמור snapshot לפני שינוי מצב
+  if (wasScanning) saveCurrentRoundSnapshot();
+  if (!wasScanning && leaderboard.length === 0) return;
+  scanning = false;
+  if (tagTimer) { clearTimeout(tagTimer); tagTimer = null; }
+  if (autoSheetsTimer) { clearInterval(autoSheetsTimer); autoSheetsTimer = null; }
+  if (esp32Active()) {
+    esp32StopPolling();
+    window.ESP32.stop(esp32StationNum())
+      .catch(() => {})
+      .then(() => esp32PollOnce())
+      .catch(() => {});
+  }
+  if (wasScanning && leaderboard.length > 0) saveRaceToHistory();
+  updateStatCards();
+  updateLeaderboard();
+  simSyncSheets(true);
+  const btnStart = document.getElementById('btn-start');
+  const btnStop  = document.getElementById('btn-stop');
+  if (btnStart) btnStart.disabled = false;
+  if (btnStop)  btnStop.disabled  = false;
+  broadcastRaceState();
+};
+
+buildChart = function() {
+  const ctx = document.getElementById('chart-canvas');
+  if (!ctx) return;
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+
+  // שמור snapshot של הסבב הנוכחי לפני הצגת הגרף (אם עדיין לא נשמר)
+  saveCurrentRoundSnapshot();
+
+  const rows = getVisibleLeaderboard();
+  // בחר משתתף: נבחר ידנית > ראשון בטבלה
+  const selected = (selectedEpc && rows.find(r => r.epc === selectedEpc)) || rows[0];
+
+  if (!selected) {
+    // אין נתונים חיים — בנה מהסנאפשוטים
+    const allSnaps = roundSnapshotsByGroup[activeGroup] || [];
+    if (allSnaps.length === 0) {
+      showToast('אין נתוני משתתפים להצגה', 'info');
+      return;
+    }
+    _renderMultiLineChart(ctx, allSnaps);
+    return;
+  }
+
+  // בנה snapshots מלאים כולל הסבב הנוכחי החי
+  const snapshots = (roundSnapshotsByGroup[activeGroup] || []).slice();
+  // הוסף סבב נוכחי חי אם לא כבר ב-snapshots
+  const liveAlready = snapshots.some(s => s.round === round);
+  if (!liveAlready && rows.length > 0) {
+    snapshots.push({
+      round,
+      mode: raceMode === 1 ? 'laps' : 'arrival',
+      rows: rows.map((r, i) => ({ ...r, place: i + 1 }))
+    });
+  }
+
+  if (snapshots.length === 0) {
+    showToast('אין נתונים להצגה עדיין', 'info');
+    return;
+  }
+
+  _renderMultiLineChart(ctx, snapshots);
+};
+
+function _renderLineChart(ctx, points, participantId) {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const labels = points.map(p => `סבב ${p.round}`);
+  const values = points.map(p => p.place);
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: `מיקום משתתף ${participantId}`,
+        data: values,
+        borderColor: '#60a5fa',
+        backgroundColor: 'rgba(96,165,250,0.15)',
+        fill: true,
+        tension: 0.25,
+        pointRadius: 5,
+        pointBackgroundColor: '#60a5fa'
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          reverse: true,
+          beginAtZero: false,
+          ticks: { precision: 0, color: '#94a3b8' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'מיקום', color: '#94a3b8' }
+        },
+        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+      },
+      plugins: {
+        legend: { display: true, labels: { color: '#94a3b8' } },
+        tooltip: { callbacks: { label: c => `מיקום: #${c.raw}` } }
+      }
+    }
+  });
+}
+
+function _renderMultiLineChart(ctx, snapshots) {
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  if (!snapshots || snapshots.length === 0) return;
+
+  // Collect all unique EPCs across all snapshots
+  const epcMap = {}; // epc -> participantId
+  snapshots.forEach(s => {
+    (s.rows || []).forEach(r => { epcMap[r.epc] = r.participantId; });
+  });
+  const epcs = Object.keys(epcMap);
+  if (epcs.length === 0) return;
+
+  // Sort snapshots by round
+  const sorted = snapshots.slice().sort((a, b) => a.round - b.round);
+  const labels = sorted.map(s => `סבב ${s.round}`);
+
+  // Build one dataset per participant
+  const COLORS = [
+    '#60a5fa','#34d399','#f472b6','#fbbf24','#a78bfa',
+    '#fb923c','#38bdf8','#4ade80','#e879f9','#facc15'
+  ];
+  const datasets = epcs.map((epc, i) => {
+    const data = sorted.map(s => {
+      const row = (s.rows || []).find(r => r.epc === epc);
+      return row ? row.place : null;
+    });
+    const color = COLORS[i % COLORS.length];
+    return {
+      label: `משתתף ${epcMap[epc]}`,
+      data,
+      borderColor: color,
+      backgroundColor: color + '26',
+      fill: false,
+      tension: 0.25,
+      pointRadius: 5,
+      pointBackgroundColor: color,
+      spanGaps: true
+    };
+  });
+
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          reverse: true,
+          beginAtZero: false,
+          ticks: { precision: 0, color: '#94a3b8' },
+          grid: { color: 'rgba(255,255,255,0.06)' },
+          title: { display: true, text: 'מיקום', color: '#94a3b8' }
+        },
+        x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+      },
+      plugins: {
+        legend: { display: true, labels: { color: '#94a3b8', font: { size: 11 } } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: #${c.raw}` } }
+      }
+    }
+  });
+}
+
+// ── איפוס גיבוש (מנהל) ───────────────────────────────
+function adminResetEvent() {
+  if (currentRole !== 'admin') { showToast('רק מנהל יכול לבצע איפוס גיבוש', 'error'); return; }
+  const confirmed = confirm(
+    'איפוס גיבוש\n\n' +
+    'פעולה זו תמחק את כל הנתונים:\n' +
+    '• ציונים סופיים לתחנות\n' +
+    '• הערות כלליות ורשימת משתתפים\n' +
+    '• טבלאות דירוג וסבבים\n' +
+    '• היסטוריית מרוצים\n\n' +
+    'האם אתה בטוח שברצונך להתחיל אירוע מחדש?'
+  );
+  if (!confirmed) return;
+
+  // איפוס מלא — כמו simClear אבל ללא confirm נוסף
+  scanning = false;
+  if (tagTimer) { clearTimeout(tagTimer); tagTimer = null; }
+  if (autoSheetsTimer) { clearInterval(autoSheetsTimer); autoSheetsTimer = null; }
+  leaderboard = [];
+  roundSnapshotsByGroup = {};
+  roundByGroup = {};
+  round = 0;
+  raceHistory = [];
+  demoSheetsSyncedKeys.clear();
+  lastAutoSheetsHash = '';
+  selectedEpc = null;
+  if (chartInst) { chartInst.destroy(); chartInst = null; }
+  const btnStart = document.getElementById('btn-start');
+  const btnStop  = document.getElementById('btn-stop');
+  if (btnStart) btnStart.disabled = false;
+  if (btnStop)  btnStop.disabled  = false;
+  const adminCnt = document.getElementById('admin-races-count');
+  if (adminCnt) adminCnt.textContent = '0';
+  const histEl = document.getElementById('race-history-list');
+  if (histEl) histEl.innerHTML = '<div style="color:var(--text-muted); text-align:center; padding:30px">אין מרוצים עדיין — התחל מירוץ מתצוגת המגבש.</div>';
+  updateStatCards();
+  updateLeaderboard();
+  clearGeneralData();
+  localStorage.removeItem('demo_race_state');
+  broadcastRaceState();
+  showToast('הגיבוש אופס — מוכן לאירוע חדש', 'success');
+}
+
+// ── ESP32 — ניהול כתובות מהמסך מנהל ─────────────────
+function adminEsp32RenderList() {
+  const host = document.getElementById('esp32-stations-list');
+  if (!host || !window.ESP32) return;
+  const map = window.ESP32.loadAddrs();
+  const html = STATIONS.map(st => {
+    const idStr = window.ESP32.pad2(st.id);
+    const current = (map[idStr] || window.ESP32.defaultAddrFor(st.id));
+    return `
+      <div class="flex flex-center gap-8" style="flex-wrap:wrap; padding:8px; background:var(--bg-elev,#151923); border-radius:8px">
+        <div style="min-width:140px; font-weight:600">${st.icon || '📡'} ${st.name}</div>
+        <input class="form-input esp32-addr-input" data-station="${idStr}"
+               style="flex:1; min-width:200px" value="${current}"
+               placeholder="http://gibush-stXX.local">
+        <button class="btn btn-secondary" onclick="adminEsp32Test('${idStr}', this)" style="padding:6px 12px">בדוק</button>
+        <span class="esp32-test-result" data-station="${idStr}" style="font-size:12px; min-width:80px"></span>
+      </div>`;
+  }).join('');
+  host.innerHTML = html;
+  const tog = document.getElementById('esp32-enabled-toggle');
+  if (tog) tog.checked = window.ESP32.isEnabled();
+}
+function adminEsp32ToggleEnabled(on) {
+  if (!window.ESP32) return;
+  window.ESP32.setEnabled(!!on);
+  refreshEsp32UiLabels();
+  showToast(on ? 'מצב בקרי ESP32 הופעל' : 'מצב בקרי ESP32 כובה', on ? 'success' : 'info');
+}
+function adminEsp32SaveAddrs() {
+  if (!window.ESP32) return;
+  const inputs = document.querySelectorAll('.esp32-addr-input');
+  const map = {};
+  inputs.forEach(inp => {
+    const id = inp.dataset.station;
+    const val = (inp.value || '').trim();
+    if (val) map[id] = val;
+  });
+  window.ESP32.saveAddrs(map);
+  showToast('כתובות הבקרים נשמרו', 'success');
+  adminEsp32RenderList();
+}
+function adminEsp32ResetDefaults() {
+  if (!window.ESP32) return;
+  window.ESP32.saveAddrs({});
+  showToast('הוחזר למצב ברירת מחדל (gibush-stXX.local)', 'info');
+  adminEsp32RenderList();
+}
+async function adminEsp32Test(idStr, btn) {
+  const resEl = document.querySelector('.esp32-test-result[data-station="' + idStr + '"]');
+  const inp   = document.querySelector('.esp32-addr-input[data-station="' + idStr + '"]');
+  if (!window.ESP32) return;
+  // שמור זמני את הערך כדי שהקריאה תצא לכתובת הנוכחית בשדה
+  const prev = window.ESP32.loadAddrs();
+  const tmp = Object.assign({}, prev);
+  if (inp && inp.value.trim()) tmp[idStr] = inp.value.trim();
+  window.ESP32.saveAddrs(tmp);
+  if (resEl) { resEl.textContent = '⏳...'; resEl.style.color = 'var(--text-muted)'; }
+  if (btn) btn.disabled = true;
+  try {
+    const info = await window.ESP32.info(parseInt(idStr, 10));
+    if (resEl) {
+      resEl.textContent = '✓ ST' + info.station_id + ' · ' + (info.firmware || 'ok');
+      resEl.style.color = 'var(--success)';
+    }
+  } catch (e) {
+    if (resEl) {
+      resEl.textContent = '✕ ' + (e && e.message ? e.message : 'שגיאה');
+      resEl.style.color = 'var(--danger)';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ── חשיפה לגלובל ──────────────────────────────────────
+window.enterAs           = enterAs;
+window.resetToLogin      = resetToLogin;
+window.simStart          = simStart;
+window.simStop           = simStop;
+window.simSetMode        = simSetMode;
+window.simSetDuration    = simSetDuration;
+window.simSetPower       = simSetPower;
+window.simReboot         = simReboot;
+window.simClear          = simClear;
+window.simDownloadCsv    = simDownloadCsv;
+window.simSyncSheets     = simSyncSheets;
+window.showChartModal    = showChartModal;
+window.closeChartModal   = closeChartModal;
+window.applyCustomComment = function() {
+  const input = document.getElementById('custom-comment-input');
+  const text = (input ? input.value : '').trim();
+  if (!text) { showToast('הזן טקסט להערה', 'error'); return; }
+  if (!selectedEpc) { showToast('בחר משתתף קודם (לחץ + ליד השורה)', 'error'); return; }
+  applyTag(text);
+  if (input) input.value = '';
+};
+window.selectParticipant = selectParticipant;
+window.demoApprove       = demoApprove;
+window.demoReject        = demoReject;
+window.demoPromote       = demoPromote;
+window.adminResetEvent   = adminResetEvent;
+window.adminEsp32RenderList    = adminEsp32RenderList;
+window.adminEsp32ToggleEnabled = adminEsp32ToggleEnabled;
+window.adminEsp32SaveAddrs     = adminEsp32SaveAddrs;
+window.adminEsp32ResetDefaults = adminEsp32ResetDefaults;
+window.adminEsp32Test          = adminEsp32Test;
+
+// הערות כלליות
+window.toggleUserPicker         = toggleUserPicker;
+window.saveGeneralParticipants  = saveGeneralParticipants;
+window.selectGeneralParticipant = selectGeneralParticipant;
+window.applyGeneralCustomNote   = applyGeneralCustomNote;
+window.removeGeneralNote        = removeGeneralNote;
+
+// ציונים + תפריט מעריך
+window.applyScore         = applyScore;
+window.removeScore        = removeScore;
+window.switchEvTab        = switchEvTab;
+window.toggleEvMenu       = toggleEvMenu;
+window.closeEvMenu        = closeEvMenu;
+window.renderSummaryTable = renderSummaryTable;
+</script>
+</body>
+</html>
