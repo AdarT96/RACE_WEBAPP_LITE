@@ -20,28 +20,12 @@ const FIREBASE_CONFIG = {
 // =====================================================
 const APP_CONFIG = {
   // גרסת לקוח לתצוגה במסך התחברות (לעדכן בכל שינוי משמעותי)
-  appVersion: "v2026.03.31-01",
-
-  // Default ESP32 IP (can be changed in the UI)
-  defaultEsp32Ip: "192.168.4.1",
-
-  // ESP32 polling interval in milliseconds
-  pollIntervalMs: 500,
-
-  // How many ms between syncing to Firebase
-  firebaseSyncIntervalMs: 2000,
-
-  // Tag EPC parsing: which characters to use for Team/Participant extraction
-  // For a hex EPC like "E2003412013002150000001234"
-  // We extract the last 6 hex chars → "001234" → team="00", participant="1234"
-  epcExtractStart: -6,   // negative = from end
-  teamDigits:      2,
-  participantDigits: 4,
+  appVersion: "lite-v0.1",
 
   // Google Apps Script endpoint (deploy as web app, paste URL here)
+  // גרסת LITE משתמשת באותו Sheet וב-Apps Script — שדות שאינם רלוונטיים נשלחים ריקים.
   sheetsApiUrl: "https://script.google.com/macros/s/AKfycbwnpsMA1a2uulK3vV6QdHb0kI5SAtQTY7UH2MPM1SEGaSWkUMTxHgS1AbHZuPTXhykZtg/exec",
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
-  sheetsDeviceName: "ESP_01",
 
   // תיוגי הערות למעריך
   commentTags: ["טכניקה", "מצוינות", "מהירות", "עבודת צוות", "דיוק", "מנהיגות"]
