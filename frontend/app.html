@@ -212,7 +212,7 @@
         <div class="lbl">התקדמות</div>
       </div>
       <div class="status-cell">
-        <div class="val" id="hdr-time">00:00</div>
+        <div class="val" id="hdr-time">00:00.00</div>
         <div class="lbl">זמן מתחילת הסבב</div>
       </div>
     </div>
@@ -343,12 +343,15 @@
   }
 
   function formatMMSS(ms) {
-    if (ms == null || !isFinite(ms) || ms < 0) return '00:00';
-    const totalSec = Math.floor(ms / 1000);
-    const h = Math.floor(totalSec / 3600);
-    const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
-    const s = (totalSec % 60).toString().padStart(2, '0');
-    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    // MM:SS.cc (hundredths) — או H:MM:SS.cc אם עברה שעה
+    if (ms == null || !isFinite(ms) || ms < 0) return '00:00.00';
+    const totalMs  = Math.floor(ms);
+    const cc       = Math.floor((totalMs % 1000) / 10).toString().padStart(2, '0');
+    const totalSec = Math.floor(totalMs / 1000);
+    const h        = Math.floor(totalSec / 3600);
+    const m        = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
+    const s        = (totalSec % 60).toString().padStart(2, '0');
+    return h > 0 ? `${h}:${m}:${s}.${cc}` : `${m}:${s}.${cc}`;
   }
 
   function stationDisplayName(stationId, teamData) {
@@ -674,15 +677,16 @@
   function startSessionTimer() {
     stopSessionTimer();
     updateSessionTimerDisplay();
-    timerInterval = setInterval(updateSessionTimerDisplay, 1000);
+    // ~50ms כדי שיהיה חלק ומאיות מתעדכנות בעין
+    timerInterval = setInterval(updateSessionTimerDisplay, 50);
   }
   function stopSessionTimer() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
   function updateSessionTimerDisplay() {
-    if (!currentRace) { setText('hdr-time', '00:00'); return; }
+    if (!currentRace) { setText('hdr-time', '00:00.00'); return; }
     const startMs = tsToMs(currentRace.startedAt);
-    if (!startMs) { setText('hdr-time', '00:00'); return; }
+    if (!startMs) { setText('hdr-time', '00:00.00'); return; }
     const nowMs = currentRace.status === 'running'
       ? Date.now()
       : (tsToMs(currentRace.endedAt) || Date.now());
@@ -698,7 +702,7 @@
     setText('hdr-round', '#' + nextRound);
     setText('hdr-status', '— טרם התחיל');
     setText('hdr-progress', '0 / ' + participants.length);
-    setText('hdr-time', '00:00');
+    setText('hdr-time', '00:00.00');
 
     document.getElementById('race-panel').style.display = 'none';
     document.getElementById('idle-panel').style.display = '';
