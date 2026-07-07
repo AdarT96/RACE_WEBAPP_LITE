@@ -84,6 +84,29 @@
     </div>
   </div>
 
+  <!-- ניהול תיוגים מהירים -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>💬 תיוגים מהירים למעריכים</h2>
+      <span id="tags-save-status" style="font-size:12px; color:var(--text-muted)"></span>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+      התיוגים כאן זמינים למעריך גם ליד כל משתתף בתחנה וגם ב"הערות כלליות". המעריך תמיד יכול גם לכתוב טקסט חופשי.
+    </p>
+    <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap">
+      <input id="tag-input" class="form-input" style="flex:1; min-width:180px"
+             placeholder="הוסף תיוג חדש (למשל: תושייה)"
+             onkeydown="if(event.key==='Enter') addQuickTag()">
+      <button class="btn btn-primary" onclick="addQuickTag()">+ הוסף</button>
+    </div>
+    <div id="tags-list" style="display:flex; flex-wrap:wrap; gap:6px; min-height:32px">
+      <span style="color:var(--text-muted); font-size:13px">טוען…</span>
+    </div>
+    <div style="text-align:left; margin-top:12px">
+      <button class="btn btn-success" onclick="saveQuickTags()" style="padding:10px 20px">💾 שמור תיוגים</button>
+    </div>
+  </div>
+
   <!-- ניהול צוותים -->
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
@@ -193,6 +216,7 @@
     loadUsers();
     loadRaces();
     initTeamManagement();
+    loadQuickTags();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -352,6 +376,81 @@
     ).join('\n');
     alert(`מירוץ ${raceId}\nמצב: ${data.mode==='laps'?'הקפות':'הגעה'}\nתגיות:\n${info}`);
   };
+
+  // ═══════════════════════════════════════════════════════════
+  //  ניהול תיוגים מהירים (משותפים למעריכים)
+  // ═══════════════════════════════════════════════════════════
+  let currentQuickTags = [];
+
+  window.loadQuickTags = async () => {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'commentTags'));
+      if (snap.exists() && Array.isArray(snap.data().tags)) {
+        currentQuickTags = snap.data().tags.slice();
+      } else {
+        // בוטסטרפ מברירת המחדל שב-firebase-config
+        currentQuickTags = (APP_CONFIG.commentTags || []).slice();
+      }
+      renderQuickTagsList();
+      setTagsStatus('נטענו ' + currentQuickTags.length + ' תיוגים');
+    } catch (e) {
+      showToast('שגיאה בטעינת תיוגים: ' + e.message, 'error');
+    }
+  };
+
+  function renderQuickTagsList() {
+    const container = document.getElementById('tags-list');
+    if (!container) return;
+    if (currentQuickTags.length === 0) {
+      container.innerHTML = '<span style="color:var(--text-muted); font-size:13px">אין תיוגים עדיין.</span>';
+      return;
+    }
+    container.innerHTML = currentQuickTags.map((t, i) => `
+      <span class="participant-pill" style="direction:auto">
+        ${escHtml(t)}
+        <button title="הסר" onclick="removeQuickTag(${i})">✕</button>
+      </span>
+    `).join('');
+  }
+
+  window.addQuickTag = () => {
+    const input = document.getElementById('tag-input');
+    const t = (input.value || '').trim();
+    if (!t) { showToast('הזן תיוג', 'error'); return; }
+    if (currentQuickTags.includes(t)) { showToast('תיוג זה כבר קיים', 'error'); return; }
+    currentQuickTags.push(t);
+    input.value = '';
+    input.focus();
+    renderQuickTagsList();
+    setTagsStatus('שינויים לא שמורים');
+  };
+
+  window.removeQuickTag = (idx) => {
+    currentQuickTags.splice(idx, 1);
+    renderQuickTagsList();
+    setTagsStatus('שינויים לא שמורים');
+  };
+
+  window.saveQuickTags = async () => {
+    setTagsStatus('שומר…');
+    try {
+      await setDoc(doc(db, 'settings', 'commentTags'), {
+        tags:      currentQuickTags.slice(),
+        updatedAt: serverTimestamp(),
+        updatedBy: currentAdmin?.uid || ''
+      }, { merge: true });
+      showToast('תיוגים נשמרו ✓', 'success');
+      setTagsStatus('נשמרו ' + currentQuickTags.length + ' תיוגים');
+    } catch (e) {
+      showToast('שגיאה בשמירה: ' + e.message, 'error');
+      setTagsStatus('שמירה נכשלה');
+    }
+  };
+
+  function setTagsStatus(msg) {
+    const el = document.getElementById('tags-save-status');
+    if (el) el.textContent = msg || '';
+  }
 
   // ═══════════════════════════════════════════════════════════
   //  ניהול צוותים: משתתפים + שמות תחנות מותאמים לצוות
