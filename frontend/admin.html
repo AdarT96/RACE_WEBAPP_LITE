@@ -11,6 +11,30 @@
     .empty-state { text-align:center; padding: 40px 20px; color: var(--text-muted); }
     .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
     select.role-sel { padding: 5px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-size: 13px; cursor: pointer; }
+
+    .participant-pill {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 999px;
+      font-size: 14px; font-family: monospace; direction: ltr;
+    }
+    .participant-pill button {
+      background: none; border: none; color: var(--danger);
+      cursor: pointer; font-size: 15px; padding: 0 2px; line-height: 1;
+    }
+    .station-name-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap;
+    }
+    .station-name-row:last-child { border-bottom: none; }
+    .station-name-row .station-id {
+      min-width: 60px; font-weight: 700; color: var(--text-muted);
+      font-family: monospace; direction: ltr;
+    }
+    .station-name-row .form-input { flex: 1; min-width: 160px; }
+    .station-name-row .default-hint {
+      font-size: 11px; color: var(--text-dim); min-width: 120px;
+    }
   </style>
 </head>
 <body>
@@ -60,6 +84,50 @@
     </div>
   </div>
 
+  <!-- ניהול צוותים -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>🏁 ניהול צוותים</h2>
+      <select id="team-select" class="role-sel" onchange="onTeamSelected(this.value)">
+        <option value="">— בחר צוות —</option>
+      </select>
+    </div>
+
+    <div id="team-editor" style="display:none">
+      <!-- משתתפים -->
+      <div class="section mb-12">
+        <h3 class="mb-8">👥 משתתפים בצוות</h3>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+          רשימת המשתתפים מוצגת למעריך בכל התחנות של הצוות. סימון סיום מתאפס בכל סשן (סבב) חדש.
+        </p>
+        <div style="display:flex; gap:8px; margin-bottom:12px; flex-wrap:wrap">
+          <input id="participant-input" class="form-input" type="text" inputmode="numeric"
+                 style="flex:1; min-width:160px; direction:ltr"
+                 placeholder="מספר משתתף (למשל 1234)"
+                 onkeydown="if(event.key==='Enter') addParticipant()">
+          <button class="btn btn-primary" onclick="addParticipant()">+ הוסף</button>
+        </div>
+        <div id="participants-list" style="display:flex; flex-wrap:wrap; gap:6px; min-height:32px">
+          <span style="color:var(--text-muted); font-size:13px">אין משתתפים עדיין.</span>
+        </div>
+      </div>
+
+      <!-- שמות תחנות -->
+      <div class="section mb-12">
+        <h3 class="mb-8">📍 שמות תחנות עבור הצוות</h3>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+          השאר ריק כדי להשתמש בברירת המחדל (מוצגת מימין לשדה).
+        </p>
+        <div id="station-names-list"></div>
+      </div>
+
+      <div class="flex" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
+        <span id="team-save-status" style="font-size:12px; color:var(--text-muted)"></span>
+        <button class="btn btn-success" onclick="saveTeam()" style="padding:10px 20px">💾 שמור צוות</button>
+      </div>
+    </div>
+  </div>
+
   <!-- היסטוריית מרוצים -->
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
@@ -105,7 +173,7 @@
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     getFirestore, collection, getDocs, doc, getDoc,
-    updateDoc, deleteDoc
+    updateDoc, deleteDoc, setDoc, serverTimestamp
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -124,6 +192,7 @@
     currentAdmin = { ...snap.data(), uid: user.uid };
     loadUsers();
     loadRaces();
+    initTeamManagement();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -283,6 +352,158 @@
     ).join('\n');
     alert(`מירוץ ${raceId}\nמצב: ${data.mode==='laps'?'הקפות':'הגעה'}\nתגיות:\n${info}`);
   };
+
+  // ═══════════════════════════════════════════════════════════
+  //  ניהול צוותים: משתתפים + שמות תחנות מותאמים לצוות
+  // ═══════════════════════════════════════════════════════════
+  let currentTeamNumber = null;
+  let currentTeamData   = { participants: [], stationNames: {} };
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function initTeamManagement() {
+    const sel = document.getElementById('team-select');
+    if (!sel) return;
+    const max = APP_CONFIG.maxTeamNumber || 15;
+    // ה-<option> הראשון ("בחר צוות") כבר קיים
+    for (let i = 1; i <= max; i++) {
+      const o = document.createElement('option');
+      o.value = pad2(i);
+      o.textContent = 'צוות ' + i;
+      sel.appendChild(o);
+    }
+  }
+
+  window.onTeamSelected = async (teamNum) => {
+    const editor = document.getElementById('team-editor');
+    if (!teamNum) {
+      currentTeamNumber = null;
+      editor.style.display = 'none';
+      return;
+    }
+    currentTeamNumber = teamNum;
+    setSaveStatus('טוען…');
+    try {
+      const snap = await getDoc(doc(db, 'teams', teamNum));
+      const data = snap.exists() ? snap.data() : {};
+      currentTeamData = {
+        participants: Array.isArray(data.participants) ? data.participants.slice() : [],
+        stationNames: (data.stationNames && typeof data.stationNames === 'object') ? { ...data.stationNames } : {}
+      };
+      renderParticipants();
+      renderStationNames();
+      editor.style.display = '';
+      setSaveStatus(snap.exists()
+        ? 'נטען בהצלחה'
+        : 'צוות חדש — יישמר בלחיצה על שמור');
+    } catch (e) {
+      showToast('שגיאה בטעינת צוות: ' + e.message, 'error');
+      setSaveStatus('');
+    }
+  };
+
+  function renderParticipants() {
+    const container = document.getElementById('participants-list');
+    if (!container) return;
+    const list = currentTeamData.participants;
+    if (list.length === 0) {
+      container.innerHTML = '<span style="color:var(--text-muted); font-size:13px">אין משתתפים עדיין.</span>';
+      return;
+    }
+    // מיון עולה לתצוגה עקבית
+    const sorted = list.slice().sort((a, b) => Number(a) - Number(b));
+    container.innerHTML = sorted.map(id => `
+      <span class="participant-pill">
+        ${escHtml(String(id))}
+        <button title="הסר" onclick="removeParticipant('${escHtml(String(id))}')">✕</button>
+      </span>
+    `).join('');
+  }
+
+  function renderStationNames() {
+    const container = document.getElementById('station-names-list');
+    if (!container) return;
+    const count    = APP_CONFIG.stationCount || 8;
+    const defaults = APP_CONFIG.defaultStationNames || {};
+    const overrides = currentTeamData.stationNames;
+    let html = '';
+    for (let i = 1; i <= count; i++) {
+      const id = pad2(i);
+      const defaultName = defaults[id] || ('תחנה ' + id);
+      const currentName = (overrides[id] !== undefined) ? overrides[id] : '';
+      html += `
+        <div class="station-name-row">
+          <span class="station-id">${id}</span>
+          <input class="form-input" data-station="${id}"
+                 placeholder="${escHtml(defaultName)}"
+                 value="${escHtml(currentName)}">
+          <span class="default-hint">ברירת מחדל: ${escHtml(defaultName)}</span>
+        </div>`;
+    }
+    container.innerHTML = html;
+  }
+
+  window.addParticipant = () => {
+    const input = document.getElementById('participant-input');
+    const raw = (input.value || '').trim();
+    if (!raw) { showToast('הזן מספר משתתף', 'error'); return; }
+    if (!/^\d+$/.test(raw)) { showToast('רק ספרות', 'error'); return; }
+    const id = raw; // שומרים כמחרוזת של ספרות — משמר padding אם המשתמש הזין "0123"
+    if (currentTeamData.participants.map(String).includes(id)) {
+      showToast('משתתף זה כבר קיים', 'error');
+      return;
+    }
+    currentTeamData.participants.push(id);
+    input.value = '';
+    input.focus();
+    renderParticipants();
+    setSaveStatus('שינויים לא שמורים');
+  };
+
+  window.removeParticipant = (id) => {
+    currentTeamData.participants = currentTeamData.participants.filter(p => String(p) !== String(id));
+    renderParticipants();
+    setSaveStatus('שינויים לא שמורים');
+  };
+
+  function collectStationNamesFromUI() {
+    const rows = document.querySelectorAll('#station-names-list input[data-station]');
+    const out = {};
+    rows.forEach(inp => {
+      const id  = inp.dataset.station;
+      const val = (inp.value || '').trim();
+      if (val) out[id] = val; // רק דריסות בפועל — ריק = משתמש בברירת מחדל
+    });
+    return out;
+  }
+
+  window.saveTeam = async () => {
+    if (!currentTeamNumber) { showToast('לא נבחר צוות', 'error'); return; }
+    const payload = {
+      teamNumber:   currentTeamNumber,
+      participants: currentTeamData.participants.map(String),
+      stationNames: collectStationNamesFromUI(),
+      updatedAt:    serverTimestamp(),
+      updatedBy:    currentAdmin?.uid || ''
+    };
+    setSaveStatus('שומר…');
+    try {
+      await setDoc(doc(db, 'teams', currentTeamNumber), payload, { merge: true });
+      // עדכן state מקומי מהמה שנשמר, כדי שלא תהיה קופצנות ב-UI
+      currentTeamData.stationNames = payload.stationNames;
+      renderStationNames();
+      showToast('צוות ' + currentTeamNumber + ' נשמר ✓', 'success');
+      setSaveStatus('נשמר');
+    } catch (e) {
+      showToast('שגיאה בשמירה: ' + e.message, 'error');
+      setSaveStatus('שמירה נכשלה');
+    }
+  };
+
+  function setSaveStatus(msg) {
+    const el = document.getElementById('team-save-status');
+    if (el) el.textContent = msg || '';
+  }
 
   function escHtml(s) {
     return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
