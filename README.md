@@ -79,10 +79,15 @@ service cloud.firestore {
       allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
+    // ההערות שמורות תחת doc-id בפורמט "{team}_{participantId}", למשל "01_1234".
+    // מנהל — קריאה+כתיבה בכל מקום. מגבש/מעריך — רק בתוך הצוות שהוא משוייך אליו
+    // ("01_..." יאושר רק למי שאצלו users/{uid}.team == 1).
     match /general_notes/{noteId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin','operator','evaluator'];
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['operator','evaluator'] &&
+        int(noteId.split('_')[0]) == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team;
     }
   }
 }
@@ -154,6 +159,8 @@ _(הפאנל LITE יורחב בשלב הבא של הפיתוח.)_
 - **v0.5-lite** (הנוכחי) — הערות + גרף השוואה:
   - **תיוגים ניתנים לעריכה** — הועברו מ-`APP_CONFIG.commentTags` ל-Firestore `settings/commentTags` (מסמך יחיד עם `tags: [...]`). המנהל עורך בפאנל תחת "💬 תיוגים מהירים למעריכים"; שני הצדדים (מודל הערות תחנה + הערות כלליות) מתעדכנים ב-real-time דרך `onSnapshot`.
   - **הערות כלליות למשתתף** — `general_notes/{team}_{participantId}` = `{ team, participantId, notes: [{ text, authorName, authorUid, at }] }`. סקציה בlite-app.html: בחירת צוות (dropdown למנהל, קבוע לאחרים) + משתתף → הוספה בלחיצה על תיוג מהיר או כתיבה חופשית + מחיקה + סנכרון ל-`SUMMARY_TAB` דרך `handleGeneralNote_` ב-Code.gs.
+    - **תצוגה מוגבלת:** מגבש/מעריך רואה רק הערות שהוא עצמו כתב (`authorUid == currentUser.uid`); מנהל רואה הכל. הפילטר client-side.
+    - **כתיבה מוגבלת:** חוקי Firestore מונעים ממגבש/מעריך לכתוב תחת doc-id של צוות שאינו שלהם — בלי קשר למה שקרה ב-UI.
   - **גרף השוואה** — כפתור "📈 גרף השוואה" ב-race panel פותח modal עם multi-select של משתתפים ו-line chart של המקום שהגיעו לכל סבב באותה תחנה (`spanGaps:false` — סבב שלא סיימו בו = פער בקו). ציר Y הפוך כדי שמקום 1 יופיע למעלה.
 
 **הערה על מפתח Sheets:** אם `API_SECRET_KEY` ב-Code.gs עדיין בערך ברירת המחדל `YOUR_SECRET_KEY_HERE`, השרת מקבל בקשות ללא בדיקת מפתח. אחרת יש להעתיק אותו ערך בדיוק ל-`APP_CONFIG.sheetsApiKey` ב-`firebase-config.js`.

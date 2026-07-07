@@ -1187,6 +1187,16 @@
     });
   }
 
+  function isAdmin() { return currentUser?.role === 'admin'; }
+
+  // מחזיר רק את ההערות שהמשתמש רשאי לראות (מנהל = הכל, אחר = רק שלו).
+  // הפילטר מסתמך על `authorUid` שנשמר בכל הערה.
+  function visibleNotesFor(notes) {
+    const all = Array.isArray(notes) ? notes : [];
+    if (isAdmin()) return all;
+    return all.filter(n => n && n.authorUid === currentUser?.uid);
+  }
+
   function renderGeneralNotesList(notes) {
     const wrap = document.getElementById('gn-list-wrap');
     const nopart = document.getElementById('gn-no-participant');
@@ -1200,23 +1210,37 @@
 
     const list  = document.getElementById('gn-list');
     const empty = document.getElementById('gn-empty');
-    if (!notes || notes.length === 0) {
+    const visible = visibleNotesFor(notes);
+
+    if (!visible.length) {
       list.innerHTML = '';
       empty.style.display = '';
+      empty.textContent = isAdmin()
+        ? 'אין הערות למשתתף זה עדיין.'
+        : 'עוד לא כתבת הערות למשתתף זה.';
       return;
     }
     empty.style.display = 'none';
-    // Newest first
-    const sorted = notes.slice().sort((a, b) => (b.at || 0) - (a.at || 0));
-    list.innerHTML = sorted.map((n, i) => {
+
+    // אינדקסים אמיתיים ברשימה המקורית — הכרחי כדי שדולקציה תמחק את ההערה הנכונה
+    const notesRef = Array.isArray(notes) ? notes : [];
+    const withIdx = visible.map(n => ({ n, idx: notesRef.indexOf(n) }));
+    // חדשות ראשונות
+    withIdx.sort((a, b) => (b.n.at || 0) - (a.n.at || 0));
+
+    list.innerHTML = withIdx.map(({ n, idx }) => {
       const when = n.at ? new Date(n.at).toLocaleString('he-IL') : '';
-      const idx = notes.indexOf(n);
+      const isMine = n.authorUid === currentUser?.uid;
+      const canDelete = isAdmin() || isMine;
+      const delBtn = canDelete
+        ? `<button class="del" title="מחק" onclick="deleteGeneralNote(${idx})">✕</button>`
+        : '';
       return `<div class="gn-note-row">
         <div class="txt">
           <div>${escHtml(n.text || '')}</div>
           <div class="meta">${escHtml(n.authorName || '')} · ${escHtml(when)}</div>
         </div>
-        <button class="del" title="מחק" onclick="deleteGeneralNote(${idx})">✕</button>
+        ${delBtn}
       </div>`;
     }).join('');
   }
@@ -1271,6 +1295,13 @@
 
   window.deleteGeneralNote = async (indexInArr) => {
     if (!gnState.team || !gnState.participantId) return;
+    // הגנה — לא נמחק הערה של מישהו אחר אם אינך מנהל
+    const target = gnState.notes[indexInArr];
+    if (!target) return;
+    if (!isAdmin() && target.authorUid !== currentUser?.uid) {
+      showToast('אפשר למחוק רק הערות שכתבת בעצמך', 'error');
+      return;
+    }
     if (!confirm('למחוק את ההערה?')) return;
     try {
       const filtered = gnState.notes.filter((_, i) => i !== indexInArr);
@@ -1288,9 +1319,11 @@
       showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
     }
     if (!gnState.team || !gnState.participantId) { showToast('בחר משתתף', 'error'); return; }
-    if (!gnState.notes.length) { showToast('אין הערות לסנכרון', 'error'); return; }
+    // מסנכרנים רק את מה שהמשתמש רואה: מנהל = הכל, אחר = הערות שהוא כתב.
+    const toSync = visibleNotesFor(gnState.notes);
+    if (!toSync.length) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
 
-    const requests = gnState.notes.map(n => {
+    const requests = toSync.map(n => {
       const body = {
         type:           'general_note',
         participant_id: gnState.participantId,
