@@ -20,12 +20,29 @@ const FIREBASE_CONFIG = {
 // =====================================================
 const APP_CONFIG = {
   // גרסת לקוח לתצוגה במסך התחברות (לעדכן בכל שינוי משמעותי)
-  appVersion: "lite-v0.1",
+  appVersion: "lite-v0.2",
 
   // Google Apps Script endpoint (deploy as web app, paste URL here)
   // גרסת LITE משתמשת באותו Sheet וב-Apps Script — שדות שאינם רלוונטיים נשלחים ריקים.
   sheetsApiUrl: "https://script.google.com/macros/s/AKfycbwnpsMA1a2uulK3vV6QdHb0kI5SAtQTY7UH2MPM1SEGaSWkUMTxHgS1AbHZuPTXhykZtg/exec",
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
+
+  // מספר הצוותים במערכת (המשתמש בוחר צוות ברישום)
+  maxTeamNumber: 15,
+
+  // תחנות המערכת — חייב להתאים ל-STATION_COUNT ו-STATION_NAMES ב-scripts/Code.gs.
+  // הערכים כאן הם ברירת מחדל בלבד — המנהל יכול לדרוס אותם לכל צוות בפאנל המנהל.
+  stationCount: 8,
+  defaultStationNames: {
+    "01": "מילוי שק",
+    "02": "ספרינטים",
+    "03": "דמקה",
+    "04": "אלונקה סוציומטרי",
+    "05": "עצבים מברזל",
+    "06": "זחילות",
+    "07": "תחנה 07",
+    "08": "תחנה 08"
+  },
 
   // תיוגי הערות למעריך
   commentTags: ["טכניקה", "מצוינות", "מהירות", "עבודת צוות", "דיוק", "מנהיגות"]

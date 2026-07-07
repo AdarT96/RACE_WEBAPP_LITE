@@ -69,6 +69,11 @@ service cloud.firestore {
       allow write: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin','operator','evaluator'];
     }
+    match /teams/{teamNumber} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
   }
 }
 ```
@@ -118,7 +123,16 @@ _(הפאנל LITE יורחב בשלב הבא של הפיתוח.)_
 
 ---
 
+## מבנה נתונים ב-Firestore
+
+- **`users/{uid}`** — משתמשים, כמו בגרסה המלאה (`role`, `team`, `approved`).
+- **`teams/{teamNumber}`** — מנוהל על ידי המנהל בפאנל. כולל:
+  - `participants` — מערך של מספרי משתתפים (מחרוזות, למשל `["1234","5678"]`)
+  - `stationNames` — מילון של דריסות שמות תחנה לצוות (`{"01":"מילוי שק","03":"שם מותאם"}`). אם מזהה תחנה לא נמצא, משתמשים ב-`APP_CONFIG.defaultStationNames` שמתאים ל-`Code.gs`.
+- **`races/{raceId}`** — נותר מהגרסה המלאה. יוחלף / יורחב בשלב הבא לתמיכה בסשן ידני של המעריך.
+
 ## היסטוריה
 
 - **v0.1-lite** — clone נקי מ-`v1-full-esp32` + הסרת ESP32/RFID.
-- שלב 2 (הבא): מודל דאטה חדש (משתתפים לצוות, שמות תחנה), UI של המעריך.
+- **v0.2-lite** (הנוכחי) — פאנל מנהל: משתתפים לכל צוות + עריכת שמות תחנות פר-צוות (`teams/{teamNumber}`).
+- שלב הבא: UI של המעריך — חלון גדול לסימון סיום משתתפים, ניהול סשנים.
