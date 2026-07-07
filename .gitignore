@@ -1,0 +1,10 @@
+# Real Firebase credentials — copy firebase-config.example.js and fill in.
+frontend/js/firebase-config.js
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor local settings
+.vscode/
+.idea/

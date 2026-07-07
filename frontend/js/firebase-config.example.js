@@ -1,8 +1,11 @@
 // =====================================================
-//  Firebase Configuration
-//  Replace with your actual Firebase project values.
-//  Go to: https://console.firebase.google.com
-//  → Project Settings → Your apps → SDK setup
+//  Firebase Configuration — TEMPLATE
+//
+//  1. Copy this file to `firebase-config.js` (same directory).
+//  2. Fill in the values from Firebase Console:
+//     https://console.firebase.google.com → Project Settings
+//     → Your apps → Web app → SDK setup and configuration
+//  3. `firebase-config.js` is gitignored — never commit real credentials.
 // =====================================================
 
 const FIREBASE_CONFIG = {
@@ -11,8 +14,7 @@ const FIREBASE_CONFIG = {
   projectId:         "YOUR_PROJECT_ID",
   storageBucket:     "YOUR_PROJECT_ID.appspot.com",
   messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-  appId:             "YOUR_APP_ID",
-  databaseURL:       "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com"
+  appId:             "YOUR_APP_ID"
 };
 
 // =====================================================
@@ -20,7 +22,7 @@ const FIREBASE_CONFIG = {
 // =====================================================
 const APP_CONFIG = {
   // גרסת לקוח לתצוגה במסך התחברות (לעדכן בכל שינוי משמעותי)
-  appVersion: "lite-v0.2",
+  appVersion: "lite-v0.3",
 
   // Google Apps Script endpoint (deploy as web app, paste URL here)
   // גרסת LITE משתמשת באותו Sheet וב-Apps Script — שדות שאינם רלוונטיים נשלחים ריקים.
