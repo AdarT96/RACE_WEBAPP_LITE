@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>מערכת תזמון גיבוש</title>
   <link rel="stylesheet" href="css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     /* ── Station header ────────────────────────────────── */
     .station-header {
@@ -138,6 +139,43 @@
     .placeholder-view h2 { margin-bottom: 10px; }
     .placeholder-view p { color: var(--text-muted); font-size: 15px; }
 
+    /* ── General notes ─────────────────────────────────── */
+    .gn-picker { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+    .gn-picker select, .gn-picker .fixed {
+      padding: 8px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 15px; min-width: 120px;
+    }
+    .gn-picker .fixed { font-weight: 700; color: var(--accent); }
+    .gn-note-row {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 10px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 10px;
+      margin-bottom: 8px;
+    }
+    .gn-note-row .txt { flex: 1; white-space: pre-wrap; line-height: 1.4; }
+    .gn-note-row .meta {
+      font-size: 11px; color: var(--text-dim); margin-top: 4px; direction: ltr;
+    }
+    .gn-note-row button.del {
+      background: none; border: none; color: var(--danger);
+      cursor: pointer; font-size: 16px; padding: 2px 6px;
+    }
+
+    /* ── Comparison chart modal ────────────────────────── */
+    .chart-picker { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0; max-height: 130px; overflow-y: auto; }
+    .chart-picker label {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 999px;
+      cursor: pointer; font-family: monospace; direction: ltr; font-size: 14px;
+    }
+    .chart-picker label.checked { background: rgba(99,102,241,0.20); border-color: var(--accent); }
+    .chart-picker input { accent-color: var(--accent); }
+    #chart-modal .modal-box { max-width: 900px; }
+    #chart-canvas-wrap { position: relative; height: 320px; margin-top: 10px; }
+    .chart-empty { text-align: center; color: var(--text-muted); padding: 40px; }
+
     /* ── Comments popover ──────────────────────────────── */
     .modal-body-mid { padding: 16px 20px; }
     .modal-body-mid .tag-pill {
@@ -268,6 +306,10 @@
       <button id="new-round-btn" class="btn btn-success btn-xl" onclick="startSession()" style="display:none">
         ▶ סבב חדש
       </button>
+      <button class="btn btn-info" onclick="openCompareChart()" style="padding:12px 20px"
+              title="השווה את המקום שהמשתתפים הגיעו בכל סבב בתחנה הזאת">
+        📈 גרף השוואה
+      </button>
       <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px"
               title="שולח את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets">
         📊 סנכרן תחנה ל-Sheets
@@ -275,7 +317,64 @@
     </div>
   </div>
 
+  <!-- ══════════ General notes (station-independent) ══════════ -->
+  <div class="section" id="general-notes-section" style="margin-top:24px">
+    <h2>🗒 הערות כלליות למשתתף</h2>
+    <p style="font-size:12px; color:var(--text-muted); margin:6px 0 14px">
+      הערות שלא קשורות לתחנה מסוימת. נשמרות ליד המשתתף וזמינות לכל המעריכים/מגבשים.
+    </p>
+
+    <div class="gn-picker mb-12">
+      <span>צוות:</span>
+      <span id="gn-team-fixed" class="fixed" style="display:none"></span>
+      <select id="gn-team-select" onchange="onGnTeamChange(this.value)" style="display:none"></select>
+      <span>משתתף:</span>
+      <select id="gn-participant-select" onchange="onGnParticipantChange(this.value)"></select>
+    </div>
+
+    <div id="gn-list-wrap" style="display:none">
+      <div id="gn-list" style="margin-bottom:12px"></div>
+      <div id="gn-empty" class="empty-state" style="display:none; padding:16px; text-align:center; color:var(--text-muted)">
+        אין הערות למשתתף זה עדיין.
+      </div>
+
+      <div id="gn-tag-pills" class="tag-pills mb-8" style="display:flex; flex-wrap:wrap; gap:6px"></div>
+      <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap">
+        <textarea id="gn-input" class="form-input" rows="2"
+                  style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
+                  placeholder="כתוב הערה חופשית…"></textarea>
+        <button class="btn btn-primary" onclick="addGeneralNote()" style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
+      </div>
+      <div style="text-align:left; margin-top:10px">
+        <button class="btn btn-info" onclick="syncGeneralNotes()"
+                title="שולח את כל ההערות של המשתתף לטאב 'סיכום' ב-Google Sheets"
+                style="padding:8px 16px; font-size:13px">
+          📤 סנכרן הערות המשתתף ל-Sheets
+        </button>
+      </div>
+    </div>
+    <div id="gn-no-participant" class="empty-state" style="padding:20px; text-align:center; color:var(--text-muted)">
+      בחר משתתף מהרשימה למעלה.
+    </div>
+  </div>
+
 </div><!-- /container -->
+
+<!-- ══════════ Chart modal ══════════ -->
+<div class="modal-overlay" id="chart-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>📈 השוואת מקומות לפי סבב <span id="chart-context" style="font-size:13px; color:var(--text-muted)"></span></h3>
+      <button class="modal-close" onclick="closeCompareChart()">✕</button>
+    </div>
+    <div style="padding:0 20px 20px">
+      <p style="font-size:12px; color:var(--text-muted); margin:8px 0">בחר משתתפים כדי להשוות את המקום שהגיעו בכל סבב של התחנה. סבב שלא סיימו בו — קו קטוע.</p>
+      <div id="chart-picker" class="chart-picker"></div>
+      <div id="chart-canvas-wrap"><canvas id="chart-canvas"></canvas></div>
+      <div id="chart-empty" class="chart-empty" style="display:none">אין נתונים להצגה — בחר משתתפים או הרץ סבבים.</div>
+    </div>
+  </div>
+</div>
 
 <!-- ══════════ Comments modal ══════════ -->
 <div class="modal-overlay" id="comment-modal">
@@ -327,6 +426,8 @@
   let raceUnsubscribe = null;
   let commentModalPid = null;
   let timerInterval = null;
+  let quickTags = [];              // תיוגים משותפים מ-settings/commentTags
+  let quickTagsUnsub = null;
 
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
@@ -398,12 +499,16 @@
     setText('user-role-badge', (roleLabels[currentUser.role] || currentUser.role) + teamLabel);
     setConnectedFirebase(true);
 
-    // המגבש רואה בינתיים רק placeholder — הזרימה של סבב שייכת למעריך.
+    // תיוגים משותפים + real-time refresh
+    subscribeToQuickTags();
+
+    // המגבש רואה placeholder לגבי זרימת התחנה — אבל שאר החלקים (הערות כלליות) פועלים
     if (currentUser.role === 'operator') {
       document.getElementById('station-header-section').style.display = 'none';
       document.getElementById('idle-panel').style.display = 'none';
       document.getElementById('race-panel').style.display = 'none';
       document.getElementById('operator-placeholder').style.display = '';
+      initGeneralNotes(); // המגבש עדיין יכול לכתוב הערות כלליות
       return;
     }
 
@@ -467,6 +572,9 @@
     } else {
       renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
     }
+
+    // הערות כלליות זמינות תמיד לצד התחנה
+    initGeneralNotes();
   }
 
   function setConnectedFirebase(ok) {
@@ -491,6 +599,30 @@
     document.getElementById('start-btn').style.display = 'none';
     document.getElementById('race-panel').style.display = 'none';
     setText('idle-hint', hint || '');
+  }
+
+  // ═════════ Quick tags (shared, editable by admin) ═════════
+  function getQuickTags() {
+    if (quickTags.length > 0) return quickTags;
+    return APP_CONFIG.commentTags || [];
+  }
+
+  function subscribeToQuickTags() {
+    if (quickTagsUnsub) quickTagsUnsub();
+    quickTagsUnsub = onSnapshot(doc(db, 'settings', 'commentTags'), (snap) => {
+      if (snap.exists() && Array.isArray(snap.data().tags)) {
+        quickTags = snap.data().tags.slice();
+      } else {
+        quickTags = (APP_CONFIG.commentTags || []).slice();
+      }
+      // רענון UI פתוח (מודל הערות תחנה + סקציית הערות כלליות)
+      const cmModal = document.getElementById('comment-modal');
+      if (cmModal && cmModal.classList.contains('open')) renderCommentPillsAndList();
+      if (typeof renderGeneralNotesTags === 'function') renderGeneralNotesTags();
+    }, (err) => {
+      // שקט — נשארים עם ברירת מחדל / cache אם המנוי נכשל
+      quickTags = (APP_CONFIG.commentTags || []).slice();
+    });
   }
 
   // ═════════ Teams data ═════════
@@ -808,7 +940,7 @@
     const pillBar = document.getElementById('cm-tag-pills');
     const list    = document.getElementById('cm-list');
     const existing = getCommentsForPid(commentModalPid);
-    const tags = APP_CONFIG.commentTags || [];
+    const tags = getQuickTags();
     pillBar.innerHTML = tags.map(tag =>
       `<span class="tag-pill ${existing.includes(tag) ? 'active' : ''}"
              onclick="applyCommentTag('${escHtml(tag)}')">${escHtml(tag)}</span>`
@@ -951,6 +1083,372 @@
       if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
     }
   };
+
+  // ═════════ General notes ═════════
+  const gnState = { team: null, participantId: null, notes: [], unsub: null };
+
+  async function initGeneralNotes() {
+    // Team picker: admin sees dropdown, others locked to their team
+    const teamFixed = document.getElementById('gn-team-fixed');
+    const teamSel   = document.getElementById('gn-team-select');
+    if (currentUser.role === 'admin') {
+      teamSel.style.display = '';
+      teamSel.innerHTML = '';
+      const empty = document.createElement('option');
+      empty.value = ''; empty.textContent = '— בחר צוות —';
+      teamSel.appendChild(empty);
+      const max = APP_CONFIG.maxTeamNumber || 15;
+      for (let i = 1; i <= max; i++) {
+        const id = pad2(i);
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = 'צוות ' + i;
+        teamSel.appendChild(opt);
+      }
+      const saved = localStorage.getItem('lite:gnTeam');
+      if (saved) { teamSel.value = saved; gnState.team = saved; }
+    } else if (currentUser.team) {
+      teamFixed.style.display = '';
+      teamFixed.textContent = 'צוות ' + Number(currentUser.team);
+      gnState.team = pad2(currentUser.team);
+    }
+    await refreshGnParticipantsSelector();
+    renderGeneralNotesTags();
+  }
+
+  async function refreshGnParticipantsSelector() {
+    const partSel = document.getElementById('gn-participant-select');
+    partSel.innerHTML = '';
+    const empty = document.createElement('option');
+    empty.value = ''; empty.textContent = '— בחר משתתף —';
+    partSel.appendChild(empty);
+
+    if (!gnState.team) {
+      renderGeneralNotesList(null);
+      return;
+    }
+    // Load team's participants (from cache if possible)
+    let teamData = teamsCache[gnState.team];
+    if (!teamData) teamData = await loadTeamData(gnState.team);
+    const participants = (teamData && Array.isArray(teamData.participants))
+      ? teamData.participants.slice().sort((a,b) => Number(a) - Number(b)) : [];
+    for (const pid of participants) {
+      const opt = document.createElement('option');
+      opt.value = String(pid); opt.textContent = String(pid);
+      partSel.appendChild(opt);
+    }
+
+    // Restore last selection if valid
+    const savedPid = localStorage.getItem('lite:gnPid');
+    if (savedPid && participants.map(String).includes(savedPid)) {
+      partSel.value = savedPid;
+      gnState.participantId = savedPid;
+      subscribeToGnNotes();
+    } else {
+      gnState.participantId = null;
+      renderGeneralNotesList(null);
+    }
+  }
+
+  window.onGnTeamChange = async (v) => {
+    gnState.team = v || null;
+    localStorage.setItem('lite:gnTeam', v || '');
+    // Reset participant selection
+    gnState.participantId = null;
+    localStorage.removeItem('lite:gnPid');
+    detachGnSubscription();
+    await refreshGnParticipantsSelector();
+  };
+
+  window.onGnParticipantChange = (v) => {
+    gnState.participantId = v || null;
+    localStorage.setItem('lite:gnPid', v || '');
+    if (!v) { detachGnSubscription(); renderGeneralNotesList(null); return; }
+    subscribeToGnNotes();
+  };
+
+  function gnDocId() {
+    return `${gnState.team}_${gnState.participantId}`;
+  }
+
+  function detachGnSubscription() {
+    if (gnState.unsub) { gnState.unsub(); gnState.unsub = null; }
+    gnState.notes = [];
+  }
+
+  function subscribeToGnNotes() {
+    detachGnSubscription();
+    if (!gnState.team || !gnState.participantId) return;
+    gnState.unsub = onSnapshot(doc(db, 'general_notes', gnDocId()), (snap) => {
+      const data = snap.exists() ? snap.data() : null;
+      gnState.notes = (data && Array.isArray(data.notes)) ? data.notes : [];
+      renderGeneralNotesList(gnState.notes);
+    }, (err) => {
+      showToast('שגיאה בטעינת הערות: ' + err.message, 'error');
+    });
+  }
+
+  function renderGeneralNotesList(notes) {
+    const wrap = document.getElementById('gn-list-wrap');
+    const nopart = document.getElementById('gn-no-participant');
+    if (!gnState.participantId) {
+      wrap.style.display = 'none';
+      nopart.style.display = '';
+      return;
+    }
+    wrap.style.display = '';
+    nopart.style.display = 'none';
+
+    const list  = document.getElementById('gn-list');
+    const empty = document.getElementById('gn-empty');
+    if (!notes || notes.length === 0) {
+      list.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+    // Newest first
+    const sorted = notes.slice().sort((a, b) => (b.at || 0) - (a.at || 0));
+    list.innerHTML = sorted.map((n, i) => {
+      const when = n.at ? new Date(n.at).toLocaleString('he-IL') : '';
+      const idx = notes.indexOf(n);
+      return `<div class="gn-note-row">
+        <div class="txt">
+          <div>${escHtml(n.text || '')}</div>
+          <div class="meta">${escHtml(n.authorName || '')} · ${escHtml(when)}</div>
+        </div>
+        <button class="del" title="מחק" onclick="deleteGeneralNote(${idx})">✕</button>
+      </div>`;
+    }).join('');
+  }
+
+  window.renderGeneralNotesTags = () => {
+    const container = document.getElementById('gn-tag-pills');
+    if (!container) return;
+    const tags = getQuickTags();
+    if (tags.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = tags.map(t =>
+      `<span class="tag-pill" onclick="addGeneralNoteFromTag('${escHtml(t)}')">${escHtml(t)}</span>`
+    ).join('');
+  };
+
+  window.addGeneralNoteFromTag = async (tag) => {
+    await appendGeneralNote(tag);
+  };
+
+  window.addGeneralNote = async () => {
+    const input = document.getElementById('gn-input');
+    const text  = (input.value || '').trim();
+    if (!text) { showToast('כתוב הערה או בחר תיוג', 'error'); return; }
+    await appendGeneralNote(text);
+    input.value = '';
+  };
+
+  async function appendGeneralNote(text) {
+    if (!gnState.team || !gnState.participantId) {
+      showToast('בחר צוות ומשתתף', 'error'); return;
+    }
+    const newNote = {
+      text,
+      authorName: currentUser?.name || '',
+      authorUid:  currentUser?.uid || '',
+      at:         Date.now()
+    };
+    try {
+      const ref = doc(db, 'general_notes', gnDocId());
+      const snap = await getDoc(ref);
+      const existing = snap.exists() && Array.isArray(snap.data().notes) ? snap.data().notes : [];
+      await setDoc(ref, {
+        team:         gnState.team,
+        participantId: gnState.participantId,
+        notes:        [...existing, newNote],
+        updatedAt:    serverTimestamp()
+      }, { merge: true });
+      showToast('הערה נוספה', 'success');
+    } catch (e) {
+      showToast('שגיאה בשמירה: ' + e.message, 'error');
+    }
+  }
+
+  window.deleteGeneralNote = async (indexInArr) => {
+    if (!gnState.team || !gnState.participantId) return;
+    if (!confirm('למחוק את ההערה?')) return;
+    try {
+      const filtered = gnState.notes.filter((_, i) => i !== indexInArr);
+      await updateDoc(doc(db, 'general_notes', gnDocId()), {
+        notes: filtered, updatedAt: serverTimestamp()
+      });
+      showToast('הערה נמחקה', 'info');
+    } catch (e) {
+      showToast('שגיאה במחיקה: ' + e.message, 'error');
+    }
+  };
+
+  window.syncGeneralNotes = async () => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    if (!gnState.team || !gnState.participantId) { showToast('בחר משתתף', 'error'); return; }
+    if (!gnState.notes.length) { showToast('אין הערות לסנכרון', 'error'); return; }
+
+    const requests = gnState.notes.map(n => {
+      const body = {
+        type:           'general_note',
+        participant_id: gnState.participantId,
+        team_id:        gnState.team,
+        note:           n.text || ''
+      };
+      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+        body.key = APP_CONFIG.sheetsApiKey;
+      }
+      return fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+    });
+    const results = await Promise.allSettled(requests);
+    const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+    if (ok === results.length) showToast(`✓ סונכרנו ${ok} הערות`, 'success');
+    else showToast(`סונכרנו ${ok}/${results.length}`, 'error');
+  };
+
+  // ═════════ Comparison chart ═════════
+  let compareChartInstance = null;
+  let compareChartAllRaces = [];      // races for current team+station
+  const compareChartSelected = new Set();
+
+  window.openCompareChart = async () => {
+    if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
+    const modal = document.getElementById('chart-modal');
+    modal.classList.add('open');
+
+    // Load all races for team+station (all rounds)
+    try {
+      const q = query(collection(db, 'races'),
+        where('team', '==', selectedTeam),
+        where('station', '==', selectedStation));
+      const snap = await getDocs(q);
+      compareChartAllRaces = [];
+      snap.forEach(d => compareChartAllRaces.push(d.data()));
+    } catch (e) {
+      showToast('שגיאה בטעינת סבבים: ' + e.message, 'error');
+      compareChartAllRaces = [];
+    }
+
+    const teamData = teamsCache[selectedTeam] || {};
+    setText('chart-context',
+      `· צוות ${Number(selectedTeam)} · ${stationDisplayName(selectedStation, teamData)}`);
+
+    // Unique participants across all rounds
+    const pset = new Set();
+    for (const race of compareChartAllRaces) {
+      for (const t of (race.tags || [])) pset.add(String(t.participantId));
+    }
+    const participants = Array.from(pset).sort((a, b) => Number(a) - Number(b));
+
+    // Auto-select first up to 5 for a useful default view
+    compareChartSelected.clear();
+    participants.slice(0, 5).forEach(p => compareChartSelected.add(p));
+
+    renderChartPicker(participants);
+    renderCompareChart();
+  };
+
+  window.closeCompareChart = () => {
+    document.getElementById('chart-modal').classList.remove('open');
+    if (compareChartInstance) { compareChartInstance.destroy(); compareChartInstance = null; }
+  };
+
+  function renderChartPicker(participants) {
+    const picker = document.getElementById('chart-picker');
+    if (participants.length === 0) {
+      picker.innerHTML = '<span style="color:var(--text-muted); font-size:13px">אין משתתפים שסיימו סבבים בתחנה הזאת עדיין.</span>';
+      return;
+    }
+    picker.innerHTML = participants.map(p => {
+      const checked = compareChartSelected.has(p);
+      return `<label class="${checked ? 'checked' : ''}">
+        <input type="checkbox" ${checked ? 'checked' : ''} onchange="toggleCompareParticipant('${escHtml(p)}', this.checked, this)">
+        <span>${escHtml(p)}</span>
+      </label>`;
+    }).join('');
+  }
+
+  window.toggleCompareParticipant = (pid, checked, inputEl) => {
+    if (checked) compareChartSelected.add(pid);
+    else compareChartSelected.delete(pid);
+    const label = inputEl.closest('label');
+    if (label) label.classList.toggle('checked', checked);
+    renderCompareChart();
+  };
+
+  function renderCompareChart() {
+    const empty = document.getElementById('chart-empty');
+    const canvasWrap = document.getElementById('chart-canvas-wrap');
+    if (compareChartInstance) { compareChartInstance.destroy(); compareChartInstance = null; }
+
+    if (compareChartSelected.size === 0 || compareChartAllRaces.length === 0) {
+      empty.style.display = '';
+      canvasWrap.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    canvasWrap.style.display = '';
+
+    const rounds = compareChartAllRaces.map(r => Number(r.round || 0)).sort((a, b) => a - b);
+    const labels = rounds.map(r => 'סבב ' + r);
+
+    // For each selected participant, build a data array aligned with rounds
+    const datasets = Array.from(compareChartSelected).map((pid, idx) => {
+      const data = rounds.map(rnd => {
+        const race = compareChartAllRaces.find(r => Number(r.round || 0) === rnd);
+        if (!race) return null;
+        const tag = (race.tags || []).find(t => String(t.participantId) === String(pid));
+        return tag ? Number(tag.place || 0) : null;
+      });
+      const hue = (idx * 137) % 360;
+      const color = `hsl(${hue},70%,55%)`;
+      return {
+        label: 'משתתף ' + pid,
+        data,
+        borderColor: color,
+        backgroundColor: color,
+        spanGaps: false,
+        tension: 0.15,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        borderWidth: 2
+      };
+    });
+
+    const maxPlace = Math.max(1, ...datasets.flatMap(d => d.data.filter(v => v != null)));
+
+    compareChartInstance = new Chart(document.getElementById('chart-canvas'), {
+      type: 'line',
+      data: { labels, datasets },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#94a3b8' } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => ctx.dataset.label + ': ' + (ctx.raw == null ? 'לא סיים' : 'מקום ' + ctx.raw)
+            }
+          }
+        },
+        scales: {
+          y: {
+            reverse: true, // מקום 1 למעלה
+            min: 1,
+            max: maxPlace,
+            ticks: { stepSize: 1, color: '#94a3b8' },
+            grid: { color: 'rgba(255,255,255,0.06)' },
+            title: { display: true, text: 'מקום', color: '#94a3b8' }
+          },
+          x: {
+            ticks: { color: '#94a3b8' },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
 
   // ═════════ Toast ═════════
   window.showToast = (msg, type='info') => {
