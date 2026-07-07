@@ -1,5 +1,7 @@
-# Real Firebase credentials — copy firebase-config.example.js and fill in.
-frontend/js/firebase-config.js
+# NOTE: `frontend/js/firebase-config.js` used to be gitignored, but per Firebase
+# docs client API keys are public-safe (security is via Firestore rules + Auth
+# authorized domains). Now committed so GitHub Pages serves a working app.
+# See `firebase-config.example.js` for the template used by new deployments.
 
 # OS junk
 .DS_Store
