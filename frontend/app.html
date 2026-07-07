@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>מערכת תזמון RFID</title>
+  <title>מערכת תזמון גיבוש</title>
   <link rel="stylesheet" href="css/main.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -64,7 +64,7 @@
 <nav class="navbar">
   <div class="navbar-brand">
     <span class="logo">📡</span>
-    <span>מערכת תזמון RFID</span>
+    <span>מערכת תזמון גיבוש</span>
   </div>
   <div class="navbar-actions">
     <div class="conn-indicator" id="conn-status">
@@ -78,15 +78,6 @@
 </nav>
 
 <div class="container" style="padding-top:16px; padding-bottom:80px">
-
-  <!-- באנר IP של ESP32 -->
-  <div class="config-banner" id="esp-config-banner">
-    <span>⚠️</span>
-    <span style="flex:1; font-size:13px">כתובת ה-ESP32 לא אושרה. הזן את כתובת ה-IP.</span>
-    <input id="esp-ip-input" class="form-input" style="width:160px; padding:6px 10px; direction:ltr"
-           placeholder="192.168.4.1" value="">
-    <button class="btn btn-warning" onclick="saveEspIp()" style="padding:6px 14px; font-size:13px">שמור</button>
-  </div>
 
   <!-- לשוניות מגבש / מעריך — מנהל בלבד יכול לעבור -->
   <div class="tab-bar mb-16" id="view-tabs" style="display:none">
@@ -138,48 +129,6 @@
       <button class="btn btn-ghost" onclick="doClear()" style="color:var(--danger); border-color:var(--danger)">
         🗑 מחק הכל
       </button>
-    </div>
-
-    <!-- הגדרות מירוץ -->
-    <div class="section mb-12">
-      <h3 class="mb-8">⚙ הגדרות מירוץ</h3>
-      <div class="gear-row">
-        <span class="gear-label">מצב מירוץ</span>
-        <select id="mode-select" class="form-select" onchange="opSetMode()">
-          <option value="0">סדר הגעה</option>
-          <option value="1">ספירת הקפות</option>
-        </select>
-      </div>
-      <div class="gear-row">
-        <span class="gear-label">זמן מקסימלי (שניות)</span>
-        <input id="dur-input" type="number" class="form-input" style="width:100px" placeholder="30">
-        <button class="btn btn-primary" onclick="opSetDuration()" style="padding:8px 14px">עדכן</button>
-      </div>
-    </div>
-
-    <!-- הגדרות טכניאן (מתקפל) -->
-    <div class="mb-12">
-      <div class="collapsible-header" onclick="toggleCollapsible('tech-body','tech-arrow')">
-        <span>🔧 הגדרות טכניאן</span>
-        <span class="collapsible-arrow" id="tech-arrow">▼</span>
-      </div>
-      <div class="collapsible-body" id="tech-body">
-        <div class="gear-row">
-          <span class="gear-label">עוצמת שידור (dBm)</span>
-          <input id="pwr-input" type="number" class="form-input" style="width:80px" min="5" max="32">
-          <span class="gear-val" id="pwr-val-label"></span>
-          <button class="btn btn-primary" onclick="opSetPower()" style="padding:8px 14px">הגדר</button>
-        </div>
-        <div class="gear-row" style="flex-wrap:wrap; gap:12px">
-          <span class="gear-label">אנטנות</span>
-          <div class="ant-grid" id="ant-buttons"></div>
-        </div>
-        <div class="gear-row" style="justify-content:flex-start; padding-top:12px">
-          <button class="btn btn-ghost" onclick="opReboot()" style="color:var(--warning); border-color:var(--warning); font-size:13px">
-            🔄 איפוס ESP32
-          </button>
-        </div>
-      </div>
     </div>
 
   </div><!-- /operator-view -->
@@ -286,8 +235,8 @@
     getAuth, onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, updateDoc, collection,
-    onSnapshot, query, serverTimestamp
+    getFirestore, doc, getDoc, updateDoc, collection,
+    onSnapshot, query
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp  = initializeApp(FIREBASE_CONFIG);
@@ -295,9 +244,6 @@
   const db     = getFirestore(fbApp);
 
   let currentUser = null;
-  let espIp = localStorage.getItem('espIp') || APP_CONFIG.defaultEsp32Ip;
-  let pollTimer = null;
-  let lastTagCount = 0;
   let raceStatus = {};
   let leaderboardData = [];
   let selectedParticipantId = null;
@@ -306,9 +252,6 @@
   let lastAutoSheetsHash = '';
   let sheetsSyncedKeys = new Set();
   let sheetsSyncInProgress = false;
-  // מיפוי סבב: בתצוגה מתחילים מ-0 בעת התחברות, ולחיצה ראשונה על START = סבב 1
-  let roundBaseRaw = null;
-  let hasStartedThisSession = false;
 
   // ── מצב חוץ ──────────────────────────────────────────
   (function() {
@@ -355,7 +298,7 @@
     const teamLabel = currentUser.team ? ` · צוות ${currentUser.team}` : '';
     document.getElementById('user-role-badge').textContent = (roleLabels[role] || role) + teamLabel;
 
-    document.getElementById('esp-ip-input').value = espIp;
+    setConnectedFirebase(true);
 
     // ── הגנת תפקידים: מגבש לא רואה מעריך ולהפך ──
     if (role === 'admin') {
@@ -374,12 +317,9 @@
       // הסתר לגמרי את תצוגת המגבש
       const opView = document.getElementById('operator-view');
       if (opView) opView.remove();
-      // הסתר באנר ESP32 — מעריך לא צריך
-      document.getElementById('esp-config-banner').style.display = 'none';
     }
 
     initCommentPills();
-    startPolling();
     listenFirebaseTags();
   }
 
@@ -399,101 +339,17 @@
     if (el) el.classList.add('active');
   }
 
-  function startPolling() {
-    stopPolling();
-    pollTimer = setInterval(pollEsp32, APP_CONFIG.pollIntervalMs);
-    pollEsp32();
-  }
-
-  function stopPolling() {
-    if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  }
-
-  async function pollEsp32() {
-    try {
-      const url = `http://${espIp}`;
-      const [statusRes, antRes] = await Promise.all([
-        fetch(`${url}/status`, { signal: AbortSignal.timeout(1500) }),
-        fetch(`${url}/ant`,    { signal: AbortSignal.timeout(1500) })
-      ]);
-      const status = await statusRes.json();
-      const ant    = await antRes.json();
-      // קיבוע בסיס סבב בעת התחברות: תצוגה מתחילה מ-0
-      const rawRound = Number(status.round || 0);
-      if (roundBaseRaw === null) roundBaseRaw = rawRound;
-      hasStartedThisSession = rawRound > roundBaseRaw;
-      status.round_mapped = hasStartedThisSession ? Math.max(0, rawRound - roundBaseRaw) : 0;
-      raceStatus = status;
-      setConnected(true);
-      updateStatusUI(status, ant);
-      const countChanged = status.tags_count !== lastTagCount;
-      if (countChanged) lastTagCount = status.tags_count;
-      // Always refresh during active scan so laps / times stay live
-      if (status.scanning || countChanged) {
-        await fetchAndSyncTags(status);
-      }
-    } catch (e) { setConnected(false); }
-  }
-
-  function setConnected(ok) {
+  function setConnectedFirebase(ok) {
     const dot   = document.getElementById('conn-dot');
     const label = document.getElementById('conn-label');
+    if (!dot || !label) return;
     if (ok) {
       dot.className     = 'conn-dot connected';
-      label.textContent = `ESP32 ${espIp}`;
-      document.getElementById('esp-config-banner').style.display = 'none';
+      label.textContent = 'מחובר';
     } else {
       dot.className     = 'conn-dot disconnected';
-      label.textContent = 'ESP32 לא מגיב';
-      document.getElementById('esp-config-banner').style.display = 'flex';
+      label.textContent = 'לא מחובר';
     }
-  }
-
-  function updateStatusUI(s, ant) {
-    const stationLabel = activeGroup ? ` · ת${activeGroup}` : '';
-    const uiRound = (s.round_mapped ?? s.round ?? 0);
-    setStatVal('op-round',      '#' + uiRound + stationLabel);
-    setStatVal('op-status',     s.scanning ? '🟢 סורק' : '🔴 עצור');
-    setStatVal('op-tags',       s.tags_count);
-    setStatVal('op-mode-label', s.mode === 1 ? 'הקפות' : 'הגעה');
-    setStatVal('ev-round',      '#' + uiRound + stationLabel);
-    setStatVal('ev-status',     s.scanning ? '🟢 סורק' : '🔴 עצור');
-    setStatVal('ev-tags',       s.tags_count);
-
-    const elapsedMs  = s.elapsed_ms || 0;
-    const durationMs = s.scan_duration_ms || 30000;
-    const remaining  = Math.max(0, durationMs - elapsedMs);
-    const timerStr   = formatTime(s.scanning ? remaining : elapsedMs);
-
-    setStatVal('timer-display', timerStr);
-    setStatVal('ev-timer',      timerStr);
-
-    const timerEl = document.getElementById('timer-display');
-    if (timerEl) {
-      if (!s.scanning)           timerEl.className = 'timer-display';
-      else if (remaining < 10000) timerEl.className = 'timer-display expired';
-      else if (remaining < 30000) timerEl.className = 'timer-display warning';
-      else                        timerEl.className = 'timer-display running';
-    }
-
-    const pct = durationMs > 0 ? Math.min(100, (elapsedMs / durationMs) * 100) : 0;
-    const pb  = document.getElementById('progress-bar');
-    if (pb) {
-      pb.style.width = pct + '%';
-      pb.className   = 'progress-bar-fill' + (pct > 90 ? ' expired' : pct > 70 ? ' warning' : '');
-    }
-
-    if (document.activeElement?.id !== 'pwr-input') {
-      const pi = document.getElementById('pwr-input'); if (pi) pi.value = s.tx_power_dbm;
-    }
-    const pl = document.getElementById('pwr-val-label'); if (pl) pl.textContent = s.tx_power_dbm + ' dBm';
-    if (document.activeElement?.id !== 'dur-input') {
-      const di = document.getElementById('dur-input'); if (di) di.value = Math.round(durationMs / 1000);
-    }
-    if (document.activeElement?.id !== 'mode-select') {
-      const ms = document.getElementById('mode-select'); if (ms) ms.value = s.mode;
-    }
-    if (ant?.active) updateAntennaButtons(ant.active);
   }
 
   function setStatVal(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
@@ -505,44 +361,10 @@
     return `${min}:${sec}`;
   }
 
-  function updateAntennaButtons(active) {
-    const container = document.getElementById('ant-buttons');
-    if (!container) return;
-    container.innerHTML = '';
-    active.forEach((on, i) => {
-      const btn = document.createElement('button');
-      btn.className   = 'ant-btn' + (on ? ' on' : '');
-      btn.textContent = 'ANT ' + (i + 1);
-      btn.onclick = () => espPost(`/ant?i=${i}&v=${on ? 0 : 1}`);
-      container.appendChild(btn);
-    });
-  }
-
-  window.opAction      = async (a) => { await espPost('/' + a); setTimeout(pollEsp32, 200); };
-  window.opSetMode     = async () => { await espPost('/setmode?m=' + document.getElementById('mode-select').value); };
-  window.opSetDuration = async () => {
-    const s = document.getElementById('dur-input').value; if (!s) return;
-    await espPost('/setduration?sec=' + s); showToast('זמן עודכן', 'success');
-  };
-  window.opSetPower = async () => {
-    const d = document.getElementById('pwr-input').value; if (!d) return;
-    await espPost('/setpower?dbm=' + d); showToast('עוצמה הוגדרה: ' + d + ' dBm', 'success');
-  };
-  window.opReboot = async () => {
-    if (!confirm('לאפס את ה-ESP32?')) return;
-    await espPost('/reboot'); showToast('פקודת איפוס נשלחה', 'info');
-  };
-  window.doClear = async () => {
-    if (!confirm('⚠️ למחוק את כל נתוני המירוץ?')) return;
-    await espPost('/clear'); showToast('הנתונים נמחקו', 'info');
-    // אחרי clear הבקר חוזר ל-0
-    roundBaseRaw = null;
-    hasStartedThisSession = false;
-    sheetsSyncedKeys = new Set();
-    lastAutoSheetsHash = '';
-    lastTagCount = 0; leaderboardData = []; updateLeaderboard([]);
-    setTimeout(pollEsp32, 300);
-  };
+  // Placeholder handlers — יוחלפו בשלב הבא (מעבר לזרימה ידנית של המעריך).
+  const notImplementedYet = () => showToast('פונקציה זו תיבנה מחדש בשלב הבא של גרסת LITE', 'info');
+  window.opAction = notImplementedYet;
+  window.doClear  = notImplementedYet;
   window.downloadCsv = (e) => {
     e.preventDefault();
     const races = (allRacesCache || [])
@@ -564,79 +386,6 @@
     a.click();
     showToast('קובץ CSV לכל הסבבים הורד', 'success');
   };
-
-  async function espPost(path) {
-    try {
-      await fetch(`http://${espIp}${path}`, { method: 'POST', signal: AbortSignal.timeout(2000) });
-    } catch(e) { showToast('לא ניתן להגיע ל-ESP32 בכתובת ' + espIp, 'error'); }
-  }
-
-  window.saveEspIp = () => {
-    const val = document.getElementById('esp-ip-input').value.trim();
-    if (val) { espIp = val; localStorage.setItem('espIp', val); showToast('כתובת ESP32 נשמרה: ' + val, 'success'); pollEsp32(); }
-  };
-
-  async function fetchAndSyncTags(status) {
-    try {
-      const csvRes  = await fetch(`http://${espIp}/csv`, { signal: AbortSignal.timeout(3000) });
-      const csvText = await csvRes.text();
-      const rows    = parseCsv(csvText);
-      if (rows.length === 0) return;
-      leaderboardData = rows;
-      updateLeaderboard(rows);
-      triggerAutoSheetsSync('poll');
-      // שמור לפי תחנה (station) = הצוות של המגבש המחובר
-      const stationKey = activeGroup || (currentUser?.team ? String(currentUser.team).replace(/\D+/g,'').padStart(2,'0') : '00');
-      const mappedRound = status.round_mapped ?? Number(status.round || 0);
-      if (mappedRound < 1) return; // לפני START לא שומרים סבב 0
-      // חשוב: שמירת תגיות של הסבב הנוכחי בלבד במסמך הסבב,
-      // כדי למנוע מצב שבו כל המסמך מכיל את כל הסבבים ואז הסנכרון שולח רק "סבב אחרון".
-      const roundRows = rows.filter(r => Number(r.round || 0) === Number(mappedRound));
-      if (roundRows.length === 0) return;
-      const raceRef = doc(db, 'races', `race_${mappedRound}_station_${stationKey}`);
-      await setDoc(raceRef, {
-        round: mappedRound, mode: status.mode === 1 ? 'laps' : 'arrival',
-        status: status.scanning ? 'running' : 'stopped',
-        station: stationKey,
-        elapsedMs: status.elapsed_ms, durationMs: status.scan_duration_ms,
-        updatedAt: serverTimestamp(),
-        tags: roundRows.map(r => ({
-          round: r.round,
-          epc: r.epc, teamId: r.teamId, participantId: r.participantId,
-          place: r.place, firstMs: r.firstMs, lastMs: r.lastMs,
-          laps: r.laps, rssi: r.rssi, antenna: r.antenna, comments: r.comments || []
-        }))
-      }, { merge: true });
-    } catch(e) { /* silent */ }
-  }
-
-  function parseCsv(text) {
-    const lines = text.trim().split(/\r?\n/);
-    if (lines.length < 2) return [];
-    const headers = lines[0].split(',');
-    const hasLaps = headers.includes('Laps');
-    return lines.slice(1).map((line, idx) => {
-      const parts = line.split(',');
-      const epc = parts[2] || '';
-      const { teamId, participantId } = parseEpc(epc);
-      return {
-        round: parseInt(parts[0])||0, place: parseInt(parts[1])||idx+1,
-        epc, teamId, participantId,
-        firstMs: parseInt(parts[3])||0, lastMs: parseInt(parts[4])||0,
-        totalReads: parseInt(parts[5])||0, antenna: parseInt(parts[6])||0,
-        rssi: parseInt(parts[7])||0,
-        laps: hasLaps ? parseInt(parts[8])||0 : undefined, comments: []
-      };
-    });
-  }
-
-  function parseEpc(epc) {
-    const raw    = epc.replace(/\s+/g,'');
-    const digits = raw.slice(APP_CONFIG.epcExtractStart).replace(/[^0-9a-fA-F]/g,'');
-    const teamId        = digits.slice(0, APP_CONFIG.teamDigits).padStart(APP_CONFIG.teamDigits,'0');
-    const participantId = digits.slice(APP_CONFIG.teamDigits, APP_CONFIG.teamDigits + APP_CONFIG.participantDigits).padStart(APP_CONFIG.participantDigits,'0');
-    return { teamId, participantId };
-  }
 
   function listenFirebaseTags() {
     const racesCol = collection(db, 'races');
@@ -1040,21 +789,6 @@
     }
     ensureGroupSelector();
     updateLeaderboard(leaderboardData);
-  };
-
-  updateAntennaButtons = function(active) {
-    const container = document.getElementById('ant-buttons');
-    if (!container) return;
-    container.innerHTML = '';
-    const arr = Array.isArray(active) ? active.slice(0, 8) : [];
-    while (arr.length < 8) arr.push(false);
-    arr.forEach((on, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'ant-btn' + (on ? ' on' : '');
-      btn.textContent = 'ANT ' + (i + 1);
-      btn.onclick = () => espPost(`/ant?i=${i}&v=${on ? 0 : 1}`);
-      container.appendChild(btn);
-    });
   };
 
   const _updateLeaderboardOrig = updateLeaderboard;

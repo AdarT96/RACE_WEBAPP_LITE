@@ -582,7 +582,7 @@ input[type=range] {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ── ESP32 IP Config Overlay ── */
+/* ── Warning banner ── */
 .config-banner {
   background: rgba(245,158,11,0.12);
   border: 1px solid rgba(245,158,11,0.3);
