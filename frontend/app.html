@@ -5,62 +5,149 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>מערכת תזמון גיבוש</title>
   <link rel="stylesheet" href="css/main.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
-    #leaderboard-wrap { max-height: 55vh; overflow-y: auto; }
-    .epc-raw { font-size: 11px; color: var(--text-dim); font-family: monospace; direction: ltr; }
-    .laps-badge {
-      display: inline-block; padding: 2px 8px;
-      background: rgba(99,102,241,0.2); color: #a5b4fc;
-      border-radius: 999px; font-size: 12px; font-weight: 700;
+    /* ── Station header ────────────────────────────────── */
+    .station-header {
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+      justify-content: space-between;
     }
-    #chart-canvas-wrap { position: relative; height: 280px; }
-    .no-data { color: var(--text-muted); text-align: center; padding: 40px; font-size: 15px; }
-
-    .gear-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-    .gear-row:last-child { border-bottom: none; }
-    .gear-label { width: 140px; font-size: 13px; color: var(--text-muted); flex-shrink: 0; }
-    .gear-val   { font-weight: 600; min-width: 40px; }
-
-    .lb-table th { text-align: right; }
-    .hist-cell { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
-
-    /* ── מצב חוץ (ניגודיות גבוהה) ── */
-    body.outdoor-mode {
-      --bg:      #ffffff;
-      --surface: #f0f0f0;
-      --border:  #888888;
-      --text:    #000000;
-      --text-muted: #333333;
-      --text-dim:   #555555;
+    .station-header .picker {
+      display: flex; align-items: center; gap: 8px;
     }
-    body.outdoor-mode .navbar { background: #000080; color: #fff; }
-    body.outdoor-mode .navbar-brand span,
-    body.outdoor-mode #conn-label { color: #fff; }
-    body.outdoor-mode .btn-ghost { color: #fff; border-color: rgba(255,255,255,0.5); }
-    body.outdoor-mode .timer-display { color: #000; text-shadow: none; font-size: 54px; }
-    body.outdoor-mode .stat-card { background: #e8e8ff; border: 2px solid #000080; }
-    body.outdoor-mode .stat-val  { color: #000080; font-weight: 900; font-size: 28px; }
-    body.outdoor-mode .stat-lbl  { color: #333; font-weight: 700; }
-    body.outdoor-mode .section   { background: #fff; border: 1px solid #999; }
-    body.outdoor-mode table      { background: #fff; }
-    body.outdoor-mode thead tr   { background: #000080; }
-    body.outdoor-mode thead th   { color: #fff; }
-    body.outdoor-mode tbody tr:nth-child(even) { background: #eef; }
-    body.outdoor-mode tbody td   { color: #000; }
-    body.outdoor-mode .place-1 td { background: #ffe066 !important; color: #000 !important; font-weight: 800; }
-    body.outdoor-mode .place-2 td { background: #d0d0d0 !important; color: #000 !important; }
-    body.outdoor-mode .place-3 td { background: #ffd0a0 !important; color: #000 !important; }
-    body.outdoor-mode .place-badge { background: #000080; color: #fff; font-size: 16px; padding: 5px 12px; }
-    body.outdoor-mode #outdoor-btn { background: #ffdd00; color: #000; border-color: #000; font-weight: 800; }
-    body.outdoor-mode .btn-success { background: #006600; color: #fff; font-size: 22px; }
-    body.outdoor-mode .btn-danger  { background: #cc0000; color: #fff; font-size: 22px; }
-    body.outdoor-mode .hist-cell   { color: #333; }
+    .station-header select {
+      padding: 8px 12px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text); font-size: 15px; min-width: 120px;
+    }
+    .station-header .team-fixed {
+      font-size: 20px; font-weight: 800; color: var(--accent);
+    }
+
+    /* ── Status strip ──────────────────────────────────── */
+    .status-strip {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 10px; margin-top: 12px;
+    }
+    .status-cell {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 14px; text-align: center;
+    }
+    .status-cell .val {
+      font-size: 22px; font-weight: 800; color: var(--accent); direction: ltr;
+    }
+    .status-cell .lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Idle panel ────────────────────────────────────── */
+    .idle-panel { text-align: center; padding: 40px 20px; }
+    .idle-panel .btn-huge {
+      font-size: 26px; padding: 18px 40px; font-weight: 800;
+      border-radius: 14px;
+    }
+    .idle-panel .hint {
+      margin-top: 20px; color: var(--text-muted); font-size: 14px;
+    }
+    .idle-panel .warn {
+      background: rgba(245,158,11,0.12);
+      border: 1px solid rgba(245,158,11,0.3);
+      padding: 14px 18px; border-radius: 10px;
+      color: var(--text); font-size: 15px;
+    }
+
+    /* ── Participants grid (the money view) ────────────── */
+    .participants-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .participant-btn {
+      aspect-ratio: 1 / 1;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 16px;
+      color: var(--text);
+      font-family: 'Courier New', monospace;
+      font-size: clamp(30px, 5vw, 48px);
+      font-weight: 900;
+      cursor: pointer;
+      transition: transform 0.08s ease, background 0.12s, border-color 0.12s;
+      direction: ltr;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .participant-btn:hover {
+      background: rgba(99,102,241,0.10);
+      border-color: var(--accent);
+    }
+    .participant-btn:active {
+      transform: scale(0.94);
+      background: rgba(99,102,241,0.25);
+    }
+    /* מצב חוץ — יותר ניגודיות */
+    body.outdoor-mode .participant-btn {
+      background: #ffffff;
+      border: 3px solid #000080;
+      color: #000080;
+    }
+    body.outdoor-mode .participant-btn:active {
+      background: #ffd700; color: #000;
+    }
+
+    /* ── Finished list ─────────────────────────────────── */
+    .finished-list {
+      display: flex; flex-wrap: wrap; gap: 10px;
+      margin-top: 8px;
+    }
+    .finished-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 8px 14px; border-radius: 999px;
+      background: rgba(52,211,153,0.12);
+      border: 1px solid rgba(52,211,153,0.35);
+      color: var(--text);
+      cursor: pointer;
+      font-size: 15px;
+    }
+    .finished-pill:hover { background: rgba(52,211,153,0.20); }
+    .finished-pill .place {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #34d399; color: #052e1c;
+      width: 24px; height: 24px; border-radius: 50%;
+      font-weight: 800; font-size: 12px;
+    }
+    .finished-pill .pid {
+      font-family: 'Courier New', monospace; direction: ltr;
+      font-weight: 700; font-size: 16px;
+    }
+    .finished-pill .comments-count {
+      font-size: 11px; color: var(--text-muted);
+    }
+    body.outdoor-mode .finished-pill {
+      background: #e8ffe8; border: 2px solid #006600; color: #000;
+    }
+
+    /* ── Comments popover ──────────────────────────────── */
+    .modal-body-mid { padding: 16px 20px; }
+    .modal-body-mid .tag-pill {
+      display: inline-block; padding: 8px 14px; margin: 4px 4px 0 0;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer; font-size: 14px;
+    }
+    .modal-body-mid .tag-pill.active {
+      background: rgba(99,102,241,0.25); border-color: var(--accent);
+    }
+    .comment-list {
+      display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px;
+    }
+    .comment-list .c {
+      background: rgba(99,102,241,0.15); border-radius: 999px;
+      padding: 4px 10px; font-size: 12px;
+    }
   </style>
 </head>
 <body>
 
-<!-- ניווט עליון -->
+<!-- Top nav -->
 <nav class="navbar">
   <div class="navbar-brand">
     <span class="logo">📡</span>
@@ -72,161 +159,123 @@
       <span id="conn-label">מתחבר…</span>
     </div>
     <div class="badge badge-info" id="user-role-badge"></div>
-    <button class="btn btn-ghost" id="outdoor-btn" onclick="toggleOutdoorMode()" style="padding:6px 12px; font-size:13px" title="מצב חוץ — ניגודיות גבוהה">☀️</button>
-    <button class="btn btn-ghost" onclick="logout()" style="padding:6px 12px; font-size:13px">התנתק</button>
+    <button class="btn btn-ghost" id="outdoor-btn" onclick="toggleOutdoorMode()"
+            style="padding:6px 12px; font-size:13px" title="מצב חוץ — ניגודיות גבוהה">☀️</button>
+    <button class="btn btn-ghost" onclick="logout()"
+            style="padding:6px 12px; font-size:13px">התנתק</button>
   </div>
 </nav>
 
 <div class="container" style="padding-top:16px; padding-bottom:80px">
 
-  <!-- לשוניות מגבש / מעריך — מנהל בלבד יכול לעבור -->
-  <div class="tab-bar mb-16" id="view-tabs" style="display:none">
-    <button class="tab-btn active" data-view="operator-view">🎮 מגבש</button>
-    <button class="tab-btn"        data-view="evaluator-view">📊 מעריך</button>
+  <!-- ══════════ Station header ══════════ -->
+  <div class="section" id="station-header-section">
+    <div class="station-header">
+      <div class="picker">
+        <span>צוות:</span>
+        <span id="team-fixed" class="team-fixed" style="display:none"></span>
+        <select id="team-select" onchange="onTeamChange(this.value)" style="display:none"></select>
+      </div>
+      <div class="picker">
+        <span>תחנה:</span>
+        <select id="station-select" onchange="onStationChange(this.value)"></select>
+      </div>
+    </div>
+
+    <div class="status-strip">
+      <div class="status-cell">
+        <div class="val" id="hdr-station-name">—</div>
+        <div class="lbl">תחנה</div>
+      </div>
+      <div class="status-cell">
+        <div class="val" id="hdr-round">—</div>
+        <div class="lbl">סבב</div>
+      </div>
+      <div class="status-cell">
+        <div class="val" id="hdr-status">—</div>
+        <div class="lbl">סטטוס</div>
+      </div>
+      <div class="status-cell">
+        <div class="val" id="hdr-progress">—</div>
+        <div class="lbl">התקדמות</div>
+      </div>
+    </div>
   </div>
 
-  <!-- ════ תצוגת מגבש ════ -->
-  <div id="operator-view" class="view active">
+  <!-- ══════════ IDLE panel ══════════ -->
+  <div id="idle-panel" class="section idle-panel" style="display:none">
+    <div id="idle-warn" class="warn" style="display:none; margin-bottom:20px"></div>
+    <button id="start-btn" class="btn btn-success btn-huge" onclick="startSession()">▶ התחל תחנה</button>
+    <div class="hint" id="idle-hint"></div>
+  </div>
 
-    <!-- כרטיסי סטטוס -->
-    <div class="stat-grid mb-16">
-      <div class="stat-card">
-        <div class="stat-val" id="op-round">0</div>
-        <div class="stat-lbl">סבב</div>
+  <!-- ══════════ ACTIVE / DONE panel ══════════ -->
+  <div id="race-panel" style="display:none">
+
+    <!-- Participants to finish -->
+    <div class="section" id="grid-section">
+      <div class="flex flex-center flex-between mb-8">
+        <h3>👥 משתתפים למירוץ</h3>
+        <span id="grid-count" style="color:var(--text-muted); font-size:13px">—</span>
       </div>
-      <div class="stat-card">
-        <div class="stat-val" id="op-status" style="font-size:18px">—</div>
-        <div class="stat-lbl">סטטוס</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="op-tags">0</div>
-        <div class="stat-lbl">תגיות</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="op-mode-label" style="font-size:16px">—</div>
-        <div class="stat-lbl">מצב</div>
+      <div id="participants-grid" class="participants-grid"></div>
+      <div id="grid-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
+        כולם סיימו! 🎉
       </div>
     </div>
 
-    <!-- טיימר -->
-    <div class="section" style="text-align:center; padding:24px 16px;">
-      <div class="timer-display" id="timer-display">00:00</div>
-      <div class="progress-bar-wrap">
-        <div class="progress-bar-fill" id="progress-bar" style="width:0%"></div>
+    <!-- Finished list -->
+    <div class="section">
+      <div class="flex flex-center flex-between mb-8">
+        <h3>🏁 סיימו — לפי סדר</h3>
+        <span id="finished-count" style="color:var(--text-muted); font-size:13px">0</span>
       </div>
-      <div style="font-size:13px; color:var(--text-muted); margin-top:8px">
-        ספירה לאחור / זמן שעבר
+      <div id="finished-list" class="finished-list"></div>
+      <div id="finished-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
+        עדיין אף אחד לא סיים.
       </div>
     </div>
 
-    <!-- כפתורים גדולים -->
-    <div class="grid-2 mb-12">
-      <button id="btn-start" class="btn btn-success btn-xl" onclick="opAction('start')">▶ התחל</button>
-      <button id="btn-stop"  class="btn btn-danger  btn-xl" onclick="opAction('stop')">⏹ עצור</button>
-    </div>
-    <!-- מחיקה -->
-    <div style="text-align:center; margin-bottom:20px">
-      <button class="btn btn-ghost" onclick="doClear()" style="color:var(--danger); border-color:var(--danger)">
-        🗑 מחק הכל
+    <!-- Actions -->
+    <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
+      <button id="end-btn" class="btn btn-danger btn-xl" onclick="endSession()" style="display:none">
+        ⏹ סיים סשן
       </button>
-    </div>
-
-  </div><!-- /operator-view -->
-
-
-  <!-- ════ תצוגת מעריך ════ -->
-  <div id="evaluator-view" class="view">
-
-    <!-- כרטיסי סטטוס (קריאה בלבד) -->
-    <div class="stat-grid mb-16">
-      <div class="stat-card">
-        <div class="stat-val" id="ev-round">0</div>
-        <div class="stat-lbl">סבב</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="ev-status" style="font-size:18px">—</div>
-        <div class="stat-lbl">סטטוס</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="ev-timer">00:00</div>
-        <div class="stat-lbl">זמן</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-val" id="ev-tags">0</div>
-        <div class="stat-lbl">תגיות</div>
-      </div>
-    </div>
-
-    <div class="grid-2 mb-16">
-      <a id="btn-csv" class="btn btn-info btn-xl" href="#" onclick="downloadCsv(event)" style="text-decoration:none">
-        📥 הורד CSV
-      </a>
-      <button class="btn btn-info btn-xl" onclick="doSyncSheets()">
+      <button id="new-round-btn" class="btn btn-success btn-xl" onclick="startSession()" style="display:none">
+        ▶ סבב חדש
+      </button>
+      <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px">
         📊 סנכרן Sheets
       </button>
     </div>
-
-    <!-- תיוגים -->
-    <div class="section mb-16">
-      <h3 class="mb-8">💬 תיוגים</h3>
-      <p style="font-size:13px; margin-bottom:10px">לחץ על <strong>+</strong> ליד משתתף, ואז בחר תיוג.</p>
-      <div class="tag-pills mb-12" id="comment-pill-bar"></div>
-      <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap">
-        <input id="custom-comment-input" class="form-input" style="flex:1; min-width:160px; padding:8px 12px; font-size:14px" placeholder="כתוב הערה חופשית…" onkeydown="if(event.key==='Enter') applyCustomComment()">
-        <button class="btn btn-primary" onclick="applyCustomComment()" style="padding:8px 16px; white-space:nowrap">➕ הוסף</button>
-      </div>
-      <div id="selected-tag-info" style="font-size:13px; color:var(--text-muted)">לא נבחר משתתף.</div>
-    </div>
-
-    <!-- טבלת דירוג חי -->
-    <div class="section">
-      <div class="flex flex-center flex-between mb-12">
-        <h3>🏆 טבלת דירוג חי</h3>
-        <button class="btn btn-ghost" onclick="showChartModal()" style="font-size:13px; padding:6px 12px">
-          📈 גרף
-        </button>
-      </div>
-      <div id="leaderboard-wrap">
-        <div class="no-data" id="lb-no-data">ממתין לנתוני מירוץ…</div>
-        <table class="lb-table" id="lb-table" style="display:none">
-          <thead>
-            <tr>
-              <th>מיקום</th>
-              <th>קבוצה</th>
-              <th>משתתף</th>
-              <th id="lb-col-score">זמן / הקפות</th>
-              <th>מיקום אחרון</th>
-              <th>ממוצע</th>
-              <th>RSSI</th>
-              <th>תיוגים</th>
-            </tr>
-          </thead>
-          <tbody id="lb-body"></tbody>
-        </table>
-      </div>
-    </div>
-
-  </div><!-- /evaluator-view -->
+  </div>
 
 </div><!-- /container -->
 
-<!-- חלון גרף -->
-<div class="modal-overlay" id="chart-modal">
+<!-- ══════════ Comments modal ══════════ -->
+<div class="modal-overlay" id="comment-modal">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>📈 התקדמות משתתפים</h3>
-      <button class="modal-close" onclick="closeChartModal()">✕</button>
+      <h3>💬 הערות למשתתף <span id="cm-pid" style="direction:ltr; font-family:monospace"></span></h3>
+      <button class="modal-close" onclick="closeCommentModal()">✕</button>
     </div>
-    <div id="chart-canvas-wrap">
-      <canvas id="chart-canvas"></canvas>
+    <div class="modal-body-mid">
+      <p style="font-size:13px; margin-bottom:10px">בחר תיוג מהיר או כתוב הערה חופשית:</p>
+      <div id="cm-tag-pills"></div>
+      <div style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap">
+        <input id="cm-custom" class="form-input" style="flex:1; min-width:160px; padding:8px 12px"
+               placeholder="הערה חופשית…" onkeydown="if(event.key==='Enter') applyCustomComment()">
+        <button class="btn btn-primary" onclick="applyCustomComment()" style="padding:8px 16px">➕ הוסף</button>
+      </div>
+      <div style="margin-top:14px; font-size:13px; color:var(--text-muted)">הערות קיימות:</div>
+      <div id="cm-list" class="comment-list"></div>
     </div>
   </div>
 </div>
 
-<!-- הודעות קופצות -->
 <div id="toast-container"></div>
 
-<!-- Config חייב להיטען לפני ה-module -->
+<!-- Config first, then module -->
 <script src="js/firebase-config.js"></script>
 
 <script type="module">
@@ -235,47 +284,52 @@
     getAuth, onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, updateDoc, collection,
-    onSnapshot, query
+    getFirestore, doc, getDoc, setDoc, updateDoc, collection,
+    onSnapshot, query, where, getDocs, serverTimestamp
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
-  const fbApp  = initializeApp(FIREBASE_CONFIG);
-  const auth   = getAuth(fbApp);
-  const db     = getFirestore(fbApp);
+  const fbApp = initializeApp(FIREBASE_CONFIG);
+  const auth  = getAuth(fbApp);
+  const db    = getFirestore(fbApp);
 
+  // ═════════ Global state ═════════
   let currentUser = null;
-  let raceStatus = {};
-  let leaderboardData = [];
-  let selectedParticipantId = null;
-  let chartInstance = null;
-  let autoSheetsSyncTimer = null;
-  let lastAutoSheetsHash = '';
-  let sheetsSyncedKeys = new Set();
-  let sheetsSyncInProgress = false;
+  let teamsCache  = {};            // teamNumber → teamData
+  let selectedTeam = null;         // "01"
+  let selectedStation = null;      // "01"
+  let currentRace = null;          // Firestore doc data
+  let currentRaceId = null;
+  let raceUnsubscribe = null;
+  let commentModalPid = null;
 
-  // ── מצב חוץ ──────────────────────────────────────────
+  // ═════════ Helpers ═════════
+  const pad2 = n => String(n).padStart(2, '0');
+  const escHtml = s => (s == null ? '' : String(s))
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  const raceIdFor = (team, station, round) => `race_${team}_${station}_${round}`;
+
+  function stationDisplayName(stationId, teamData) {
+    if (teamData && teamData.stationNames && teamData.stationNames[stationId]) {
+      return teamData.stationNames[stationId];
+    }
+    const defaults = APP_CONFIG.defaultStationNames || {};
+    return defaults[stationId] || ('תחנה ' + stationId);
+  }
+
+  // ═════════ Outdoor mode ═════════
   (function() {
     if (localStorage.getItem('outdoorMode') !== '0') {
       document.body.classList.add('outdoor-mode');
     }
   })();
-
-  // ── עזר: תחנה פעילה ──────────────────────────────────
-  function getStation() {
-    // מחזיר תחנה: מהמשתמש > מה-activeGroup > '00'
-    if (currentUser && currentUser.team) {
-      return String(currentUser.team).replace(/\D+/g,'').padStart(2,'0');
-    }
-    return activeGroup || '00';
-  }
-
   window.toggleOutdoorMode = () => {
     const on = document.body.classList.toggle('outdoor-mode');
     localStorage.setItem('outdoorMode', on ? '1' : '0');
-    showToast(on ? '☀️ מצב חוץ פעיל — ניגודיות גבוהה' : '🌙 מצב רגיל', 'info');
+    showToast(on ? '☀️ מצב חוץ פעיל' : '🌙 מצב רגיל', 'info');
   };
 
-  // בדיקת הזדהות
+  // ═════════ Auth ═════════
   onAuthStateChanged(auth, async (user) => {
     if (!user) { window.location.href = 'index.html'; return; }
     const snap = await getDoc(doc(db, 'users', user.uid));
@@ -289,707 +343,448 @@
     currentUser = { ...data, uid: user.uid };
     initApp();
   });
-
   window.logout = async () => { await signOut(auth); window.location.href = 'index.html'; };
 
-  function initApp() {
-    const role = currentUser.role;
+  // ═════════ Init ═════════
+  async function initApp() {
     const roleLabels = { operator: 'מגבש', evaluator: 'מעריך', admin: 'מנהל' };
-    const teamLabel = currentUser.team ? ` · צוות ${currentUser.team}` : '';
-    document.getElementById('user-role-badge').textContent = (roleLabels[role] || role) + teamLabel;
-
+    const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
+    setText('user-role-badge', (roleLabels[currentUser.role] || currentUser.role) + teamLabel);
     setConnectedFirebase(true);
 
-    // ── הגנת תפקידים: מגבש לא רואה מעריך ולהפך ──
-    if (role === 'admin') {
-      // מנהל יכול לעבור בין שני התצוגות
-      showView('operator-view');
-      document.getElementById('view-tabs').style.display = 'flex';
-    } else if (role === 'operator') {
-      showView('operator-view');
-      document.getElementById('view-tabs').style.display = 'none';
-      // הסתר לגמרי את תצוגת המעריך
-      const evView = document.getElementById('evaluator-view');
-      if (evView) evView.remove();
-    } else if (role === 'evaluator') {
-      showView('evaluator-view');
-      document.getElementById('view-tabs').style.display = 'none';
-      // הסתר לגמרי את תצוגת המגבש
-      const opView = document.getElementById('operator-view');
-      if (opView) opView.remove();
+    // Populate station selector
+    const stationSel = document.getElementById('station-select');
+    stationSel.innerHTML = '';
+    const stCount = APP_CONFIG.stationCount || 8;
+    for (let i = 1; i <= stCount; i++) {
+      const id = pad2(i);
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = id;
+      stationSel.appendChild(opt);
     }
 
-    initCommentPills();
-    listenFirebaseTags();
-  }
+    // Team selection
+    if (currentUser.role === 'admin') {
+      // admin picks any team
+      await preloadTeamsForAdmin();
+      const teamSel = document.getElementById('team-select');
+      teamSel.style.display = '';
+      teamSel.innerHTML = '';
+      const max = APP_CONFIG.maxTeamNumber || 15;
+      const empty = document.createElement('option');
+      empty.value = ''; empty.textContent = '— בחר צוות —';
+      teamSel.appendChild(empty);
+      for (let i = 1; i <= max; i++) {
+        const id = pad2(i);
+        const opt = document.createElement('option');
+        opt.value = id; opt.textContent = 'צוות ' + i;
+        teamSel.appendChild(opt);
+      }
+      // Restore last selection
+      const saved = localStorage.getItem('lite:lastTeam');
+      if (saved) {
+        teamSel.value = saved;
+        selectedTeam = saved;
+        await loadTeamData(selectedTeam);
+      }
+    } else {
+      // fixed to their team
+      if (!currentUser.team) {
+        showBlockingWarn('לא הוגדר לך צוות. פנה למנהל להוסיף אותך לצוות.');
+        return;
+      }
+      selectedTeam = pad2(currentUser.team);
+      document.getElementById('team-fixed').style.display = '';
+      document.getElementById('team-fixed').textContent = 'צוות ' + Number(selectedTeam);
+      await loadTeamData(selectedTeam);
+    }
 
-  document.querySelectorAll('[data-view]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      // רק מנהל יכול לעבור בין תצוגות
-      if (currentUser?.role !== 'admin') return;
-      document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      showView(btn.dataset.view);
-    });
-  });
+    // Restore last station
+    const savedStation = localStorage.getItem('lite:lastStation') || '01';
+    stationSel.value = savedStation;
+    selectedStation = savedStation;
 
-  function showView(viewId) {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    const el = document.getElementById(viewId);
-    if (el) el.classList.add('active');
+    // Update station labels using teamData if loaded
+    refreshStationDropdownLabels();
+
+    if (selectedTeam) {
+      await loadCurrentSession();
+    } else {
+      renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
+    }
   }
 
   function setConnectedFirebase(ok) {
     const dot   = document.getElementById('conn-dot');
     const label = document.getElementById('conn-label');
     if (!dot || !label) return;
-    if (ok) {
-      dot.className     = 'conn-dot connected';
-      label.textContent = 'מחובר';
-    } else {
-      dot.className     = 'conn-dot disconnected';
-      label.textContent = 'לא מחובר';
-    }
+    dot.className     = ok ? 'conn-dot connected' : 'conn-dot disconnected';
+    label.textContent = ok ? 'מחובר' : 'לא מחובר';
   }
 
-  function setStatVal(id, val) { const el = document.getElementById(id); if (el) el.textContent = val; }
-
-  function formatTime(ms) {
-    const totalSec = Math.floor(ms / 1000);
-    const min = Math.floor(totalSec / 60).toString().padStart(2,'0');
-    const sec = (totalSec % 60).toString().padStart(2,'0');
-    return `${min}:${sec}`;
+  function showBlockingWarn(msg) {
+    document.getElementById('idle-panel').style.display = '';
+    document.getElementById('idle-warn').style.display = '';
+    document.getElementById('idle-warn').textContent = '⚠️ ' + msg;
+    document.getElementById('start-btn').style.display = 'none';
+    document.getElementById('race-panel').style.display = 'none';
   }
 
-  // Placeholder handlers — יוחלפו בשלב הבא (מעבר לזרימה ידנית של המעריך).
-  const notImplementedYet = () => showToast('פונקציה זו תיבנה מחדש בשלב הבא של גרסת LITE', 'info');
-  window.opAction = notImplementedYet;
-  window.doClear  = notImplementedYet;
-  window.downloadCsv = (e) => {
-    e.preventDefault();
-    const races = (allRacesCache || [])
-      .filter(r => !activeGroup || !r.station || r.station === activeGroup)
-      .slice()
-      .sort((a,b)=>(a.round||0)-(b.round||0));
-    if (races.length === 0) { showToast('אין נתונים לייצוא', 'error'); return; }
-    let csv = 'Round,Place,Team,Participant,EPC,Mode,FirstSeen_ms,LastSeen_ms,Laps,Antenna,RSSI_dBm,Comments\r\n';
-    races.forEach(race => {
-      const tags = getFilteredRows(race.tags || []);
-      tags.forEach(t => {
-        csv += `${race.round||''},${t.place||''},${t.teamId||''},${t.participantId||''},${t.epc||''},${race.mode||''},${t.firstMs||0},${t.lastMs||0},${t.laps||''},${t.antenna||''},${t.rssi||''},"${(t.comments||[]).join('|')}"\r\n`;
-      });
-    });
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `race_log_group_${activeGroup || 'all'}_all_rounds.csv`;
-    a.click();
-    showToast('קובץ CSV לכל הסבבים הורד', 'success');
-  };
-
-  function listenFirebaseTags() {
-    const racesCol = collection(db, 'races');
-    onSnapshot(query(racesCol), (snap) => {
-      if (snap.empty) return;
-      // Collect ALL rounds' tags for the leaderboard (not just latest)
-      let allTags = [];
-      let latest = null;
-      snap.forEach(d => {
-        const data = d.data();
-        if (!latest || (data.round || 0) > (latest.round || 0)) latest = data;
-        // Merge tags from all rounds
-        if (data.tags && data.tags.length > 0) {
-          data.tags.forEach(t => allTags.push({ ...t, _round: data.round, comments: t.comments || [] }));
-        }
-      });
-      if (allTags.length === 0) return;
-      if (currentUser?.role !== 'operator' && currentUser?.role !== 'admin') {
-        leaderboardData = allTags;
-        updateLeaderboard(leaderboardData);
-        if (latest) {
-          setStatVal('ev-round',  '#' + (latest.round || 0));
-          setStatVal('ev-status', latest.status === 'running' ? '🟢 סורק' : '🔴 עצור');
-          setStatVal('ev-tags',   allTags.length);
-        }
-      }
-    });
+  function renderIdlePlaceholder(hint) {
+    document.getElementById('idle-panel').style.display = '';
+    document.getElementById('idle-warn').style.display = 'none';
+    document.getElementById('start-btn').style.display = 'none';
+    document.getElementById('race-panel').style.display = 'none';
+    setText('idle-hint', hint || '');
   }
 
-  // ── חישוב היסטוריה לפי EPC מכל הסבבים ──────────────
-  function buildEpcHistory(epc) {
-    const races = (allRacesCache || [])
-      .filter(r => !activeGroup || !r.station || r.station === activeGroup)
-      .slice()
-      .sort((a,b)=>(a.round||0)-(b.round||0));
-    const places = [];
-    races.forEach(r => {
-      const tags = (r.tags || []).slice();
-      if (tags.length === 0) return;
-      const hasLaps = tags.some(t => t.laps !== undefined && t.laps !== null);
-      tags.sort((a, b) => {
-        if (hasLaps) {
-          const lD = Number(b.laps||0) - Number(a.laps||0);
-          return lD !== 0 ? lD : Number(a.lastMs||0) - Number(b.lastMs||0);
-        }
-        return Number(a.firstMs||0) - Number(b.firstMs||0);
-      });
-      const idx = tags.findIndex(t => t.epc === epc);
-      if (idx >= 0) places.push(idx + 1);
-    });
-    return places;
-  }
-
-  function updateLeaderboard(rows) {
-    const noData  = document.getElementById('lb-no-data');
-    const table   = document.getElementById('lb-table');
-    const tbody   = document.getElementById('lb-body');
-    const colHead = document.getElementById('lb-col-score');
-    if (!tbody) return;
-    if (!rows || rows.length === 0) { noData.style.display=''; table.style.display='none'; return; }
-    noData.style.display = 'none'; table.style.display = '';
-    const hasLaps = rows.some(r => r.laps !== undefined);
-    if (colHead) colHead.textContent = hasLaps ? 'הקפות' : 'זמן ראשון';
-    tbody.innerHTML = '';
-    rows.forEach((r, idx) => {
-      const place = r.place || idx + 1;
-      const tr = document.createElement('tr');
-      tr.style.cursor = 'pointer';
-      tr.onclick = (ev) => {
-        if (ev.target.closest('button')) return;
-        selectParticipant(r.epc, r.participantId);
-      };
-      tr.className = place <= 3 ? `place-${place}` : '';
-      tr.dataset.epc = r.epc;
-      const timeStr = hasLaps
-        ? `<span class="laps-badge">${r.laps} הקפות</span>`
-        : `<code style="font-size:12px; direction:ltr; display:inline-block">${formatTime(r.firstMs)}</code>`;
-      const comments = (r.comments||[]).map(c => `<span class="tag-pill" style="font-size:11px; padding:3px 8px">${c}</span>`).join('');
-
-      // היסטוריית מיקומים
-      const hist = buildEpcHistory(r.epc);
-      const lastPlaceStr = hist.length > 0 ? `#${hist[hist.length - 1]}` : '—';
-      const avgPlaceStr  = hist.length > 0
-        ? (hist.reduce((s, v) => s + v, 0) / hist.length).toFixed(1)
-        : '—';
-
-      tr.innerHTML = `
-        <td><span class="place-badge">${place}</span></td>
-        <td><strong>${r.teamId||'—'}</strong></td>
-        <td>
-          <div>${r.participantId||'—'}</div>
-          <div class="epc-raw">${r.epc}</div>
-        </td>
-        <td>${timeStr}</td>
-        <td class="hist-cell">${lastPlaceStr}</td>
-        <td class="hist-cell">${avgPlaceStr}</td>
-        <td style="color:var(--text-muted)">${r.rssi} dBm</td>
-        <td>
-          <div style="display:flex; flex-wrap:wrap; gap:4px; align-items:center">
-            ${comments}
-            <button onclick="selectParticipant('${r.epc}','${r.participantId}')"
-              style="font-size:11px; padding:2px 8px; background:var(--surface); border:1px solid var(--border); border-radius:999px; cursor:pointer; color:var(--text-muted)">+</button>
-          </div>
-        </td>`;
-      tbody.appendChild(tr);
-    });
-  }
-
-  function initCommentPills() {
-    const container = document.getElementById('comment-pill-bar');
-    if (!container) return;
-    APP_CONFIG.commentTags.forEach(tag => {
-      const el = document.createElement('span');
-      el.className   = 'tag-pill';
-      el.textContent = tag;
-      el.onclick = () => applyCommentTag(tag);
-      container.appendChild(el);
-    });
-  }
-
-  window.selectParticipant = (epc, participantId) => {
-    selectedParticipantId = epc;
-    const info = document.getElementById('selected-tag-info');
-    if (info) info.textContent = `נבחר: משתתף ${participantId} (${epc})`;
-    showToast(`משתתף ${participantId} נבחר — לחץ על תיוג`, 'info');
-  };
-
-  async function applyCommentTag(tag) {
-    if (!selectedParticipantId) { showToast('בחר משתתף קודם (לחץ + ליד השורה)', 'error'); return; }
-    const entry = leaderboardData.find(r => r.epc === selectedParticipantId);
-    if (!entry) { showToast('משתתף לא נמצא', 'error'); return; }
-    entry.comments = entry.comments || [];
-    if (!entry.comments.includes(tag)) entry.comments.push(tag);
-    updateLeaderboard(leaderboardData);
-    showToast(`תיוג "${tag}" נוסף`, 'success');
+  // ═════════ Teams data ═════════
+  async function loadTeamData(teamNumber) {
+    if (!teamNumber) return null;
     try {
-      const stationKey = activeGroup || (currentUser?.team ? String(currentUser.team).replace(/\D+/g,'').padStart(2,'0') : '00');
-      const commentRound = Math.max(1, raceStatus.round_mapped || raceStatus.round || 1);
-      const raceRef = doc(db, 'races', `race_${commentRound}_station_${stationKey}`);
-      const snap = await getDoc(raceRef);
-      if (snap.exists()) {
-        const data = snap.data();
-        const tags = (data.tags || []).map(t => {
-          if (t.epc === selectedParticipantId) {
-            const c = t.comments || []; if (!c.includes(tag)) c.push(tag);
-            return { ...t, comments: c };
-          }
-          return t;
-        });
-        await updateDoc(raceRef, { tags });
-      }
-    } catch(e) { /* silent */ }
-  }
-
-  window.applyCustomComment = async () => {
-    const input = document.getElementById('custom-comment-input');
-    const text = (input ? input.value : '').trim();
-    if (!text) { showToast('הזן טקסט להערה', 'error'); return; }
-    if (!selectedParticipantId) { showToast('בחר משתתף קודם (לחץ + ליד השורה)', 'error'); return; }
-    await applyCommentTag(text);
-    if (input) input.value = '';
-  };
-
-  window.showChartModal = () => { document.getElementById('chart-modal').classList.add('open'); buildChart(); };
-  window.closeChartModal = () => { document.getElementById('chart-modal').classList.remove('open'); };
-
-  function buildChart() {
-    const ctx = document.getElementById('chart-canvas');
-    if (!ctx) return;
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
-    if (leaderboardData.length === 0) return;
-    const labels  = leaderboardData.map(r => `ק${r.teamId} מ${r.participantId}`);
-    const hasLaps = leaderboardData.some(r => r.laps !== undefined);
-    const dataVals = hasLaps ? leaderboardData.map(r=>r.laps||0) : leaderboardData.map(r=>(r.firstMs||0)/1000);
-    const colors   = leaderboardData.map((_,i)=>`hsl(${(i*137)%360},70%,55%)`);
-    chartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: { labels, datasets: [{ label: hasLaps?'הקפות':'זמן (שניות)', data:dataVals, backgroundColor:colors, borderRadius:6, borderWidth:0 }] },
-      options: {
-        responsive:true, maintainAspectRatio:false,
-        plugins: { legend:{display:false}, tooltip:{callbacks:{label:c=>hasLaps?`${c.raw} הקפות`:`${c.raw.toFixed(2)} שניות`}} },
-        scales: {
-          y:{beginAtZero:true,grid:{color:'rgba(255,255,255,0.05)'},ticks:{color:'#94a3b8'}},
-          x:{grid:{display:false},ticks:{color:'#94a3b8',font:{size:11}}}
-        }
-      }
-    });
-  }
-
-  // מחזיר מערך של { round, mode, station, tags[] } לכל הסבבים של התחנה הנוכחית
-  function getAllRacesForStation() {
-    const myStation = getStation();
-    return (allRacesCache || [])
-      .filter(r => !myStation || myStation === '00' || !r.station || r.station === myStation)
-      .slice()
-      .sort((a,b)=>(a.round||0)-(b.round||0));
-  }
-
-  // בונה רשימת שורות לשליחה ל-Sheets
-  // כל שורה: [epc, firstMs, lastMs, count, antenna, rssi, place, comments[], laps, round, mode, station]
-  function buildSheetsPayloadRows(allRounds = false) {
-    const races = getAllRacesForStation();
-    if (races.length === 0) return [];
-
-    const myStation = getStation();
-    const targetRaces = allRounds ? races : [races[races.length - 1]];
-    const rows = [];
-    targetRaces.forEach(rc => {
-      const tags = rc.tags || [];
-      tags.forEach(t => {
-        rows.push({
-          epc:       t.epc || '',
-          firstMs:   t.firstMs || 0,
-          lastMs:    t.lastMs || 0,
-          count:     t.totalReads || 1,
-          antenna:   t.antenna || 0,
-          rssi:      t.rssi || 0,
-          place:     t.place || 0,
-          comments:  Array.isArray(t.comments) ? t.comments.join('|') : (t.comments || ''),
-          laps:      t.laps || 0,
-          round:     t.round || rc.round || 1,
-          mode:      rc.mode || 'arrival',
-          station:   rc.station || myStation
-        });
-      });
-    });
-    // ניקוי כפילויות מובנה בין מסמכים/עדכונים
-    const uniq = new Map();
-    rows.forEach(r => {
-      const k = `${r.round}|${r.epc}|${r.firstMs}|${r.lastMs}|${r.comments}`;
-      if (!uniq.has(k)) uniq.set(k, r);
-    });
-    return Array.from(uniq.values());
-  }
-
-  function triggerAutoSheetsSync(reason = 'auto') {
-    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) return;
-    if (autoSheetsSyncTimer) clearTimeout(autoSheetsSyncTimer);
-    autoSheetsSyncTimer = setTimeout(() => window.doSyncSheets(true, reason), 1200);
-  }
-
-  window.doSyncSheets = async (isAuto = false) => {
-    if (sheetsSyncInProgress) return;
-    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
-      if (!isAuto) showToast('כתובת Google Sheets לא הוגדרה ב-firebase-config.js', 'error');
-      return;
+      const snap = await getDoc(doc(db, 'teams', teamNumber));
+      const data = snap.exists() ? snap.data() : null;
+      teamsCache[teamNumber] = data;
+      return data;
+    } catch (e) {
+      showToast('שגיאה בטעינת נתוני צוות: ' + e.message, 'error');
+      return null;
     }
+  }
 
-    // manual = כל הסבבים; auto = רק הסבב האחרון
-    const allRows = buildSheetsPayloadRows(!isAuto);
-    if (allRows.length === 0) {
-      if (!isAuto) showToast('אין נתונים לסנכרון', 'error');
-      return;
-    }
-
-    const hash = JSON.stringify(allRows);
-    if (isAuto && hash === lastAutoSheetsHash) return;
-    lastAutoSheetsHash = hash;
-
-    // סנן כפילויות פנימיות + (באוטומטי בלבד) סנן שורות שכבר נשלחו
-    const seenInThisSync = new Set();
-    const unsynced = allRows.filter(r => {
-      const key = `${r.round}|${r.epc}|${r.firstMs}|${r.comments}`;
-      if (seenInThisSync.has(key)) return false;
-      seenInThisSync.add(key);
-      // בסנכרון ידני — שלח הכל מחדש (המשתמש לוחץ כפתור ומצפה לראות את כל הסבבים)
-      if (!isAuto) return true;
-      return !sheetsSyncedKeys.has(key);
-    });
-
-    if (unsynced.length === 0) {
-      if (!isAuto) showToast('אין נתונים לסנכרון', 'info');
-      return;
-    }
-
+  async function preloadTeamsForAdmin() {
     try {
-      sheetsSyncInProgress = true;
-      const requests = unsynced.map(r => {
-        const bodyObj = {
-          place:          Number(r.place),
-          epc:            String(r.epc),
-          first_ms:       Number(r.firstMs),
-          last_ms:        Number(r.lastMs),
-          antenna:        Number(r.antenna),
-          rssi:           Number(r.rssi),
-          round:          Number(r.round),
-          count:          Number(r.count),
-          mode:           String(r.mode),
-          laps:           Number(r.laps),
-          comments:       String(r.comments),
-          station:        String(r.station),
-          evaluator_name: currentUser?.name || '',
-          evaluator_team: currentUser?.team || ''
-        };
-        if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-          bodyObj.key = APP_CONFIG.sheetsApiKey;
-        }
-        return fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(bodyObj) });
-      });
-
-      const results = await Promise.all(requests);
-      const failed = results.filter(res => !res.ok).length;
-      results.forEach((res, i) => {
-        if (res.ok) {
-          const r = unsynced[i];
-          sheetsSyncedKeys.add(`${r.round}|${r.epc}|${r.firstMs}|${r.comments}`);
-        }
-      });
-      if (!isAuto) {
-        if (failed === 0) showToast(`סונכרנו ${results.length} רשומות ל-Google Sheets ✓`, 'success');
-        else showToast(`סונכרנו חלקית: ${results.length - failed}/${results.length}`, 'error');
-      }
-    } catch(e) {
-      if (!isAuto) showToast('לא ניתן להגיע ל-Sheets API', 'error');
-    } finally {
-      sheetsSyncInProgress = false;
-    }
-  };
-
-  
-  // PATCH_FEEDBACK_GROUPS_APP
-  let activeGroup = localStorage.getItem('activeGroup') || '';
-  let allRacesCache = [];
-
-  function normalizeGroup(v) {
-    const n = String(v || '').replace(/\D+/g, '');
-    return n ? n.padStart(2, '0') : '';
+      const snap = await getDocs(collection(db, 'teams'));
+      snap.forEach(d => { teamsCache[d.id] = d.data(); });
+    } catch (e) { /* silent — admin might still pick a fresh team */ }
   }
 
-  function getFilteredRows(rows) {
-    if (currentUser?.role !== 'admin') return rows || [];
-    if (!activeGroup) return rows || [];
-    return (rows || []).filter(r => normalizeGroup(r.teamId) === activeGroup);
-  }
-
-  function ensureGroupSelector() {
-    const nav = document.querySelector('.navbar-actions');
-    if (!nav) return;
-    let wrap = document.getElementById('group-selector-wrap');
-    if (!wrap) {
-      wrap = document.createElement('div');
-      wrap.id = 'group-selector-wrap';
-      wrap.style.display = 'flex';
-      wrap.style.alignItems = 'center';
-      wrap.style.gap = '6px';
-      wrap.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">תחנה:</span><select id="group-select" class="form-select" style="width:96px;padding:6px 10px"></select>';
-      const badge = document.getElementById('user-role-badge');
-      if (badge && badge.parentNode === nav) nav.insertBefore(wrap, badge);
-      else nav.prepend(wrap);
-      const sel = document.getElementById('group-select');
-      sel.addEventListener('change', (e) => {
-        activeGroup = e.target.value;
-        localStorage.setItem('activeGroup', activeGroup);
-        selectedParticipantId = null;
-        const info = document.getElementById('selected-tag-info');
-        if (info) info.textContent = `תחנה פעילה: ${activeGroup}. לא נבחר משתתף.`;
-        updateLeaderboard(leaderboardData);
-      });
-    }
-
-    const sel = document.getElementById('group-select');
+  function refreshStationDropdownLabels() {
+    const teamData = selectedTeam ? teamsCache[selectedTeam] : null;
+    const sel = document.getElementById('station-select');
     if (!sel) return;
-    const groupsSet = new Set();
-    (leaderboardData || []).forEach(r => groupsSet.add(normalizeGroup(r.teamId)));
-    if (groupsSet.size === 0) {
-      for (let i = 1; i <= 8; i++) groupsSet.add(String(i).padStart(2, '0'));
-    }
-    const groups = Array.from(groupsSet).filter(Boolean).sort();
-    sel.innerHTML = groups.map(g => `<option value="${g}">תחנה ${g}</option>`).join('');
-
-    // תעדוף: צוות המשתמש המחובר > localStorage > ברירת מחדל
-    const userTeamNorm = currentUser && currentUser.team
-      ? String(currentUser.team).replace(/\D+/g, '').padStart(2, '0')
-      : '';
-    if (userTeamNorm) {
-      activeGroup = userTeamNorm;
-      // אם הצוות עדיין לא ברשימה (נתונים טרם הגיעו) — הוסף אותו
-      if (!groups.includes(activeGroup)) {
-        const opt = document.createElement('option');
-        opt.value = activeGroup;
-        opt.textContent = 'תחנה ' + activeGroup;
-        sel.appendChild(opt);
-      }
-    } else if (!activeGroup || !groups.includes(activeGroup)) {
-      activeGroup = groups[0] || '01';
-    }
-    sel.value = activeGroup;
-    localStorage.setItem('activeGroup', activeGroup);
+    Array.from(sel.options).forEach(opt => {
+      const id = opt.value;
+      opt.textContent = id + ' — ' + stationDisplayName(id, teamData);
+    });
   }
 
-  const _initAppOrig = initApp;
-  initApp = function() {
-    _initAppOrig();
-    // אתחל תחנה פעילה לפי הצוות של המשתמש המחובר
-    if (currentUser && currentUser.team) {
-      const userTeam = String(currentUser.team).replace(/\D+/g, '').padStart(2, '0');
-      if (userTeam) {
-        activeGroup = userTeam;
-        localStorage.setItem('activeGroup', activeGroup);
-      }
+  // ═════════ Team / Station change ═════════
+  window.onTeamChange = async (v) => {
+    selectedTeam = v || null;
+    localStorage.setItem('lite:lastTeam', selectedTeam || '');
+    if (!selectedTeam) {
+      renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
+      return;
     }
-    ensureGroupSelector();
-    updateLeaderboard(leaderboardData);
+    if (!teamsCache[selectedTeam]) await loadTeamData(selectedTeam);
+    refreshStationDropdownLabels();
+    await loadCurrentSession();
   };
 
-  const _updateLeaderboardOrig = updateLeaderboard;
-  updateLeaderboard = function(rows) {
-    ensureGroupSelector();
-    const filtered = getFilteredRows(rows || []);
-    _updateLeaderboardOrig(filtered);
+  window.onStationChange = async (v) => {
+    selectedStation = v;
+    localStorage.setItem('lite:lastStation', v);
+    if (!selectedTeam) {
+      renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
+      return;
+    }
+    await loadCurrentSession();
   };
 
-  listenFirebaseTags = function() {
-    const racesCol = collection(db, 'races');
-    onSnapshot(query(racesCol), (snap) => {
-      allRacesCache = [];
-      if (snap.empty) return;
+  // ═════════ Session lookup ═════════
+  async function loadCurrentSession() {
+    if (!selectedTeam || !selectedStation) return;
 
-      // תחנה של המשתמש הנוכחי
-      const myStation = activeGroup || (currentUser?.team ? String(currentUser.team).replace(/\D+/g,'').padStart(2,'0') : '');
+    detachRaceSubscription();
 
+    // Find latest race for team+station
+    try {
+      const q = query(collection(db, 'races'),
+        where('team', '==', selectedTeam),
+        where('station', '==', selectedStation));
+      const snap = await getDocs(q);
       let latest = null;
-      let allTags = [];
       snap.forEach(d => {
         const data = d.data();
-        allRacesCache.push(data);
-        // סנן לפי תחנה — אם למסמך יש station, השווה אותו
-        if (myStation && data.station && data.station !== myStation) return;
-        if (!latest || (data.round || 0) > (latest.round || 0)) latest = data;
-        // Collect tags from ALL rounds for this station
-        if (data.tags && data.tags.length > 0) {
-          data.tags.forEach(t => allTags.push({ ...t, _round: data.round, comments: t.comments || [] }));
+        if (!latest || (data.round || 0) > (latest.round || 0)) {
+          latest = { id: d.id, ...data };
         }
       });
 
-      if (allTags.length === 0) return;
-      if (currentUser?.role !== 'operator' && currentUser?.role !== 'admin') {
-        // המעריך רואה את כל התגיות מכל הסבבים של התחנה שלו
-        leaderboardData = allTags;
-        _updateLeaderboardOrig(leaderboardData);
-        if (latest) {
-          setStatVal('ev-round', '#' + (latest.round || 0));
-          setStatVal('ev-status', latest.status === 'running' ? '🟢 סורק' : '🔴 עצור');
-          setStatVal('ev-tags', allTags.length);
-        }
-        triggerAutoSheetsSync('firebase');
+      if (!latest) {
+        // No sessions yet — show start button for round 1
+        currentRace = null;
+        currentRaceId = null;
+        renderIdleForNextRound(1);
+        return;
       }
+
+      // Attach live subscription
+      currentRaceId = latest.id;
+      subscribeToRace(latest.id);
+
+    } catch (e) {
+      showToast('שגיאה בטעינת סבב אחרון: ' + e.message, 'error');
+      renderIdlePlaceholder('שגיאה. נסה לרענן.');
+    }
+  }
+
+  function subscribeToRace(raceId) {
+    raceUnsubscribe = onSnapshot(doc(db, 'races', raceId), (snap) => {
+      if (!snap.exists()) return;
+      currentRace = snap.data();
+      renderRace();
+    }, (err) => {
+      showToast('שגיאה בהאזנה לסבב: ' + err.message, 'error');
     });
-  };
+  }
 
-  buildChart = function() {
-    const ctx = document.getElementById('chart-canvas');
-    if (!ctx) return;
-    if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+  function detachRaceSubscription() {
+    if (raceUnsubscribe) { raceUnsubscribe(); raceUnsubscribe = null; }
+    currentRace = null;
+    currentRaceId = null;
+  }
 
-    // סטטיסטיקה מסבב ראשון ועד נוכחי.
-    // קודם ננסה לפי תחנה פעילה, ואם אין נתונים - ניפול חזרה לכל המסמכים.
-    let races = (allRacesCache || [])
-      .filter(r => !activeGroup || !r.station || r.station === activeGroup)
-      .slice()
-      .sort((a, b) => (a.round || 0) - (b.round || 0));
+  // ═════════ Rendering ═════════
+  function renderRace() {
+    if (!currentRace) return;
+    const teamData = teamsCache[selectedTeam] || {};
+    const participants = Array.isArray(teamData.participants) ? teamData.participants.map(String) : [];
+    const finished = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const finishedIds = new Set(finished.map(t => String(t.participantId)));
+    const remaining = participants.filter(p => !finishedIds.has(String(p)));
 
-    if (races.length === 0) {
-      races = (allRacesCache || [])
-        .slice()
-        .sort((a, b) => (a.round || 0) - (b.round || 0));
+    // Header status strip
+    setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
+    setText('hdr-round', '#' + (currentRace.round || 1));
+    setText('hdr-status', currentRace.status === 'running' ? '🟢 פעיל' : '🔴 עצור');
+    setText('hdr-progress', finished.length + ' / ' + participants.length);
+
+    // Hide idle
+    document.getElementById('idle-panel').style.display = 'none';
+    document.getElementById('race-panel').style.display = '';
+
+    // Grid
+    const grid = document.getElementById('participants-grid');
+    const gridCount = document.getElementById('grid-count');
+    const gridEmpty = document.getElementById('grid-empty');
+    if (currentRace.status === 'running') {
+      const sortedRemaining = remaining.slice().sort((a,b) => Number(a) - Number(b));
+      grid.innerHTML = sortedRemaining.map(id => `
+        <button class="participant-btn" data-pid="${escHtml(id)}"
+                onclick="markFinished('${escHtml(id)}')">${escHtml(id)}</button>
+      `).join('');
+      gridCount.textContent = sortedRemaining.length + ' נותרו';
+      gridEmpty.style.display = sortedRemaining.length === 0 ? '' : 'none';
+      document.getElementById('grid-section').style.display = '';
+    } else {
+      // stopped session — hide the grid, show the summary
+      document.getElementById('grid-section').style.display = 'none';
     }
 
-    // fallback נוסף: בנייה מתוך leaderboardData במקרה ש-Firebase cache עדיין לא הוזן
-    if (races.length === 0 && leaderboardData.length > 0) {
-      const byRound = new Map();
-      (leaderboardData || []).forEach(t => {
-        const r = Number(t._round || t.round || 0);
-        if (!r) return;
-        if (!byRound.has(r)) byRound.set(r, { round: r, tags: [] });
-        byRound.get(r).tags.push(t);
+    // Finished list
+    const finishedList = document.getElementById('finished-list');
+    const finishedCount = document.getElementById('finished-count');
+    const finishedEmpty = document.getElementById('finished-empty');
+    const sortedFinished = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
+    finishedList.innerHTML = sortedFinished.map(t => {
+      const commentsN = (t.comments || []).length;
+      const cmtLbl = commentsN > 0 ? `<span class="comments-count">💬 ${commentsN}</span>` : '';
+      return `<span class="finished-pill" onclick="openCommentModal('${escHtml(String(t.participantId))}')">
+        <span class="place">${t.place || '?'}</span>
+        <span class="pid">${escHtml(String(t.participantId))}</span>
+        ${cmtLbl}
+      </span>`;
+    }).join('');
+    finishedCount.textContent = String(sortedFinished.length);
+    finishedEmpty.style.display = sortedFinished.length === 0 ? '' : 'none';
+
+    // Buttons
+    const endBtn = document.getElementById('end-btn');
+    const newRoundBtn = document.getElementById('new-round-btn');
+    if (currentRace.status === 'running') {
+      endBtn.style.display = '';
+      newRoundBtn.style.display = 'none';
+    } else {
+      endBtn.style.display = 'none';
+      newRoundBtn.style.display = '';
+      newRoundBtn.textContent = '▶ התחל סבב ' + ((currentRace.round || 1) + 1);
+    }
+  }
+
+  function renderIdleForNextRound(nextRound) {
+    const teamData = teamsCache[selectedTeam] || {};
+    const participants = Array.isArray(teamData.participants) ? teamData.participants : [];
+
+    setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
+    setText('hdr-round', '#' + nextRound);
+    setText('hdr-status', '— טרם התחיל');
+    setText('hdr-progress', '0 / ' + participants.length);
+
+    document.getElementById('race-panel').style.display = 'none';
+    document.getElementById('idle-panel').style.display = '';
+    document.getElementById('idle-warn').style.display = 'none';
+
+    if (participants.length === 0) {
+      document.getElementById('idle-warn').style.display = '';
+      document.getElementById('idle-warn').textContent =
+        '⚠️ אין משתתפים לצוות זה. פתח את פאנל המנהל והוסף לפני שמתחילים.';
+      document.getElementById('start-btn').style.display = 'none';
+    } else {
+      document.getElementById('start-btn').style.display = '';
+      document.getElementById('start-btn').textContent =
+        nextRound === 1 ? '▶ התחל תחנה' : ('▶ התחל סבב ' + nextRound);
+    }
+    setText('idle-hint',
+      participants.length > 0
+        ? `${participants.length} משתתפים בצוות · תחנה ${selectedStation}: ${stationDisplayName(selectedStation, teamData)}`
+        : '');
+  }
+
+  // ═════════ Session actions ═════════
+  window.startSession = async () => {
+    if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
+    const teamData = teamsCache[selectedTeam];
+    if (!teamData || !(teamData.participants || []).length) {
+      showToast('אין משתתפים לצוות זה', 'error'); return;
+    }
+    const nextRound = currentRace ? (Number(currentRace.round || 0) + 1) : 1;
+    const raceId = raceIdFor(selectedTeam, selectedStation, nextRound);
+    try {
+      await setDoc(doc(db, 'races', raceId), {
+        team:      selectedTeam,
+        station:   selectedStation,
+        round:     nextRound,
+        status:    'running',
+        startedAt: serverTimestamp(),
+        startedBy: currentUser.uid,
+        tags:      []
       });
-      races = Array.from(byRound.values()).sort((a, b) => (a.round || 0) - (b.round || 0));
+      detachRaceSubscription();
+      currentRaceId = raceId;
+      subscribeToRace(raceId);
+      showToast('סבב ' + nextRound + ' התחיל', 'success');
+    } catch (e) {
+      showToast('שגיאה בהתחלת סבב: ' + e.message, 'error');
     }
-
-    if (races.length === 0) {
-      showToast('אין נתונים להצגה בגרף', 'info');
-      return;
-    }
-
-    const labels = [];
-    const participantsPerRound = [];
-    const leaderMetric = [];
-    const isLapsModePerRound = [];
-
-    races.forEach(r => {
-      const tags = getFilteredRows(r.tags || []);
-      if (!tags.length) return;
-
-      const hasLaps = tags.some(t => t.laps !== undefined && t.laps !== null);
-      const roundNum = Number(r.round || 0);
-
-      labels.push(`סבב ${roundNum}`);
-      participantsPerRound.push(tags.length);
-      isLapsModePerRound.push(hasLaps);
-
-      if (hasLaps) {
-        // מצב הקפות: מדד מוביל = מקסימום הקפות בסבב
-        const bestLaps = tags.reduce((m, t) => Math.max(m, Number(t.laps || 0)), 0);
-        leaderMetric.push(bestLaps);
-      } else {
-        // מצב הגעה: מדד מוביל = זמן ראשון הטוב ביותר (בשניות)
-        const bestMs = tags.reduce((m, t) => {
-          const v = Number(t.firstMs || 0);
-          return (m === null || v < m) ? v : m;
-        }, null);
-        leaderMetric.push(bestMs !== null ? (bestMs / 1000) : 0);
-      }
-    });
-
-    if (!labels.length) {
-      showToast('אין נתונים להצגה בגרף', 'info');
-      return;
-    }
-
-    const hasAnyLapsRound = isLapsModePerRound.some(Boolean);
-    chartInstance = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          {
-            type: 'bar',
-            label: 'מספר משתתפים בסבב',
-            data: participantsPerRound,
-            backgroundColor: 'rgba(96,165,250,0.35)',
-            borderColor: '#60a5fa',
-            borderWidth: 1,
-            yAxisID: 'y'
-          },
-          {
-            type: 'line',
-            label: hasAnyLapsRound ? 'תוצאת מוביל (הקפות/שניות)' : 'זמן מוביל (שניות)',
-            data: leaderMetric,
-            borderColor: '#34d399',
-            backgroundColor: 'rgba(52,211,153,0.2)',
-            tension: 0.25,
-            fill: false,
-            pointRadius: 4,
-            yAxisID: 'y1'
-          }
-        ]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, labels: { color: '#94a3b8' } },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => {
-                const idx = ctx.dataIndex;
-                if (ctx.datasetIndex === 0) return `משתתפים: ${ctx.raw}`;
-                return isLapsModePerRound[idx]
-                  ? `מוביל בסבב: ${ctx.raw} הקפות`
-                  : `מוביל בסבב: ${Number(ctx.raw).toFixed(2)} שניות`;
-              }
-            }
-          }
-        },
-        scales: {
-          y: {
-            beginAtZero: true,
-            grid: { color: 'rgba(255,255,255,0.06)' },
-            ticks: { color: '#94a3b8' },
-            title: { display: true, text: 'משתתפים', color: '#94a3b8' }
-          },
-          y1: {
-            beginAtZero: true,
-            position: 'right',
-            grid: { drawOnChartArea: false },
-            ticks: { color: '#94a3b8' },
-            title: { display: true, text: hasAnyLapsRound ? 'תוצאת מוביל' : 'שניות', color: '#94a3b8' }
-          },
-          x: {
-            grid: { display: false },
-            ticks: { color: '#94a3b8' }
-          }
-        }
-      }
-    });
   };
 
+  window.markFinished = async (participantId) => {
+    if (!currentRace || currentRace.status !== 'running') {
+      showToast('אין סבב פעיל', 'error'); return;
+    }
+    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    if (existing.some(t => String(t.participantId) === String(participantId))) {
+      showToast('משתתף כבר סומן כסיים', 'info'); return;
+    }
+    const nextPlace = existing.length + 1;
+    const newTag = {
+      participantId: String(participantId),
+      place:         nextPlace,
+      finishedAt:    Date.now(),
+      comments:      []
+    };
+    try {
+      await updateDoc(doc(db, 'races', currentRaceId), {
+        tags: [...existing, newTag]
+      });
+      // onSnapshot will re-render
+    } catch (e) {
+      showToast('שגיאה בסימון: ' + e.message, 'error');
+    }
+  };
 
+  window.endSession = async () => {
+    if (!currentRaceId) return;
+    if (!confirm('לסיים את הסבב הנוכחי?')) return;
+    try {
+      await updateDoc(doc(db, 'races', currentRaceId), {
+        status:  'stopped',
+        endedAt: serverTimestamp()
+      });
+      showToast('הסבב הסתיים', 'info');
+    } catch (e) {
+      showToast('שגיאה בסיום סבב: ' + e.message, 'error');
+    }
+  };
+
+  // ═════════ Comments modal ═════════
+  window.openCommentModal = (pid) => {
+    commentModalPid = String(pid);
+    setText('cm-pid', pid);
+    renderCommentPillsAndList();
+    document.getElementById('comment-modal').classList.add('open');
+  };
+  window.closeCommentModal = () => {
+    document.getElementById('comment-modal').classList.remove('open');
+    commentModalPid = null;
+  };
+
+  function renderCommentPillsAndList() {
+    const pillBar = document.getElementById('cm-tag-pills');
+    const list    = document.getElementById('cm-list');
+    const existing = getCommentsForPid(commentModalPid);
+    const tags = APP_CONFIG.commentTags || [];
+    pillBar.innerHTML = tags.map(tag =>
+      `<span class="tag-pill ${existing.includes(tag) ? 'active' : ''}"
+             onclick="applyCommentTag('${escHtml(tag)}')">${escHtml(tag)}</span>`
+    ).join('');
+    list.innerHTML = existing.length === 0
+      ? '<span style="color:var(--text-muted); font-size:13px">אין הערות עדיין.</span>'
+      : existing.map(c => `<span class="c">${escHtml(c)}</span>`).join('');
+  }
+
+  function getCommentsForPid(pid) {
+    if (!currentRace) return [];
+    const tag = (currentRace.tags || []).find(t => String(t.participantId) === String(pid));
+    return tag ? (tag.comments || []) : [];
+  }
+
+  window.applyCommentTag = async (tag) => {
+    if (!commentModalPid) return;
+    await addCommentToParticipant(commentModalPid, tag);
+    renderCommentPillsAndList();
+  };
+  window.applyCustomComment = async () => {
+    const input = document.getElementById('cm-custom');
+    const text = (input.value || '').trim();
+    if (!text) { showToast('הזן טקסט', 'error'); return; }
+    await addCommentToParticipant(commentModalPid, text);
+    input.value = '';
+    renderCommentPillsAndList();
+  };
+
+  async function addCommentToParticipant(pid, comment) {
+    if (!currentRaceId || !currentRace) return;
+    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const updated = existing.map(t => {
+      if (String(t.participantId) !== String(pid)) return t;
+      const cs = Array.isArray(t.comments) ? t.comments.slice() : [];
+      if (!cs.includes(comment)) cs.push(comment);
+      return { ...t, comments: cs };
+    });
+    try {
+      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
+      showToast('הערה נוספה', 'success');
+    } catch (e) {
+      showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
+    }
+  }
+
+  // ═════════ Sheets sync (stub — full impl in Phase 5) ═════════
+  window.doSyncSheets = () => {
+    showToast('סנכרון Sheets ייבנה בשלב הבא (5)', 'info');
+  };
+
+  // ═════════ Toast ═════════
   window.showToast = (msg, type='info') => {
-    const c  = document.getElementById('toast-container');
+    const c = document.getElementById('toast-container');
     const el = document.createElement('div');
     el.className = `toast ${type}`; el.textContent = msg;
     c.appendChild(el); setTimeout(() => el.remove(), 3500);
   };
 
-  window.toggleCollapsible = (bodyId, arrowId) => {
-    const body  = document.getElementById(bodyId);
-    const arrow = document.getElementById(arrowId);
-    if (!body) return;
-    const open = body.classList.toggle('open');
-    if (arrow) arrow.classList.toggle('open', open);
-  };
 </script>
-
 </body>
 </html>
