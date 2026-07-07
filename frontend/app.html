@@ -122,9 +122,21 @@
     .finished-pill .comments-count {
       font-size: 11px; color: var(--text-muted);
     }
+    .finished-pill .time {
+      font-family: 'Courier New', monospace;
+      font-size: 13px; color: var(--text-muted);
+      direction: ltr; padding: 0 4px;
+    }
     body.outdoor-mode .finished-pill {
       background: #e8ffe8; border: 2px solid #006600; color: #000;
     }
+    body.outdoor-mode .finished-pill .time { color: #333; }
+
+    /* ── Operator placeholder ──────────────────────────── */
+    .placeholder-view { text-align: center; padding: 60px 20px; }
+    .placeholder-view .icon { font-size: 56px; margin-bottom: 20px; }
+    .placeholder-view h2 { margin-bottom: 10px; }
+    .placeholder-view p { color: var(--text-muted); font-size: 15px; }
 
     /* ── Comments popover ──────────────────────────────── */
     .modal-body-mid { padding: 16px 20px; }
@@ -199,7 +211,19 @@
         <div class="val" id="hdr-progress">—</div>
         <div class="lbl">התקדמות</div>
       </div>
+      <div class="status-cell">
+        <div class="val" id="hdr-time">00:00</div>
+        <div class="lbl">זמן מתחילת הסבב</div>
+      </div>
     </div>
+  </div>
+
+  <!-- ══════════ Operator placeholder (until Phase 5) ══════════ -->
+  <div id="operator-placeholder" class="section placeholder-view" style="display:none">
+    <div class="icon">🎮</div>
+    <h2>פאנל המגבש</h2>
+    <p>מסך זה יורחב בקרוב עם תפריט מותאם למגבש (סקירת סבבים, סטטוס תחנות וכו').</p>
+    <p style="margin-top:20px; font-size:13px">בינתיים, המעריך שבתחנה הוא מי שמתחיל סבב ומסמן סיום.</p>
   </div>
 
   <!-- ══════════ IDLE panel ══════════ -->
@@ -301,6 +325,7 @@
   let currentRaceId = null;
   let raceUnsubscribe = null;
   let commentModalPid = null;
+  let timerInterval = null;
 
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
@@ -308,6 +333,23 @@
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const raceIdFor = (team, station, round) => `race_${team}_${station}_${round}`;
+
+  function tsToMs(ts) {
+    // Firestore Timestamp → ms; fallback for plain numbers or nullish
+    if (!ts) return null;
+    if (typeof ts.toMillis === 'function') return ts.toMillis();
+    if (typeof ts === 'number') return ts;
+    return null;
+  }
+
+  function formatMMSS(ms) {
+    if (ms == null || !isFinite(ms) || ms < 0) return '00:00';
+    const totalSec = Math.floor(ms / 1000);
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60).toString().padStart(2, '0');
+    const s = (totalSec % 60).toString().padStart(2, '0');
+    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  }
 
   function stationDisplayName(stationId, teamData) {
     if (teamData && teamData.stationNames && teamData.stationNames[stationId]) {
@@ -351,6 +393,15 @@
     const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
     setText('user-role-badge', (roleLabels[currentUser.role] || currentUser.role) + teamLabel);
     setConnectedFirebase(true);
+
+    // המגבש רואה בינתיים רק placeholder — הזרימה של סבב שייכת למעריך.
+    if (currentUser.role === 'operator') {
+      document.getElementById('station-header-section').style.display = 'none';
+      document.getElementById('idle-panel').style.display = 'none';
+      document.getElementById('race-panel').style.display = 'none';
+      document.getElementById('operator-placeholder').style.display = '';
+      return;
+    }
 
     // Populate station selector
     const stationSel = document.getElementById('station-select');
@@ -587,13 +638,17 @@
     const finishedList = document.getElementById('finished-list');
     const finishedCount = document.getElementById('finished-count');
     const finishedEmpty = document.getElementById('finished-empty');
+    const startMs = tsToMs(currentRace.startedAt);
     const sortedFinished = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
     finishedList.innerHTML = sortedFinished.map(t => {
       const commentsN = (t.comments || []).length;
       const cmtLbl = commentsN > 0 ? `<span class="comments-count">💬 ${commentsN}</span>` : '';
+      const timeLbl = (startMs && t.finishedAt)
+        ? `<span class="time">${formatMMSS(t.finishedAt - startMs)}</span>` : '';
       return `<span class="finished-pill" onclick="openCommentModal('${escHtml(String(t.participantId))}')">
         <span class="place">${t.place || '?'}</span>
         <span class="pid">${escHtml(String(t.participantId))}</span>
+        ${timeLbl}
         ${cmtLbl}
       </span>`;
     }).join('');
@@ -606,21 +661,44 @@
     if (currentRace.status === 'running') {
       endBtn.style.display = '';
       newRoundBtn.style.display = 'none';
+      startSessionTimer();
     } else {
       endBtn.style.display = 'none';
       newRoundBtn.style.display = '';
       newRoundBtn.textContent = '▶ התחל סבב ' + ((currentRace.round || 1) + 1);
+      stopSessionTimer();
+      updateSessionTimerDisplay(); // freeze at final elapsed
     }
+  }
+
+  function startSessionTimer() {
+    stopSessionTimer();
+    updateSessionTimerDisplay();
+    timerInterval = setInterval(updateSessionTimerDisplay, 1000);
+  }
+  function stopSessionTimer() {
+    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+  }
+  function updateSessionTimerDisplay() {
+    if (!currentRace) { setText('hdr-time', '00:00'); return; }
+    const startMs = tsToMs(currentRace.startedAt);
+    if (!startMs) { setText('hdr-time', '00:00'); return; }
+    const nowMs = currentRace.status === 'running'
+      ? Date.now()
+      : (tsToMs(currentRace.endedAt) || Date.now());
+    setText('hdr-time', formatMMSS(nowMs - startMs));
   }
 
   function renderIdleForNextRound(nextRound) {
     const teamData = teamsCache[selectedTeam] || {};
     const participants = Array.isArray(teamData.participants) ? teamData.participants : [];
 
+    stopSessionTimer();
     setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
     setText('hdr-round', '#' + nextRound);
     setText('hdr-status', '— טרם התחיל');
     setText('hdr-progress', '0 / ' + participants.length);
+    setText('hdr-time', '00:00');
 
     document.getElementById('race-panel').style.display = 'none';
     document.getElementById('idle-panel').style.display = '';
