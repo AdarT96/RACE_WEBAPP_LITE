@@ -16,7 +16,7 @@ const FIREBASE_CONFIG = {
 //  App Settings
 // =====================================================
 const APP_CONFIG = {
-  appVersion: "lite-v0.5",
+  appVersion: "lite-v0.6",
 
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
   sheetsApiUrl: "https://script.google.com/macros/s/AKfycbwnpsMA1a2uulK3vV6QdHb0kI5SAtQTY7UH2MPM1SEGaSWkUMTxHgS1AbHZuPTXhykZtg/exec",
