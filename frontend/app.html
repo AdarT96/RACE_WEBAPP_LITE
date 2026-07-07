@@ -268,8 +268,9 @@
       <button id="new-round-btn" class="btn btn-success btn-xl" onclick="startSession()" style="display:none">
         ▶ סבב חדש
       </button>
-      <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px">
-        📊 סנכרן Sheets
+      <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px"
+              title="שולח את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets">
+        📊 סנכרן תחנה ל-Sheets
       </button>
     </div>
   </div>
@@ -854,9 +855,101 @@
     }
   }
 
-  // ═════════ Sheets sync (stub — full impl in Phase 5) ═════════
-  window.doSyncSheets = () => {
-    showToast('סנכרון Sheets ייבנה בשלב הבא (5)', 'info');
+  // ═════════ Sheets sync ═════════
+  // מסנכרן את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
+  // Code.gs מבצע dedup לפי (epc, round) — כך שלחיצה חוזרת בטוחה ולא מכפילה.
+  //
+  // EPC סינתטי: LITE לא סורק תגים, אז אנחנו בונים "epc" בפורמט TTPPPP
+  // (2 ספרות צוות + 4 ספרות משתתף) כדי ש-`pidFromEpc_` ו-`teamFromEpc_`
+  // ב-Code.gs יחלצו את הערכים כרגיל.
+  let sheetsSyncInProgress = false;
+
+  function buildSyncRowsForRace(race) {
+    const rows = [];
+    const teamCode = String(race.team || '00').padStart(2, '0').slice(-2);
+    const startMs = tsToMs(race.startedAt) || 0;
+    const tags = Array.isArray(race.tags) ? race.tags : [];
+    for (const tag of tags) {
+      const pidRaw = String(tag.participantId || '').replace(/\D+/g, '');
+      const pid4 = pidRaw.padStart(4, '0').slice(-4);
+      const epc  = teamCode + pid4;
+      const finishedAtMs = Number(tag.finishedAt) || 0;
+      const timeMs = (finishedAtMs && startMs) ? Math.max(0, finishedAtMs - startMs) : 0;
+      const row = {
+        place:          Number(tag.place || 0),
+        epc:            epc,
+        first_ms:       timeMs,
+        last_ms:        timeMs,
+        antenna:        0,
+        rssi:           0,
+        round:          Number(race.round || 0),
+        count:          1,
+        mode:           'arrival',
+        laps:           0,
+        comments:       Array.isArray(tag.comments) ? tag.comments.join('|') : (tag.comments || ''),
+        station:        String(race.station || ''),
+        evaluator_name: currentUser?.name || '',
+        evaluator_team: String(race.team || '')
+      };
+      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+        row.key = APP_CONFIG.sheetsApiKey;
+      }
+      rows.push(row);
+    }
+    return rows;
+  }
+
+  async function gatherRacesForCurrentContext() {
+    if (!selectedTeam || !selectedStation) return [];
+    const q = query(collection(db, 'races'),
+      where('team', '==', selectedTeam),
+      where('station', '==', selectedStation));
+    const snap = await getDocs(q);
+    const list = [];
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    return list;
+  }
+
+  window.doSyncSheets = async () => {
+    if (sheetsSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה ב-firebase-config.js', 'error');
+      return;
+    }
+    if (!selectedTeam || !selectedStation) {
+      showToast('בחר צוות ותחנה קודם', 'error');
+      return;
+    }
+
+    sheetsSyncInProgress = true;
+    const btn = document.querySelector('button[onclick="doSyncSheets()"]');
+    const origHtml = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
+
+    try {
+      const races = await gatherRacesForCurrentContext();
+      if (races.length === 0) { showToast('אין סבבים לתחנה זו', 'error'); return; }
+
+      let allRows = [];
+      for (const r of races) allRows = allRows.concat(buildSyncRowsForRace(r));
+      if (allRows.length === 0) { showToast('אין משתתפים שסיימו לסנכרון', 'error'); return; }
+
+      // Content-Type ברירת מחדל (text/plain) — נמנע מ-CORS preflight ש-Apps Script לא תומך בו טוב.
+      const requests = allRows.map(row =>
+        fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) })
+      );
+      const results = await Promise.allSettled(requests);
+      const ok   = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+      const fail = results.length - ok;
+      if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות ל-Sheets`, 'success');
+      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} רשומות)`, 'error');
+      else showToast(`סונכרנו ${ok}/${results.length} (${fail} נכשלו)`, 'error');
+    } catch (e) {
+      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+    } finally {
+      sheetsSyncInProgress = false;
+      if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
+    }
   };
 
   // ═════════ Toast ═════════

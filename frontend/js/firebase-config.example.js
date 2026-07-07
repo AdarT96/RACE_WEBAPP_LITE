@@ -22,7 +22,7 @@ const FIREBASE_CONFIG = {
 // =====================================================
 const APP_CONFIG = {
   // גרסת לקוח לתצוגה במסך התחברות (לעדכן בכל שינוי משמעותי)
-  appVersion: "lite-v0.3",
+  appVersion: "lite-v0.4",
 
   // Google Apps Script endpoint (deploy as web app, paste URL here)
   // גרסת LITE משתמשת באותו Sheet וב-Apps Script — שדות שאינם רלוונטיים נשלחים ריקים.
