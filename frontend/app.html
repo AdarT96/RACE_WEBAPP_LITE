@@ -414,16 +414,18 @@
                   placeholder="כתוב הערה חופשית…"></textarea>
         <button class="btn btn-primary" onclick="addGeneralNote()" style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
       </div>
-      <div style="text-align:left; margin-top:10px">
-        <button class="btn btn-info" onclick="syncGeneralNotes()"
-                title="שולח את כל ההערות של המשתתף לטאב 'סיכום' ב-Google Sheets"
-                style="padding:8px 16px; font-size:13px">
-          📤 סנכרן הערות המשתתף ל-Sheets
-        </button>
-      </div>
     </div>
     <div id="gn-no-participant" class="empty-state" style="padding:20px; text-align:center; color:var(--text-muted)">
       בחר משתתף מהרשימה למעלה.
+    </div>
+
+    <!-- Sync כל ההערות שלי, לא רק של המשתתף הנבחר — לכן מחוץ ל-list-wrap -->
+    <div style="text-align:left; margin-top:14px; padding-top:12px; border-top:1px solid var(--border)">
+      <button class="btn btn-info" onclick="syncGeneralNotes()"
+              title="שולח את כל ההערות שכתבת עד עכשיו, לכל המשתתפים, לטאב 'סיכום' ב-Google Sheets"
+              style="padding:10px 18px; font-size:13px">
+        📤 סנכרן את כל ההערות שלי ל-Sheets
+      </button>
     </div>
   </div>
 
@@ -1500,31 +1502,62 @@
     }
   };
 
+  let gnSyncInProgress = false;
   window.syncGeneralNotes = async () => {
+    if (gnSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
       showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
     }
-    if (!gnState.team || !gnState.participantId) { showToast('בחר משתתף', 'error'); return; }
-    // מסנכרנים רק את מה שהמשתמש רואה: מנהל = הכל, אחר = הערות שהוא כתב.
-    const toSync = visibleNotesFor(gnState.notes);
-    if (!toSync.length) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
 
-    const requests = toSync.map(n => {
-      const body = {
-        type:           'general_note',
-        participant_id: gnState.participantId,
-        team_id:        gnState.team,
-        note:           n.text || ''
-      };
-      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-        body.key = APP_CONFIG.sheetsApiKey;
-      }
-      return fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
-    });
-    const results = await Promise.allSettled(requests);
-    const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
-    if (ok === results.length) showToast(`✓ סונכרנו ${ok} הערות`, 'success');
-    else showToast(`סונכרנו ${ok}/${results.length}`, 'error');
+    gnSyncInProgress = true;
+    const btn = document.querySelector('button[onclick="syncGeneralNotes()"]');
+    const origHtml = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
+
+    try {
+      // איסוף כל מסמכי general_notes שהמשתמש מורשה לקרוא
+      // (Firestore rules כבר מסננים לפי צוות עבור מגבש/מעריך; מנהל רואה הכל)
+      const snap = await getDocs(collection(db, 'general_notes'));
+      const rows = [];
+      snap.forEach(d => {
+        const data = d.data();
+        const team = data.team;
+        const pid  = data.participantId;
+        if (!team || !pid) return;
+        const notes = Array.isArray(data.notes) ? data.notes : [];
+        for (const n of notes) {
+          // סינון "רואה רק את שלך" (מנהל = הכל)
+          if (!isAdmin() && n.authorUid !== currentUser?.uid) continue;
+          const body = {
+            type:           'general_note',
+            participant_id: pid,
+            team_id:        team,
+            note:           n.text || ''
+          };
+          if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+            body.key = APP_CONFIG.sheetsApiKey;
+          }
+          rows.push(body);
+        }
+      });
+
+      if (rows.length === 0) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
+
+      const requests = rows.map(body =>
+        fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) })
+      );
+      const results = await Promise.allSettled(requests);
+      const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+      const fail = results.length - ok;
+      if (fail === 0) showToast(`✓ סונכרנו ${ok} הערות מכל המשתתפים`, 'success');
+      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} הערות)`, 'error');
+      else showToast(`סונכרנו ${ok}/${results.length}, ${fail} נכשלו`, 'error');
+    } catch (e) {
+      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+    } finally {
+      gnSyncInProgress = false;
+      if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
+    }
   };
 
   // ═════════ Comparison chart ═════════
