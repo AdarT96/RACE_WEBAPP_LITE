@@ -147,6 +147,39 @@
       color: var(--text); font-size: 15px; min-width: 120px;
     }
     .gn-picker .fixed { font-weight: 700; color: var(--accent); }
+
+    /* ── Note picker grid (smaller variant of participants-grid) ── */
+    .note-picker-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .note-picker-btn {
+      aspect-ratio: 1 / 1;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--surface); border: 2px solid var(--border);
+      border-radius: 14px; color: var(--text);
+      font-family: 'Courier New', monospace;
+      font-size: clamp(22px, 3.8vw, 32px); font-weight: 900;
+      cursor: pointer;
+      transition: transform .08s ease, background .12s, border-color .12s;
+      direction: ltr;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .note-picker-btn:hover { background: rgba(99,102,241,0.10); border-color: var(--accent); }
+    .note-picker-btn:active { transform: scale(0.95); }
+    .note-picker-btn.selected {
+      background: rgba(99,102,241,0.22);
+      border-color: var(--accent); border-width: 3px;
+    }
+    body.outdoor-mode .note-picker-btn {
+      background: #ffffff; border: 3px solid #000080; color: #000080;
+    }
+    body.outdoor-mode .note-picker-btn.selected {
+      background: #ffd700; color: #000; border-color: #000;
+    }
     .gn-note-row {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 10px 12px; background: var(--surface);
@@ -298,6 +331,38 @@
       </div>
     </div>
 
+    <!-- ══════════ Station notes (per-race, resets each session) ══════════ -->
+    <div class="section" id="station-notes-section">
+      <div class="flex flex-center flex-between mb-8">
+        <h3>💬 הערות לתחנה זו</h3>
+        <span id="sn-info" style="color:var(--text-muted); font-size:12px"></span>
+      </div>
+      <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px">
+        לחץ על מספר משתתף שסיים כדי להוסיף לו הערה. ההערות נשמרות עם הסבב הזה בלבד ומגיעות ל-Sheets עם שאר הסבב.
+      </p>
+      <div id="sn-picker" class="note-picker-grid"></div>
+      <div id="sn-picker-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
+        אין משתתפים שסיימו עדיין.
+      </div>
+
+      <div id="sn-selected-area" style="margin-top:16px; display:none">
+        <div style="font-size:13px; margin-bottom:8px">
+          נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
+        </div>
+        <div id="sn-tag-pills" class="tag-pills mb-8" style="display:flex; flex-wrap:wrap; gap:6px"></div>
+        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap">
+          <textarea id="sn-input" class="form-input" rows="2"
+                    style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
+                    placeholder="הערה חופשית לתחנה הזאת…"></textarea>
+          <button class="btn btn-primary" onclick="addStationNote()"
+                  style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
+        </div>
+        <div id="sn-list-title" style="font-size:12px; color:var(--text-muted); margin:14px 0 6px">הערות שלי לסבב הזה:</div>
+        <div id="sn-list"></div>
+        <div id="sn-list-empty" style="color:var(--text-muted); font-size:13px">עוד לא נכתבו הערות למשתתף זה בסבב הזה.</div>
+      </div>
+    </div>
+
     <!-- Actions -->
     <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
       <button id="end-btn" class="btn btn-danger btn-xl" onclick="endSession()" style="display:none">
@@ -328,8 +393,12 @@
       <span>צוות:</span>
       <span id="gn-team-fixed" class="fixed" style="display:none"></span>
       <select id="gn-team-select" onchange="onGnTeamChange(this.value)" style="display:none"></select>
-      <span>משתתף:</span>
-      <select id="gn-participant-select" onchange="onGnParticipantChange(this.value)"></select>
+    </div>
+
+    <div style="font-size:13px; color:var(--text-muted); margin-bottom:8px">בחר משתתף:</div>
+    <div id="gn-participants-grid" class="note-picker-grid"></div>
+    <div id="gn-participants-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
+      אין משתתפים לצוות זה. פנה למנהל.
     </div>
 
     <div id="gn-list-wrap" style="display:none">
@@ -345,16 +414,18 @@
                   placeholder="כתוב הערה חופשית…"></textarea>
         <button class="btn btn-primary" onclick="addGeneralNote()" style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
       </div>
-      <div style="text-align:left; margin-top:10px">
-        <button class="btn btn-info" onclick="syncGeneralNotes()"
-                title="שולח את כל ההערות של המשתתף לטאב 'סיכום' ב-Google Sheets"
-                style="padding:8px 16px; font-size:13px">
-          📤 סנכרן הערות המשתתף ל-Sheets
-        </button>
-      </div>
     </div>
     <div id="gn-no-participant" class="empty-state" style="padding:20px; text-align:center; color:var(--text-muted)">
       בחר משתתף מהרשימה למעלה.
+    </div>
+
+    <!-- Sync כל ההערות שלי, לא רק של המשתתף הנבחר — לכן מחוץ ל-list-wrap -->
+    <div style="text-align:left; margin-top:14px; padding-top:12px; border-top:1px solid var(--border)">
+      <button class="btn btn-info" onclick="syncGeneralNotes()"
+              title="שולח את כל ההערות שכתבת עד עכשיו, לכל המשתתפים, לטאב 'סיכום' ב-Google Sheets"
+              style="padding:10px 18px; font-size:13px">
+        📤 סנכרן את כל ההערות שלי ל-Sheets
+      </button>
     </div>
   </div>
 
@@ -372,27 +443,6 @@
       <div id="chart-picker" class="chart-picker"></div>
       <div id="chart-canvas-wrap"><canvas id="chart-canvas"></canvas></div>
       <div id="chart-empty" class="chart-empty" style="display:none">אין נתונים להצגה — בחר משתתפים או הרץ סבבים.</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════ Comments modal ══════════ -->
-<div class="modal-overlay" id="comment-modal">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3>💬 הערות למשתתף <span id="cm-pid" style="direction:ltr; font-family:monospace"></span></h3>
-      <button class="modal-close" onclick="closeCommentModal()">✕</button>
-    </div>
-    <div class="modal-body-mid">
-      <p style="font-size:13px; margin-bottom:10px">בחר תיוג מהיר או כתוב הערה חופשית:</p>
-      <div id="cm-tag-pills"></div>
-      <div style="display:flex; gap:8px; align-items:center; margin-top:12px; flex-wrap:wrap">
-        <input id="cm-custom" class="form-input" style="flex:1; min-width:160px; padding:8px 12px"
-               placeholder="הערה חופשית…" onkeydown="if(event.key==='Enter') applyCustomComment()">
-        <button class="btn btn-primary" onclick="applyCustomComment()" style="padding:8px 16px">➕ הוסף</button>
-      </div>
-      <div style="margin-top:14px; font-size:13px; color:var(--text-muted)">הערות קיימות:</div>
-      <div id="cm-list" class="comment-list"></div>
     </div>
   </div>
 </div>
@@ -424,10 +474,10 @@
   let currentRace = null;          // Firestore doc data
   let currentRaceId = null;
   let raceUnsubscribe = null;
-  let commentModalPid = null;
   let timerInterval = null;
   let quickTags = [];              // תיוגים משותפים מ-settings/commentTags
   let quickTagsUnsub = null;
+  let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
 
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
@@ -615,9 +665,8 @@
       } else {
         quickTags = (APP_CONFIG.commentTags || []).slice();
       }
-      // רענון UI פתוח (מודל הערות תחנה + סקציית הערות כלליות)
-      const cmModal = document.getElementById('comment-modal');
-      if (cmModal && cmModal.classList.contains('open')) renderCommentPillsAndList();
+      // רענון UI פתוח (סקציית הערות לתחנה + סקציית הערות כלליות)
+      if (typeof renderStationNoteTagPills === 'function') renderStationNoteTagPills();
       if (typeof renderGeneralNotesTags === 'function') renderGeneralNotesTags();
     }, (err) => {
       // שקט — נשארים עם ברירת מחדל / cache אם המנוי נכשל
@@ -770,26 +819,30 @@
       document.getElementById('grid-section').style.display = 'none';
     }
 
-    // Finished list
+    // Finished list — לחיצה על pill מקפיצה את הבחירה בסקציית "הערות לתחנה" למטה
     const finishedList = document.getElementById('finished-list');
     const finishedCount = document.getElementById('finished-count');
     const finishedEmpty = document.getElementById('finished-empty');
     const startMs = tsToMs(currentRace.startedAt);
     const sortedFinished = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
     finishedList.innerHTML = sortedFinished.map(t => {
-      const commentsN = (t.comments || []).length;
+      const commentsN = visibleCommentsFor(t).length;
       const cmtLbl = commentsN > 0 ? `<span class="comments-count">💬 ${commentsN}</span>` : '';
       const timeLbl = (startMs && t.finishedAt)
         ? `<span class="time">${formatMMSS(t.finishedAt - startMs)}</span>` : '';
-      return `<span class="finished-pill" onclick="openCommentModal('${escHtml(String(t.participantId))}')">
+      const pid = escHtml(String(t.participantId));
+      return `<span class="finished-pill" onclick="selectStationNoteParticipant('${pid}', true)">
         <span class="place">${t.place || '?'}</span>
-        <span class="pid">${escHtml(String(t.participantId))}</span>
+        <span class="pid">${pid}</span>
         ${timeLbl}
         ${cmtLbl}
       </span>`;
     }).join('');
     finishedCount.textContent = String(sortedFinished.length);
     finishedEmpty.style.display = sortedFinished.length === 0 ? '' : 'none';
+
+    // Station notes picker (finished participants only)
+    renderStationNotesSection();
 
     // Buttons
     const endBtn = document.getElementById('end-btn');
@@ -924,59 +977,157 @@
     }
   };
 
-  // ═════════ Comments modal ═════════
-  window.openCommentModal = (pid) => {
-    commentModalPid = String(pid);
-    setText('cm-pid', pid);
-    renderCommentPillsAndList();
-    document.getElementById('comment-modal').classList.add('open');
-  };
-  window.closeCommentModal = () => {
-    document.getElementById('comment-modal').classList.remove('open');
-    commentModalPid = null;
+  // ═════════ Station notes (per-race, resets per session) ═════════
+  // Comment shape: { text, authorName, authorUid, at }.
+  // תאימות לאחור: הערות ישנות שנשמרו כמחרוזות מנורמלות בקריאה.
+  function normalizeComment(c) {
+    if (c && typeof c === 'object') return c;
+    return { text: String(c || ''), authorName: '', authorUid: '', at: 0 };
+  }
+
+  // מחזיר רק הערות שהמשתמש רשאי לראות — מנהל רואה הכל, אחר רק שלו.
+  function visibleCommentsFor(tag) {
+    const raw = Array.isArray(tag?.comments) ? tag.comments : [];
+    const all = raw.map(normalizeComment);
+    if (isAdmin()) return all;
+    return all.filter(c => c.authorUid === currentUser?.uid);
+  }
+
+  function renderStationNotesSection() {
+    const picker       = document.getElementById('sn-picker');
+    const pickerEmpty  = document.getElementById('sn-picker-empty');
+    const selectedArea = document.getElementById('sn-selected-area');
+    const info         = document.getElementById('sn-info');
+
+    if (!currentRace) {
+      picker.innerHTML = '';
+      pickerEmpty.style.display = '';
+      selectedArea.style.display = 'none';
+      info.textContent = '';
+      return;
+    }
+
+    const finished = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    info.textContent = `סבב #${currentRace.round || 1} · ${finished.length} סיימו`;
+
+    if (finished.length === 0) {
+      picker.innerHTML = '';
+      pickerEmpty.style.display = '';
+      selectedArea.style.display = 'none';
+      stationNoteSelectedPid = null;
+      return;
+    }
+    pickerEmpty.style.display = 'none';
+
+    const sorted = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
+    picker.innerHTML = sorted.map(t => {
+      const pid = String(t.participantId);
+      const selected = stationNoteSelectedPid === pid;
+      return `<button class="note-picker-btn ${selected ? 'selected' : ''}"
+                     onclick="selectStationNoteParticipant('${escHtml(pid)}', false)">${escHtml(pid)}</button>`;
+    }).join('');
+
+    // אם המשתתף שנבחר לפני עדיין ברשימה — נשמור בחירה; אחרת נאפס
+    const stillHere = sorted.some(t => String(t.participantId) === stationNoteSelectedPid);
+    if (stationNoteSelectedPid && stillHere) {
+      renderStationNoteSelectedArea();
+    } else {
+      stationNoteSelectedPid = null;
+      selectedArea.style.display = 'none';
+    }
+  }
+
+  window.selectStationNoteParticipant = (pid, scroll = false) => {
+    stationNoteSelectedPid = String(pid);
+    renderStationNotesSection();
+    if (scroll) {
+      document.getElementById('station-notes-section')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   };
 
-  function renderCommentPillsAndList() {
-    const pillBar = document.getElementById('cm-tag-pills');
-    const list    = document.getElementById('cm-list');
-    const existing = getCommentsForPid(commentModalPid);
+  function renderStationNoteSelectedArea() {
+    if (!stationNoteSelectedPid) {
+      document.getElementById('sn-selected-area').style.display = 'none';
+      return;
+    }
+    document.getElementById('sn-selected-area').style.display = '';
+    setText('sn-selected-label', stationNoteSelectedPid);
+    renderStationNoteTagPills();
+    renderStationNotesList();
+  }
+
+  window.renderStationNoteTagPills = () => {
+    const container = document.getElementById('sn-tag-pills');
+    if (!container) return;
     const tags = getQuickTags();
-    pillBar.innerHTML = tags.map(tag =>
-      `<span class="tag-pill ${existing.includes(tag) ? 'active' : ''}"
-             onclick="applyCommentTag('${escHtml(tag)}')">${escHtml(tag)}</span>`
+    container.innerHTML = tags.map(t =>
+      `<span class="tag-pill" onclick="addStationNoteFromTag('${escHtml(t)}')">${escHtml(t)}</span>`
     ).join('');
-    list.innerHTML = existing.length === 0
-      ? '<span style="color:var(--text-muted); font-size:13px">אין הערות עדיין.</span>'
-      : existing.map(c => `<span class="c">${escHtml(c)}</span>`).join('');
-  }
-
-  function getCommentsForPid(pid) {
-    if (!currentRace) return [];
-    const tag = (currentRace.tags || []).find(t => String(t.participantId) === String(pid));
-    return tag ? (tag.comments || []) : [];
-  }
-
-  window.applyCommentTag = async (tag) => {
-    if (!commentModalPid) return;
-    await addCommentToParticipant(commentModalPid, tag);
-    renderCommentPillsAndList();
   };
-  window.applyCustomComment = async () => {
-    const input = document.getElementById('cm-custom');
+
+  function renderStationNotesList() {
+    const list  = document.getElementById('sn-list');
+    const empty = document.getElementById('sn-list-empty');
+    const title = document.getElementById('sn-list-title');
+    if (!list) return;
+    const tag = (currentRace?.tags || []).find(t => String(t.participantId) === stationNoteSelectedPid);
+    const raw = Array.isArray(tag?.comments) ? tag.comments : [];
+    title.textContent = isAdmin() ? 'הערות לסבב הזה:' : 'הערות שלי לסבב הזה:';
+    const rows = [];
+    raw.forEach((c, idx) => {
+      const n = normalizeComment(c);
+      if (!isAdmin() && n.authorUid !== currentUser?.uid) return;
+      const when = n.at ? new Date(n.at).toLocaleString('he-IL') : '';
+      const isMine = n.authorUid === currentUser?.uid;
+      const canDelete = isAdmin() || isMine;
+      rows.push(`<div class="gn-note-row">
+        <div class="txt">
+          <div>${escHtml(n.text || '')}</div>
+          <div class="meta">${escHtml(n.authorName || '(ישן)')} · ${escHtml(when)}</div>
+        </div>
+        ${canDelete ? `<button class="del" title="מחק" onclick="deleteStationNote(${idx})">✕</button>` : ''}
+      </div>`);
+    });
+    if (rows.length === 0) {
+      list.innerHTML = '';
+      empty.style.display = '';
+      empty.textContent = isAdmin()
+        ? 'עוד לא נכתבו הערות למשתתף זה בסבב הזה.'
+        : 'עוד לא כתבת הערות למשתתף זה בסבב הזה.';
+      return;
+    }
+    empty.style.display = 'none';
+    list.innerHTML = rows.join('');
+  }
+
+  window.addStationNoteFromTag = async (tagText) => {
+    await appendStationNote(tagText);
+  };
+
+  window.addStationNote = async () => {
+    const input = document.getElementById('sn-input');
     const text = (input.value || '').trim();
-    if (!text) { showToast('הזן טקסט', 'error'); return; }
-    await addCommentToParticipant(commentModalPid, text);
+    if (!text) { showToast('כתוב הערה או בחר תיוג', 'error'); return; }
+    await appendStationNote(text);
     input.value = '';
-    renderCommentPillsAndList();
   };
 
-  async function addCommentToParticipant(pid, comment) {
-    if (!currentRaceId || !currentRace) return;
+  async function appendStationNote(text) {
+    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) {
+      showToast('בחר משתתף בסקציית "הערות לתחנה"', 'error'); return;
+    }
+    const noteObj = {
+      text,
+      authorName: currentUser?.name || '',
+      authorUid:  currentUser?.uid || '',
+      at:         Date.now()
+    };
     const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
     const updated = existing.map(t => {
-      if (String(t.participantId) !== String(pid)) return t;
+      if (String(t.participantId) !== stationNoteSelectedPid) return t;
       const cs = Array.isArray(t.comments) ? t.comments.slice() : [];
-      if (!cs.includes(comment)) cs.push(comment);
+      cs.push(noteObj);
       return { ...t, comments: cs };
     });
     try {
@@ -986,6 +1137,31 @@
       showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
     }
   }
+
+  window.deleteStationNote = async (indexInRawArr) => {
+    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const target = existing.find(t => String(t.participantId) === stationNoteSelectedPid);
+    if (!target) return;
+    const raw = Array.isArray(target.comments) ? target.comments : [];
+    const c = normalizeComment(raw[indexInRawArr]);
+    if (!isAdmin() && c.authorUid !== currentUser?.uid) {
+      showToast('אפשר למחוק רק הערות שכתבת בעצמך', 'error'); return;
+    }
+    if (!confirm('למחוק את ההערה?')) return;
+    const updated = existing.map(t => {
+      if (String(t.participantId) !== stationNoteSelectedPid) return t;
+      const cs = raw.slice();
+      cs.splice(indexInRawArr, 1);
+      return { ...t, comments: cs };
+    });
+    try {
+      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
+      showToast('הערה נמחקה', 'info');
+    } catch (e) {
+      showToast('שגיאה במחיקה: ' + e.message, 'error');
+    }
+  };
 
   // ═════════ Sheets sync ═════════
   // מסנכרן את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
@@ -1018,7 +1194,9 @@
         count:          1,
         mode:           'arrival',
         laps:           0,
-        comments:       Array.isArray(tag.comments) ? tag.comments.join('|') : (tag.comments || ''),
+        // מוציא רק את הטקסט מכל הערה (הן string ישן, הן object חדש)
+        comments:       (Array.isArray(tag.comments) ? tag.comments : [])
+                         .map(c => normalizeComment(c).text).filter(Boolean).join('|'),
         station:        String(race.station || ''),
         evaluator_name: currentUser?.name || '',
         evaluator_team: String(race.team || '')
@@ -1111,39 +1289,47 @@
       teamFixed.textContent = 'צוות ' + Number(currentUser.team);
       gnState.team = pad2(currentUser.team);
     }
-    await refreshGnParticipantsSelector();
+    await renderGnParticipantsGrid();
     renderGeneralNotesTags();
   }
 
-  async function refreshGnParticipantsSelector() {
-    const partSel = document.getElementById('gn-participant-select');
-    partSel.innerHTML = '';
-    const empty = document.createElement('option');
-    empty.value = ''; empty.textContent = '— בחר משתתף —';
-    partSel.appendChild(empty);
+  async function renderGnParticipantsGrid() {
+    const grid  = document.getElementById('gn-participants-grid');
+    const empty = document.getElementById('gn-participants-empty');
+    grid.innerHTML = '';
 
     if (!gnState.team) {
+      empty.style.display = '';
+      empty.textContent = 'בחר צוות תחילה.';
       renderGeneralNotesList(null);
       return;
     }
-    // Load team's participants (from cache if possible)
     let teamData = teamsCache[gnState.team];
     if (!teamData) teamData = await loadTeamData(gnState.team);
     const participants = (teamData && Array.isArray(teamData.participants))
-      ? teamData.participants.slice().sort((a,b) => Number(a) - Number(b)) : [];
-    for (const pid of participants) {
-      const opt = document.createElement('option');
-      opt.value = String(pid); opt.textContent = String(pid);
-      partSel.appendChild(opt);
-    }
+      ? teamData.participants.slice().sort((a, b) => Number(a) - Number(b)) : [];
 
-    // Restore last selection if valid
+    if (participants.length === 0) {
+      empty.style.display = '';
+      empty.textContent = 'אין משתתפים לצוות זה. פנה למנהל.';
+      renderGeneralNotesList(null);
+      return;
+    }
+    empty.style.display = 'none';
+
+    grid.innerHTML = participants.map(pid => {
+      const pidStr = String(pid);
+      const selected = gnState.participantId === pidStr;
+      return `<button class="note-picker-btn ${selected ? 'selected' : ''}"
+                     onclick="selectGnParticipant('${escHtml(pidStr)}')">${escHtml(pidStr)}</button>`;
+    }).join('');
+
+    // שחזור בחירה אחרונה אם עדיין תקפה
     const savedPid = localStorage.getItem('lite:gnPid');
     if (savedPid && participants.map(String).includes(savedPid)) {
-      partSel.value = savedPid;
       gnState.participantId = savedPid;
       subscribeToGnNotes();
-    } else {
+    } else if (!participants.map(String).includes(String(gnState.participantId))) {
       gnState.participantId = null;
       renderGeneralNotesList(null);
     }
@@ -1152,17 +1338,19 @@
   window.onGnTeamChange = async (v) => {
     gnState.team = v || null;
     localStorage.setItem('lite:gnTeam', v || '');
-    // Reset participant selection
     gnState.participantId = null;
     localStorage.removeItem('lite:gnPid');
     detachGnSubscription();
-    await refreshGnParticipantsSelector();
+    await renderGnParticipantsGrid();
   };
 
-  window.onGnParticipantChange = (v) => {
-    gnState.participantId = v || null;
-    localStorage.setItem('lite:gnPid', v || '');
-    if (!v) { detachGnSubscription(); renderGeneralNotesList(null); return; }
+  window.selectGnParticipant = (pid) => {
+    gnState.participantId = String(pid);
+    localStorage.setItem('lite:gnPid', gnState.participantId);
+    // עדכון גרפי של הבחירה בלי טעינה מחדש
+    document.querySelectorAll('#gn-participants-grid .note-picker-btn').forEach(btn => {
+      btn.classList.toggle('selected', btn.textContent === gnState.participantId);
+    });
     subscribeToGnNotes();
   };
 
@@ -1314,31 +1502,62 @@
     }
   };
 
+  let gnSyncInProgress = false;
   window.syncGeneralNotes = async () => {
+    if (gnSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
       showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
     }
-    if (!gnState.team || !gnState.participantId) { showToast('בחר משתתף', 'error'); return; }
-    // מסנכרנים רק את מה שהמשתמש רואה: מנהל = הכל, אחר = הערות שהוא כתב.
-    const toSync = visibleNotesFor(gnState.notes);
-    if (!toSync.length) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
 
-    const requests = toSync.map(n => {
-      const body = {
-        type:           'general_note',
-        participant_id: gnState.participantId,
-        team_id:        gnState.team,
-        note:           n.text || ''
-      };
-      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-        body.key = APP_CONFIG.sheetsApiKey;
-      }
-      return fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
-    });
-    const results = await Promise.allSettled(requests);
-    const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
-    if (ok === results.length) showToast(`✓ סונכרנו ${ok} הערות`, 'success');
-    else showToast(`סונכרנו ${ok}/${results.length}`, 'error');
+    gnSyncInProgress = true;
+    const btn = document.querySelector('button[onclick="syncGeneralNotes()"]');
+    const origHtml = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
+
+    try {
+      // איסוף כל מסמכי general_notes שהמשתמש מורשה לקרוא
+      // (Firestore rules כבר מסננים לפי צוות עבור מגבש/מעריך; מנהל רואה הכל)
+      const snap = await getDocs(collection(db, 'general_notes'));
+      const rows = [];
+      snap.forEach(d => {
+        const data = d.data();
+        const team = data.team;
+        const pid  = data.participantId;
+        if (!team || !pid) return;
+        const notes = Array.isArray(data.notes) ? data.notes : [];
+        for (const n of notes) {
+          // סינון "רואה רק את שלך" (מנהל = הכל)
+          if (!isAdmin() && n.authorUid !== currentUser?.uid) continue;
+          const body = {
+            type:           'general_note',
+            participant_id: pid,
+            team_id:        team,
+            note:           n.text || ''
+          };
+          if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+            body.key = APP_CONFIG.sheetsApiKey;
+          }
+          rows.push(body);
+        }
+      });
+
+      if (rows.length === 0) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
+
+      const requests = rows.map(body =>
+        fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) })
+      );
+      const results = await Promise.allSettled(requests);
+      const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+      const fail = results.length - ok;
+      if (fail === 0) showToast(`✓ סונכרנו ${ok} הערות מכל המשתתפים`, 'success');
+      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} הערות)`, 'error');
+      else showToast(`סונכרנו ${ok}/${results.length}, ${fail} נכשלו`, 'error');
+    } catch (e) {
+      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+    } finally {
+      gnSyncInProgress = false;
+      if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
+    }
   };
 
   // ═════════ Comparison chart ═════════
