@@ -288,6 +288,11 @@
           </div>
           <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
             ${statusBadge}
+            ${u.role === 'evaluator' ? (u.sheetUrl
+              ? `<a class="btn btn-ghost" href="${escHtml(u.sheetUrl)}" target="_blank" rel="noopener"
+                   style="font-size:12px; padding:5px 10px" title="קובץ שיט של המעריך">📄 שיט</a>`
+              : `<button class="btn btn-ghost" onclick="createEvaluatorSheet('${u.uid}')"
+                   style="font-size:12px; padding:5px 10px" title="צור קובץ שיט למעריך">📄 צור שיט</button>`) : ''}
             <select class="role-sel" onchange="changeRole('${u.uid}', this.value)" ${u.uid === currentAdmin?.uid ? 'disabled' : ''}>
               <option value="operator"  ${u.role==='operator'  ? 'selected':''}>מגבש</option>
               <option value="evaluator" ${u.role==='evaluator' ? 'selected':''}>מעריך</option>
@@ -306,7 +311,12 @@
   }
 
   window.approveUser = async (uid) => {
-    try { await updateDoc(doc(db,'users',uid),{approved:true}); showToast('המשתמש אושר ✓','success'); loadUsers(); }
+    try {
+      await updateDoc(doc(db,'users',uid),{approved:true});
+      showToast('המשתמש אושר ✓','success');
+      loadUsers();
+      await createEvaluatorSheetFor(uid); // יוצר קובץ שיט אוטומטית אם זה מעריך
+    }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
   window.rejectUser = async (uid) => {
@@ -315,9 +325,45 @@
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
   window.changeRole = async (uid, newRole) => {
-    try { await updateDoc(doc(db,'users',uid),{role:newRole}); showToast('תפקיד עודכן: '+roleLabel(newRole),'success'); }
+    try {
+      await updateDoc(doc(db,'users',uid),{role:newRole});
+      showToast('תפקיד עודכן: '+roleLabel(newRole),'success');
+      if (newRole === 'evaluator') await createEvaluatorSheetFor(uid);
+    }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
+
+  // ═══════════════════════════════════════════════════════════
+  //  קובץ שיט אישי לכל מעריך — נוצר אוטומטית דרך Apps Script
+  // ═══════════════════════════════════════════════════════════
+  async function createEvaluatorSheetFor(uid) {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (!snap.exists()) return;
+      const u = snap.data();
+      if (u.role !== 'evaluator' || u.sheetUrl) return; // לא מעריך / כבר יש קובץ
+      showToast('יוצר קובץ שיט למעריך…', 'info');
+      const body = {
+        type: 'ensure_evaluator_sheet',
+        uid:  uid,
+        name: u.name || '',
+        team: String(u.team || '')
+      };
+      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+        body.key = APP_CONFIG.sheetsApiKey;
+      }
+      const res  = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!data.success || !data.url) throw new Error(data.message || 'יצירת הקובץ נכשלה');
+      await updateDoc(doc(db, 'users', uid), { sheetUrl: data.url, sheetFileId: data.fileId || '' });
+      showToast('קובץ שיט נוצר למעריך ✓', 'success');
+      loadUsers();
+    } catch (e) {
+      showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
+    }
+  }
+  window.createEvaluatorSheet = (uid) => createEvaluatorSheetFor(uid);
   window.changeTeam = async (uid, newTeam) => {
     const teamNum = newTeam ? parseInt(newTeam) : null;
     try { await updateDoc(doc(db,'users',uid),{team: teamNum || ''}); showToast('צוות עודכן: ' + (teamNum || '—'),'success'); }

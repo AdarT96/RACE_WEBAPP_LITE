@@ -1199,6 +1199,7 @@
                          .map(c => normalizeComment(c).text).filter(Boolean).join('|'),
         station:        String(race.station || ''),
         evaluator_name: currentUser?.name || '',
+        evaluator_uid:  currentUser?.uid || '',
         evaluator_team: String(race.team || '')
       };
       if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
@@ -1532,7 +1533,9 @@
             type:           'general_note',
             participant_id: pid,
             team_id:        team,
-            note:           n.text || ''
+            note:           n.text || '',
+            evaluator_name: n.authorName || '',
+            evaluator_uid:  n.authorUid || ''
           };
           if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
             body.key = APP_CONFIG.sheetsApiKey;

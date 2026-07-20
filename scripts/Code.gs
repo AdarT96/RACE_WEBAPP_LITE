@@ -13,6 +13,11 @@ var TIMEZONE         = "Asia/Jerusalem";
 var STATION_COUNT = 8;           // 01..08
 var SUMMARY_TAB   = "סיכום";
 
+// קבצי שיט אישיים למעריכים
+var EVAL_REGISTRY_TAB = "קבצי מעריכים";  // טאב רישום בקובץ הראשי: מעריך -> קובץ
+var EVAL_FOLDER_NAME  = "קבצי מעריכים";  // תיקיית Drive לקבצים (נוצרת ליד הקובץ הראשי)
+var EVAL_REGISTRY_HEADERS = ["UID", "שם מעריך", "צוות", "File ID", "קישור", "נוצר"];
+
 // מיפוי מזהה תחנה -> שם התחנה (כותרת הטאב בפועל)
 var STATION_NAMES = {
   "01": "מילוי שק",
@@ -51,6 +56,7 @@ function doPost(e) {
 
     if (type === "general_note") return handleGeneralNote_(ss, payload);
     if (type === "station_score") return handleStationScore_(ss, payload);
+    if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
 
     // ברירת מחדל — שורת מירוץ (payload.epc)
     return handleRaceRow_(ss, payload);
@@ -69,7 +75,13 @@ function doGet(e) {
 // ---------- Race row handler ----------
 function handleRaceRow_(ss, payload) {
   if (!payload.epc) return buildResponse(false, "Missing epc");
+  var msg = writeRaceRow_(ss, payload);
+  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeRaceRow_(evalSs, payload); });
+  return buildResponse(true, msg);
+}
 
+// כותב שורת מירוץ לקובץ נתון (הראשי או קובץ אישי של מעריך)
+function writeRaceRow_(ss, payload) {
   var tabName = stationTabName_(payload.station);
   var sheet = getOrCreateSheet_(ss, tabName);
   ensureStationHeaders_(sheet);
@@ -80,18 +92,18 @@ function handleRaceRow_(ss, payload) {
   var maxRound = getMaxRoundNumeric_(sheet);
 
   if (maxRound > 0 && roundNum > 0 && roundNum < maxRound) {
-    return buildResponse(true, "Skipped stale round row");
+    return "Skipped stale round row";
   }
 
   var existingRow = findRowByEpcRound_(sheet, epc, roundNum);
   if (existingRow > 0) {
     updateStationRow_(sheet, existingRow, payload);
     updateSummaryFromRaceRow_(ss, payload);
-    return buildResponse(true, "Updated existing row in " + tabName);
+    return "Updated existing row in " + tabName;
   }
 
   if (isDuplicateStationRow_(sheet, epc, firstMs, roundNum)) {
-    return buildResponse(true, "Skipped duplicate row");
+    return "Skipped duplicate row";
   }
 
   if (roundNum > maxRound) {
@@ -120,7 +132,7 @@ function handleRaceRow_(ss, payload) {
   ]);
 
   updateSummaryFromRaceRow_(ss, payload);
-  return buildResponse(true, "Written 1 row to " + tabName);
+  return "Written 1 row to " + tabName;
 }
 
 // ---------- Station score handler ----------
@@ -128,7 +140,15 @@ function handleStationScore_(ss, payload) {
   var pid = parseInt(payload.participant_id, 10);
   var score = Number(payload.score || 0);
   if (!pid || !score) return buildResponse(false, "Missing pid/score");
+  var msg = writeStationScore_(ss, payload);
+  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeStationScore_(evalSs, payload); });
+  return buildResponse(true, msg);
+}
 
+// כותב ציון תחנה לקובץ נתון (הראשי או קובץ אישי של מעריך)
+function writeStationScore_(ss, payload) {
+  var pid = parseInt(payload.participant_id, 10);
+  var score = Number(payload.score || 0);
   var tabName = stationTabName_(payload.station);
   var sheet = getOrCreateSheet_(ss, tabName);
   ensureStationHeaders_(sheet);
@@ -147,15 +167,24 @@ function handleStationScore_(ss, payload) {
   }
 
   updateSummaryScore_(ss, pid, payload.team_id, payload.station, score);
-  return buildResponse(true, "Score " + score + " recorded for pid " + pid + " on " + tabName);
+  return "Score " + score + " recorded for pid " + pid + " on " + tabName;
 }
 
 // ---------- General note handler ----------
 function handleGeneralNote_(ss, payload) {
   var pid = parseInt(payload.participant_id, 10);
-  var team = payload.team_id;
   var note = String(payload.note || "");
   if (!pid || !note) return buildResponse(false, "Missing pid/note");
+  var msg = writeGeneralNote_(ss, payload);
+  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeGeneralNote_(evalSs, payload); });
+  return buildResponse(true, msg);
+}
+
+// כותב הערה כללית לקובץ נתון (הראשי או קובץ אישי של מעריך)
+function writeGeneralNote_(ss, payload) {
+  var pid = parseInt(payload.participant_id, 10);
+  var team = payload.team_id;
+  var note = String(payload.note || "");
 
   var sheet = getOrCreateSheet_(ss, SUMMARY_TAB);
   ensureSummaryHeaders_(sheet);
@@ -168,7 +197,105 @@ function handleGeneralNote_(ss, payload) {
     parts.push(note);
     sheet.getRange(row, notesCol).setValue(parts.join(" | "));
   }
-  return buildResponse(true, "Note recorded for pid " + pid);
+  return "Note recorded for pid " + pid;
+}
+
+// ---------- Evaluator sheet files ----------
+// יוצר (אם צריך) קובץ Google Sheets אישי למעריך ורושם אותו בטאב הרישום.
+// idempotent — קריאה חוזרת עם אותו uid/name מחזירה את הקובץ הקיים.
+function handleEnsureEvaluatorSheet_(ss, payload) {
+  var uid  = String(payload.uid || "").trim();
+  var name = String(payload.name || "").trim();
+  if (!uid && !name) return buildResponse(false, "Missing uid/name");
+
+  var entry = findEvaluatorEntry_(ss, uid, name);
+  if (entry && entry.fileId) {
+    try {
+      DriveApp.getFileById(entry.fileId); // הקובץ עדיין קיים?
+      return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
+    } catch (gone) { /* הקובץ נמחק מה-Drive — ניצור חדש */ }
+  }
+
+  var title = "שיט מעריך — " + (name || uid);
+  var newSs = SpreadsheetApp.create(title);
+  try {
+    var file = DriveApp.getFileById(newSs.getId());
+    var folder = evaluatorFolder_();
+    file.moveTo(folder);
+  } catch (moveErr) { /* אם ההעברה נכשלה הקובץ נשאר ב-My Drive */ }
+
+  // גיליון פתיחה במקום ה-Sheet1 הריק
+  var first = newSs.getSheets()[0];
+  first.setName("אודות");
+  first.getRange(1, 1).setValue("קובץ שיט אישי — " + (name || uid));
+  first.getRange(2, 1).setValue("טאבים לתחנות ולסיכום ייווצרו אוטומטית עם סנכרון הנתונים הראשון.");
+  first.getRange(1, 1, 2, 1).setFontWeight("bold");
+
+  var reg = getEvalRegistrySheet_(ss);
+  reg.appendRow([
+    uid, name, String(payload.team || ""),
+    newSs.getId(), newSs.getUrl(),
+    Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)
+  ]);
+
+  return buildDataResponse_(true, "Evaluator sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
+}
+
+// תיקיית Drive לקבצי המעריכים — לצד הקובץ הראשי (או ב-root כברירת מחדל)
+function evaluatorFolder_() {
+  var parent;
+  try {
+    var parents = DriveApp.getFileById(SHEET_ID).getParents();
+    parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  } catch (e) {
+    parent = DriveApp.getRootFolder();
+  }
+  var it = parent.getFoldersByName(EVAL_FOLDER_NAME);
+  return it.hasNext() ? it.next() : parent.createFolder(EVAL_FOLDER_NAME);
+}
+
+function getEvalRegistrySheet_(ss) {
+  var sheet = getOrCreateSheet_(ss, EVAL_REGISTRY_TAB);
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(EVAL_REGISTRY_HEADERS);
+    sheet.getRange(1, 1, 1, EVAL_REGISTRY_HEADERS.length)
+         .setFontWeight("bold")
+         .setBackground("#9333ea")
+         .setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+// מחפש מעריך ברישום לפי UID (עדיפות) או שם. השורה האחרונה שנמצאה קובעת.
+function findEvaluatorEntry_(ss, uid, name) {
+  var sheet = ss.getSheetByName(EVAL_REGISTRY_TAB);
+  if (!sheet || sheet.getLastRow() < 2) return null;
+  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
+  var found = null;
+  for (var i = 0; i < vals.length; i++) {
+    var rowUid  = String(vals[i][0] || "").trim();
+    var rowName = String(vals[i][1] || "").trim();
+    var matches = (uid && rowUid && rowUid === uid) || (!uid && name && rowName === name) ||
+                  (uid && !rowUid && name && rowName === name);
+    if (matches) {
+      found = { fileId: String(vals[i][3] || ""), url: String(vals[i][4] || "") };
+    }
+  }
+  return found;
+}
+
+// מריץ פעולת כתיבה גם על הקובץ האישי של המעריך, אם רשום לו קובץ.
+// כשל בשיקוף לא מפיל את הכתיבה לקובץ הראשי.
+function mirrorToEvaluatorFile_(ss, payload, fn) {
+  try {
+    var uid  = String(payload.evaluator_uid || "").trim();
+    var name = String(payload.evaluator_name || "").trim();
+    if (!uid && !name) return;
+    var entry = findEvaluatorEntry_(ss, uid, name);
+    if (!entry || !entry.fileId) return;
+    fn(SpreadsheetApp.openById(entry.fileId));
+  } catch (err) { /* mirror best-effort */ }
 }
 
 // ---------- Summary helpers ----------
@@ -461,5 +588,12 @@ function getOrCreateSheet_(ss, name) {
 
 function buildResponse(success, message) {
   return ContentService.createTextOutput(JSON.stringify({ success: success, message: message }))
+                       .setMimeType(ContentService.MimeType.JSON);
+}
+
+function buildDataResponse_(success, message, data) {
+  var out = { success: success, message: message };
+  for (var k in data) out[k] = data[k];
+  return ContentService.createTextOutput(JSON.stringify(out))
                        .setMimeType(ContentService.MimeType.JSON);
 }
