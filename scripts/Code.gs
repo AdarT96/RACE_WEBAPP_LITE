@@ -70,6 +70,9 @@ function doPost(e) {
   } catch (err) {
     return buildResponse(false, "Error: " + err.message);
   } finally {
+    // חשוב: לשטוף כתיבות (כולל רישום קובץ צוות/מעריך חדש) לפני שחרור הנעילה,
+    // כדי שהבקשה המקבילה הבאה תראה את הרישום ולא תיצור קובץ כפול.
+    try { SpreadsheetApp.flush(); } catch (ignored) {}
     try { lock.releaseLock(); } catch (ignored) {}
   }
 }
