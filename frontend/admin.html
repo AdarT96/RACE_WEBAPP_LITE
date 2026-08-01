@@ -141,13 +141,14 @@
         </div>
       </div>
 
-      <!-- שמות תחנות -->
+      <!-- מיפוי תחנות -->
       <div class="section mb-12">
-        <h3 class="mb-8">📍 שמות תחנות עבור הצוות</h3>
+        <h3 class="mb-8">📍 סדר התחנות עבור הצוות</h3>
         <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-          השאר ריק כדי להשתמש בברירת המחדל (מוצגת מימין לשדה).
+          לכל מספר תחנה בחר איזה סוג תחנה יושב בו — כל צוות יכול לעבור את התחנות בסדר אחר.
+          כל 17 התחנות צריכות להופיע פעם אחת.
         </p>
-        <div id="station-names-list"></div>
+        <div id="station-map-list"></div>
       </div>
 
       <div class="flex" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
@@ -196,6 +197,7 @@
 <div id="toast-container"></div>
 
 <script src="js/firebase-config.js"></script>
+<script src="js/station-types.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
@@ -552,7 +554,11 @@
   //  ניהול צוותים: משתתפים + שמות תחנות מותאמים לצוות
   // ═══════════════════════════════════════════════════════════
   let currentTeamNumber = null;
-  let currentTeamData   = { participants: [], stationNames: {} };
+  let currentTeamData   = { participants: [], stationMap: {} };
+
+  // סוגי תחנות (ברירת מחדל מ-station-types.js)
+  const STATION_TYPES = window.DEFAULT_STATION_TYPES || {};
+  const STATION_ORDER = window.DEFAULT_STATION_ORDER || [];
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
@@ -583,10 +589,10 @@
       const data = snap.exists() ? snap.data() : {};
       currentTeamData = {
         participants: Array.isArray(data.participants) ? data.participants.slice() : [],
-        stationNames: (data.stationNames && typeof data.stationNames === 'object') ? { ...data.stationNames } : {}
+        stationMap: (data.stationMap && typeof data.stationMap === 'object') ? { ...data.stationMap } : {}
       };
       renderParticipants();
-      renderStationNames();
+      renderStationMap();
       editor.style.display = '';
       setSaveStatus(snap.exists()
         ? 'נטען בהצלחה'
@@ -615,28 +621,29 @@
     `).join('');
   }
 
-  function renderStationNames() {
-    const container = document.getElementById('station-names-list');
+  function renderStationMap() {
+    const container = document.getElementById('station-map-list');
     if (!container) return;
-    const count    = APP_CONFIG.stationCount || 8;
-    const defaults = APP_CONFIG.defaultStationNames || {};
-    const overrides = currentTeamData.stationNames;
+    const map = currentTeamData.stationMap || {};
+    const count = STATION_ORDER.length;
     let html = '';
     for (let i = 1; i <= count; i++) {
-      const id = pad2(i);
-      const defaultName = defaults[id] || ('תחנה ' + id);
-      const currentName = (overrides[id] !== undefined) ? overrides[id] : '';
+      const slot = pad2(i);
+      const selectedId = map[slot] || STATION_ORDER[i - 1]; // ברירת מחדל = הסדר הרגיל
+      const opts = STATION_ORDER.map(id =>
+        `<option value="${id}" ${id === selectedId ? 'selected' : ''}>${escHtml(STATION_TYPES[id].name)}</option>`
+      ).join('');
       html += `
         <div class="station-name-row">
-          <span class="station-id">${id}</span>
-          <input class="form-input" data-station="${id}"
-                 placeholder="${escHtml(defaultName)}"
-                 value="${escHtml(currentName)}">
-          <span class="default-hint">ברירת מחדל: ${escHtml(defaultName)}</span>
+          <span class="station-id">${slot}</span>
+          <select class="role-sel" data-slot="${slot}" style="flex:1; min-width:180px"
+                  onchange="onStationMapChange()">${opts}</select>
         </div>`;
     }
     container.innerHTML = html;
   }
+
+  window.onStationMapChange = () => setSaveStatus('שינויים לא שמורים');
 
   window.addParticipant = () => {
     const input = document.getElementById('participant-input');
@@ -661,23 +668,32 @@
     setSaveStatus('שינויים לא שמורים');
   };
 
-  function collectStationNamesFromUI() {
-    const rows = document.querySelectorAll('#station-names-list input[data-station]');
+  function collectStationMapFromUI() {
+    const rows = document.querySelectorAll('#station-map-list select[data-slot]');
     const out = {};
-    rows.forEach(inp => {
-      const id  = inp.dataset.station;
-      const val = (inp.value || '').trim();
-      if (val) out[id] = val; // רק דריסות בפועל — ריק = משתמש בברירת מחדל
-    });
+    rows.forEach(sel => { out[sel.dataset.slot] = sel.value; });
     return out;
   }
 
   window.saveTeam = async () => {
     if (!currentTeamNumber) { showToast('לא נבחר צוות', 'error'); return; }
+    const stationMap = collectStationMapFromUI();
+
+    // אזהרה רכה אם סוג תחנה חוזר על עצמו (כל 17 אמורות להופיע פעם אחת)
+    const used = Object.values(stationMap);
+    const dups = used.filter((v, i) => used.indexOf(v) !== i);
+    if (dups.length) {
+      const names = [...new Set(dups)].map(id => STATION_TYPES[id]?.name || id).join(', ');
+      if (!confirm('שים לב: התחנות הבאות משויכות ליותר ממספר אחד — ' + names + '.\nלשמור בכל זאת?')) {
+        setSaveStatus('לא נשמר');
+        return;
+      }
+    }
+
     const payload = {
       teamNumber:   currentTeamNumber,
       participants: currentTeamData.participants.map(String),
-      stationNames: collectStationNamesFromUI(),
+      stationMap:   stationMap,
       updatedAt:    serverTimestamp(),
       updatedBy:    currentAdmin?.uid || ''
     };
@@ -685,8 +701,8 @@
     try {
       await setDoc(doc(db, 'teams', currentTeamNumber), payload, { merge: true });
       // עדכן state מקומי מהמה שנשמר, כדי שלא תהיה קופצנות ב-UI
-      currentTeamData.stationNames = payload.stationNames;
-      renderStationNames();
+      currentTeamData.stationMap = payload.stationMap;
+      renderStationMap();
       showToast('צוות ' + currentTeamNumber + ' נשמר ✓', 'success');
       setSaveStatus('נשמר');
     } catch (e) {
