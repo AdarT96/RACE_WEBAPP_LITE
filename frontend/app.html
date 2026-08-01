@@ -529,9 +529,21 @@
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
 
-  // סוגי תחנות (ברירת מחדל מ-station-types.js; בהמשך המנהל יוכל לדרוס דרך Firestore)
+  // סוגי תחנות — ברירת מחדל מ-station-types.js, נדרסים ע"י settings/stationTypes אם קיים
   let stationTypes = (typeof window !== 'undefined' && window.DEFAULT_STATION_TYPES) || {};
   let stationOrder = (typeof window !== 'undefined' && window.DEFAULT_STATION_ORDER) || [];
+
+  async function loadStationTypes() {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'stationTypes'));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && data.types && typeof data.types === 'object') {
+          stationTypes = { ...stationTypes, ...data.types };
+        }
+      }
+    } catch (e) { /* נשארים עם ברירת המחדל */ }
+  }
 
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
@@ -624,6 +636,8 @@
 
     // תיוגים משותפים + real-time refresh
     subscribeToQuickTags();
+    // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים
+    await loadStationTypes();
 
     // המגבש רואה placeholder לגבי זרימת התחנה — אבל שאר החלקים (הערות כלליות) פועלים
     if (currentUser.role === 'operator') {
@@ -1380,6 +1394,9 @@
         station:        String(race.station || ''),
         station_type:   st ? st.id : '',
         station_name:   st ? st.name : '',
+        params:         st ? st.params.map(p => p.name) : [],
+        measure:        st ? st.measure : '',
+        measure_label:  st ? (st.measureLabel || '') : '',
         place:          tag.place != null ? Number(tag.place) : '',
         reps:           tag.reps  != null ? Number(tag.reps)  : '',
         first_ms:       timeMs,

@@ -19,6 +19,10 @@ var TEAM_REGISTRY_TAB     = "קבצי צוותים";
 var TEAM_FOLDER_NAME      = "קבצי צוותים";
 var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר"];
 
+// תיקיית האירוע ב-Drive — אחת לכל האירוע (2–4 ימים). ריק = מחושב אוטומטית
+// "גיבוש <חודש> <שנה>" מהתאריך הנוכחי (אירוע אחד בחודש). אפשר לקבע שם ידני.
+var EVENT_FOLDER_NAME = "";
+
 // כותרות טאב מועמד (מבנה קבוע)
 var PARTICIPANT_HEADERS = ["תחנה", "סבב", "מקום", "מספר", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
 var GENERAL_STATION_LABEL = "(הערה כללית)";
@@ -94,14 +98,29 @@ function handleRaceRow_(ss, payload) {
   var t = resolveType_(payload);
   if (!t) return buildResponse(false, "Unknown station");
 
+  // הגדרה אפקטיבית: מעדיף מה שה-app שלח (משקף עריכות מנהל ב-Firestore),
+  // ונופל חזרה ל-STATION_TYPES המוטמע כאן.
+  var def = effectiveDef_(payload, t.def);
+
   var team = teamId_(payload);
   if (team) {
     var teamSs = getTeamFile_(ss, team);
-    if (teamSs) writeParticipantRow_(teamSs, payload, t.def);
+    if (teamSs) writeParticipantRow_(teamSs, payload, def);
   }
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeParticipantRow_(evalSs, payload, t.def); });
+  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeParticipantRow_(evalSs, payload, def); });
 
-  return buildResponse(true, "OK: " + t.def.name + " / מועמד " + pid);
+  return buildResponse(true, "OK: " + def.name + " / מועמד " + pid);
+}
+
+// שמות פרמטרים/מדידה/שם תחנה — מה-payload אם הגיע, אחרת מברירת המחדל
+function effectiveDef_(payload, def) {
+  var params = (Array.isArray(payload.params) && payload.params.length) ? payload.params.slice() : def.params;
+  return {
+    name:         payload.station_name  ? String(payload.station_name) : def.name,
+    measure:      payload.measure        ? String(payload.measure)      : def.measure,
+    measureLabel: (payload.measure_label !== undefined) ? String(payload.measure_label) : def.measureLabel,
+    params:       params
+  };
 }
 
 // כותב שורת הערכה לטאב המועמד בקובץ נתון (קובץ צוות או קובץ מעריך)
@@ -246,17 +265,33 @@ function getTeamRegistrySheet_(ss) {
   return sheet;
 }
 
-function teamFolder_() { return subFolder_(TEAM_FOLDER_NAME); }
-function evaluatorFolder_() { return subFolder_(EVAL_FOLDER_NAME); }
+function teamFolder_()      { return getOrCreateFolderIn_(eventFolder_(), TEAM_FOLDER_NAME); }
+function evaluatorFolder_() { return getOrCreateFolderIn_(eventFolder_(), EVAL_FOLDER_NAME); }
 
-function subFolder_(name) {
-  var parent;
+// תיקיית האירוע — לצד הקובץ הראשי, כל קבצי הצוותים והמעריכים בתוכה
+function eventFolder_() {
+  var name = EVENT_FOLDER_NAME ||
+             ("גיבוש " + hebMonth_() + " " + Utilities.formatDate(new Date(), TIMEZONE, "yyyy"));
+  return getOrCreateFolderIn_(driveParent_(), name);
+}
+
+function driveParent_() {
   try {
     var parents = DriveApp.getFileById(SHEET_ID).getParents();
-    parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
-  } catch (e) { parent = DriveApp.getRootFolder(); }
+    return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
+  } catch (e) { return DriveApp.getRootFolder(); }
+}
+
+function getOrCreateFolderIn_(parent, name) {
   var it = parent.getFoldersByName(name);
   return it.hasNext() ? it.next() : parent.createFolder(name);
+}
+
+function hebMonth_() {
+  var months = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני",
+                "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"];
+  var mm = parseInt(Utilities.formatDate(new Date(), TIMEZONE, "MM"), 10);
+  return months[mm - 1] || "";
 }
 
 // ---------- קבצי מעריכים ----------
