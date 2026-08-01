@@ -19,7 +19,7 @@ const APP_CONFIG = {
   appVersion: "lite-v0.6",
 
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
-  sheetsApiUrl: "https://script.google.com/macros/s/AKfycbwmC-wPn2XLbvD3HA-S9sWSQg0nZGOhhBjdqnF1_-QTT9KkdJRndfEgMkW4MZiK826SGw/exec",
+  sheetsApiUrl: "https://script.google.com/macros/s/AKfycbybWGa13xWEoDp4S7NBkLdxPQT2llPmM74jkfREJ8dUJrSa-QOmYKrO8t9oPmPLtQ5TDg/exec",
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
 
   // Team count for registration.
