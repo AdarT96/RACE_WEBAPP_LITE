@@ -4,7 +4,9 @@
 //
 //  כל סוג תחנה:
 //    name         — שם התצוגה (וגם שם הטאב ב-Sheet)
-//    arrivalOrder  — האם מסמנים סדר הגעה/מקום בתחנה זו
+//    measure      — מדידה כמותית בתחנה: "place" (סדר הגעה/מקום) |
+//                   "reps" (מספר חזרות) | "none" (רק ציונים והערות)
+//    measureLabel — תווית לשדה הכמותי (רלוונטי ל-"reps")
 //    params[]      — פרמטרים נבדקים (1–2), כל אחד עם ציון 1–7 והערות מהירות
 //    markingNote   — הנחיית סימון מיוחדת מהקובץ (לעיון; טיפול בשלב מאוחר יותר)
 //
@@ -15,7 +17,8 @@
 const DEFAULT_STATION_TYPES = {
   jerrycans: {
     name: "סחיבת ג׳ריקנים",
-    arrivalOrder: false,
+    measure: "reps",
+    measureLabel: "מספר חזרות",
     markingNote: "לסמן מספר סבבים סופי של כל מועמד (לא כל סיבוב)",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -32,7 +35,7 @@ const DEFAULT_STATION_TYPES = {
 
   stretcher: {
     name: "אלונקה סוציומטרית",
-    arrivalOrder: true,
+    measure: "place",
     markingNote: "בכל סבב שני חלקים — אישי (סימון סדרי הגעה כמו בספרינטים) וקבוצתי (אין צורך לסמן סדר)",
     params: [
       { name: "אקטיביות", quickNotes: [
@@ -60,7 +63,8 @@ const DEFAULT_STATION_TYPES = {
 
   crawls: {
     name: "זחילות",
-    arrivalOrder: false,
+    measure: "reps",
+    measureLabel: "מספר חזרות",
     markingNote: "לסמן מספר סבבים סופי של כל מועמד (לא כל סיבוב)",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -78,7 +82,7 @@ const DEFAULT_STATION_TYPES = {
 
   sprints: {
     name: "ספרינטים",
-    arrivalOrder: true,
+    measure: "place",
     markingNote: "לסמן כל סיבוב סדרי הגעה, מדידת זמנים מדויקת בת השוואה בין כל המתמודדים",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -95,7 +99,7 @@ const DEFAULT_STATION_TYPES = {
 
   ironNerves: {
     name: "עצבים מברזל",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "לסמן לכל מועמד את מספר הברגים שהצליח לסדר + הערות על איכות הביצוע (ברגים הפוכים, לא עד הסוף וכו')",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -113,7 +117,7 @@ const DEFAULT_STATION_TYPES = {
 
   magen: {
     name: "מגנן",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אינטליגנציה חברתית", quickNotes: [
@@ -135,7 +139,7 @@ const DEFAULT_STATION_TYPES = {
 
   dynamicFitness: {
     name: "תרגיל כושר דינמי",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -152,7 +156,7 @@ const DEFAULT_STATION_TYPES = {
 
   tent: {
     name: "אוהל",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אקטיביות", quickNotes: [
@@ -175,7 +179,7 @@ const DEFAULT_STATION_TYPES = {
 
   checkers: {
     name: "דמקה",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אסרטיביות", quickNotes: [
@@ -199,7 +203,7 @@ const DEFAULT_STATION_TYPES = {
 
   spiderWeb: {
     name: "קורי עכביש",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אינטליגנציה חברתית", quickNotes: [
@@ -222,7 +226,7 @@ const DEFAULT_STATION_TYPES = {
 
   pullup: {
     name: "מתח",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -238,7 +242,7 @@ const DEFAULT_STATION_TYPES = {
 
   minefield: {
     name: "שדה מוקשים",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אקטיביות", quickNotes: [
@@ -260,7 +264,8 @@ const DEFAULT_STATION_TYPES = {
 
   sackFill: {
     name: "מילוי שק",
-    arrivalOrder: false,
+    measure: "reps",
+    measureLabel: "מספר חזרות",
     markingNote: "",
     params: [
       { name: "אקטיביות", quickNotes: [
@@ -278,7 +283,7 @@ const DEFAULT_STATION_TYPES = {
 
   ladder: {
     name: "צא מזה – סולם ההצלחה",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "מקום לסמן האם המועמד לא הצליח לסיים אחד השלבים (איזה שלב לא הצליח לסיים, עד 10 שלבים)",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -302,7 +307,7 @@ const DEFAULT_STATION_TYPES = {
 
   puzzleA: {
     name: "פאזל + בניית A",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -327,7 +332,7 @@ const DEFAULT_STATION_TYPES = {
 
   debate: {
     name: "דיבייט",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אסרטיביות", quickNotes: [
@@ -345,7 +350,7 @@ const DEFAULT_STATION_TYPES = {
 
   discussion: {
     name: "דיון",
-    arrivalOrder: false,
+    measure: "none",
     markingNote: "",
     params: [
       { name: "אינטליגנציה חברתית", quickNotes: [
