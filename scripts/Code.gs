@@ -1,6 +1,7 @@
 // ============================================================
-//  Google Apps Script — RFID Sync
-//  טאב לכל תחנה (ת 01..ת NN) + טאב סיכום אחד
+//  Google Apps Script — סנכרון גיבוש (גרסת LITE)
+//  טאב לכל סוג תחנה + טאב סיכום, וקבצי שיט אישיים למעריכים.
+//  ציון 1–7 לכל פרמטר · הערות · מקום/מספר חזרות לפי סוג התחנה.
 // ============================================================
 
 // ---------- Settings ----------
@@ -10,62 +11,53 @@ var API_SECRET_KEY = "YOUR_SECRET_KEY_HERE";
 var TIMESTAMP_FORMAT = "yyyy-MM-dd HH:mm:ss";
 var TIMEZONE         = "Asia/Jerusalem";
 
-var STATION_COUNT = 8;           // 01..08
-var SUMMARY_TAB   = "סיכום";
-var SUMMARY_LEAD_COLS = 2;       // עמודות פתיחה בטאב הסיכום לפני זוגות התחנות: משתתף, צוות
+var SUMMARY_TAB          = "סיכום";
+var GENERAL_NOTES_HEADER = "הערות כלליות";
 
 // קבצי שיט אישיים למעריכים
-var EVAL_REGISTRY_TAB = "קבצי מעריכים";  // טאב רישום בקובץ הראשי: מעריך -> קובץ
-var EVAL_FOLDER_NAME  = "קבצי מעריכים";  // תיקיית Drive לקבצים (נוצרת ליד הקובץ הראשי)
+var EVAL_REGISTRY_TAB = "קבצי מעריכים";
+var EVAL_FOLDER_NAME  = "קבצי מעריכים";
 var EVAL_REGISTRY_HEADERS = ["UID", "שם מעריך", "צוות", "File ID", "קישור", "נוצר"];
 
-// מיפוי מזהה תחנה -> שם התחנה (כותרת הטאב בפועל)
-var STATION_NAMES = {
-  "01": "מילוי שק",
-  "02": "ספרינטים",
-  "03": "דמקה",
-  "04": "אלונקה סוציומטרי",
-  "05": "עצבים מברזל",
-  "06": "זחילות",
-  "07": "תחנה 07",
-  "08": "תחנה 08"
+// ---------- סוגי תחנות (מסונכרן עם frontend/js/station-types.js) ----------
+// measure: "place" (סדר הגעה) | "reps" (מספר חזרות/ברגים/שלב) | "none"
+var STATION_TYPES = {
+  jerrycans: { name: "סחיבת ג׳ריקנים", measure: "reps", measureLabel: "מספר חזרות", params: ["חוסן וכושר הסתגלות"] },
+  stretcher: { name: "אלונקה סוציומטרית", measure: "place", params: ["אקטיביות", "אינטליגנציה חברתית"] },
+  crawls: { name: "זחילות", measure: "reps", measureLabel: "מספר חזרות", params: ["חוסן וכושר הסתגלות"] },
+  sprints: { name: "ספרינטים", measure: "place", params: ["חוסן וכושר הסתגלות"] },
+  ironNerves: { name: "עצבים מברזל", measure: "reps", measureLabel: "מספר ברגים", params: ["חוסן וכושר הסתגלות"] },
+  magen: { name: "מגנן", measure: "none", params: ["אינטליגנציה חברתית", "אקטיביות"] },
+  dynamicFitness: { name: "תרגיל כושר דינמי", measure: "none", params: ["חוסן וכושר הסתגלות"] },
+  tent: { name: "אוהל", measure: "none", params: ["אקטיביות", "אינטליגנציה חברתית"] },
+  checkers: { name: "דמקה", measure: "none", params: ["אסרטיביות", "ניתוח מידע ושיקול דעת"] },
+  spiderWeb: { name: "קורי עכביש", measure: "none", params: ["אינטליגנציה חברתית", "אקטיביות"] },
+  pullup: { name: "מתח", measure: "none", params: ["חוסן וכושר הסתגלות"] },
+  minefield: { name: "שדה מוקשים", measure: "none", params: ["אקטיביות", "אסרטיביות"] },
+  sackFill: { name: "מילוי שק", measure: "reps", measureLabel: "מספר חזרות", params: ["אקטיביות"] },
+  ladder: { name: "צא מזה – סולם ההצלחה", measure: "reps", measureLabel: "שלב שהגיע אליו", params: ["חוסן וכושר הסתגלות", "ניתוח מידע ושיקול דעת"] },
+  puzzleA: { name: "פאזל + בניית A", measure: "none", params: ["חוסן וכושר הסתגלות", "אינטליגנציה חברתית"] },
+  debate: { name: "דיבייט", measure: "none", params: ["אסרטיביות"] },
+  discussion: { name: "דיון", measure: "none", params: ["אינטליגנציה חברתית"] }
 };
-
-// כותרות עבור טאב תחנה
-// עמודות (1-based): 1 מקום · 2 ID · 3 זמן(ms) · 4 זמן(mm:ss) · 5 סבב ·
-//                   6 תאריך · 7 תחנה · 8 מעריך · 9 צוות מעריך · 10 הערות · 11 ציון
-var STATION_HEADERS = [
-  "מקום", "ID", "זמן (ms)", "זמן (mm:ss)",
-  "סבב", "תאריך", "תחנה", "מעריך", "צוות מעריך", "הערות", "ציון"
-];
-var STATION_COL = {
-  PLACE: 1, ID: 2, MS: 3, MMSS: 4, ROUND: 5, DATE: 6,
-  STATION: 7, EVAL: 8, EVAL_TEAM: 9, COMMENTS: 10, SCORE: 11
-};
+var STATION_ORDER = ["jerrycans", "stretcher", "crawls", "sprints", "ironNerves", "magen", "dynamicFitness", "tent", "checkers", "spiderWeb", "pullup", "minefield", "sackFill", "ladder", "puzzleA", "debate", "discussion"];
 
 // ---------- Router ----------
 function doPost(e) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
-
     var payload = JSON.parse(e.postData.contents || "{}");
 
     if (API_SECRET_KEY && API_SECRET_KEY !== "YOUR_SECRET_KEY_HERE") {
-      if (payload.key !== API_SECRET_KEY) {
-        return buildResponse(false, "Unauthorized");
-      }
+      if (payload.key !== API_SECRET_KEY) return buildResponse(false, "Unauthorized");
     }
 
     var ss = SpreadsheetApp.openById(SHEET_ID);
-
     var type = String(payload.type || "").trim();
 
-    if (type === "general_note") return handleGeneralNote_(ss, payload);
-    if (type === "station_score") return handleStationScore_(ss, payload);
+    if (type === "general_note")           return handleGeneralNote_(ss, payload);
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
-
-    // ברירת מחדל — שורת מירוץ (payload.id)
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -76,138 +68,231 @@ function doPost(e) {
 }
 
 function doGet(e) {
-  return buildResponse(true, "RFID Sync alive — טאב לתחנה + טאב סיכום");
+  return buildResponse(true, "Gibush sync alive — טאב לסוג תחנה + סיכום");
+}
+
+// ---------- זיהוי סוג התחנה ----------
+function resolveType_(payload) {
+  var id = String(payload.station_type || "").trim();
+  if (id && STATION_TYPES[id]) return { id: id, def: STATION_TYPES[id] };
+
+  var name = String(payload.station_name || "").trim();
+  if (name) {
+    for (var k in STATION_TYPES) if (STATION_TYPES[k].name === name) return { id: k, def: STATION_TYPES[k] };
+  }
+  var n = parseInt(String(payload.station || "").replace(/\D+/g, ""), 10);
+  if (n >= 1 && STATION_ORDER[n - 1]) {
+    var kk = STATION_ORDER[n - 1];
+    return { id: kk, def: STATION_TYPES[kk] };
+  }
+  return null;
+}
+
+// ---------- טאב תחנה: כותרות דינמיות לפי סוג ----------
+function stationHeaders_(def) {
+  var h = ["ID", "סבב", "תאריך", "מעריך", "צוות"];
+  if (def.measure === "place") { h.push("מקום"); h.push("זמן"); }
+  else if (def.measure === "reps") { h.push(def.measureLabel || "מספר חזרות"); }
+  for (var i = 0; i < def.params.length; i++) h.push("ציון: " + def.params[i]);
+  h.push("הערות");
+  return h;
 }
 
 // ---------- Race row handler ----------
 function handleRaceRow_(ss, payload) {
   if (!participantId_(payload)) return buildResponse(false, "Missing id");
-  var msg = writeRaceRow_(ss, payload);
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeRaceRow_(evalSs, payload); });
-  return buildResponse(true, msg);
+  var t = resolveType_(payload);
+  if (!t) return buildResponse(false, "Unknown station");
+
+  writeRaceRow_(ss, payload, t);
+  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeRaceRow_(evalSs, payload, t); });
+  return buildResponse(true, "OK: " + t.def.name);
 }
 
-// כותב שורת מירוץ לקובץ נתון (הראשי או קובץ אישי של מעריך)
-function writeRaceRow_(ss, payload) {
-  var tabName = stationTabName_(payload.station);
-  var sheet = getOrCreateSheet_(ss, tabName);
-  ensureStationHeaders_(sheet);
+// כותב שורת הערכה (שורה לכל משתתף/סבב/מעריך) + מעדכן את הסיכום
+function writeRaceRow_(ss, payload, t) {
+  var def     = t.def;
+  var sheet   = getOrCreateSheet_(ss, def.name);
+  var headers = stationHeaders_(def);
+  ensureHeaders_(sheet, headers, "#4a86e8");
+  var col = headerIndex_(headers);
 
-  var firstMs = Number(payload.first_ms || 0);
-  var id = participantId_(payload);
-  var roundNum = Number(payload.round || 0);
-  var maxRound = getMaxRoundNumeric_(sheet);
+  var id       = participantId_(payload);
+  var round    = Number(payload.round || 0);
+  var evalName = String(payload.evaluator_name || "");
 
-  if (maxRound > 0 && roundNum > 0 && roundNum < maxRound) {
-    return "Skipped stale round row";
+  var vals = new Array(headers.length);
+  for (var i = 0; i < vals.length; i++) vals[i] = "";
+  vals[col["ID"] - 1]    = id;
+  vals[col["סבב"] - 1]   = round;
+  vals[col["תאריך"] - 1] = Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT);
+  vals[col["מעריך"] - 1] = evalName;
+  vals[col["צוות"] - 1]  = String(payload.team || payload.evaluator_team || "");
+
+  if (def.measure === "place") {
+    if (payload.place !== undefined && payload.place !== "" && payload.place !== null)
+      vals[col["מקום"] - 1] = Number(payload.place) || "";
+    var ms = Number(payload.first_ms || 0);
+    vals[col["זמן"] - 1] = ms > 0 ? msToClock_(ms) : "";
+  } else if (def.measure === "reps") {
+    var lbl = def.measureLabel || "מספר חזרות";
+    if (payload.reps !== undefined && payload.reps !== "" && payload.reps !== null)
+      vals[col[lbl] - 1] = Number(payload.reps);
   }
 
-  var existingRow = findRowByIdRound_(sheet, id, roundNum);
-  if (existingRow > 0) {
-    updateStationRow_(sheet, existingRow, payload);
-    updateSummaryFromRaceRow_(ss, payload);
-    return "Updated existing row in " + tabName;
+  var scores = payload.scores || {};
+  for (var p = 0; p < def.params.length; p++) {
+    var pn = def.params[p];
+    var sc = scores[pn];
+    vals[col["ציון: " + pn] - 1] = (sc !== undefined && sc !== "" && sc !== null) ? Number(sc) : "";
   }
+  vals[col["הערות"] - 1] = cleanNotes_(payload.comments);
 
-  if (isDuplicateStationRow_(sheet, id, firstMs, roundNum)) {
-    return "Skipped duplicate row";
-  }
+  var rowIndex = findRaceRow_(sheet, col, id, round, evalName);
+  if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, headers.length).setValues([vals]);
+  else sheet.appendRow(vals);
 
-  if (roundNum > maxRound) {
-    appendRoundDividerIfNeeded_(sheet, roundNum);
-  }
-
-  var totalSec = Math.floor(firstMs / 1000);
-  var minutes = Math.floor(totalSec / 60);
-  var seconds = totalSec % 60;
-  var timeStr = minutes + ":" + ("0" + seconds).slice(-2);
-
-  // סדר העמודות חייב להתאים ל-STATION_HEADERS / STATION_COL
-  sheet.appendRow([
-    Number(payload.place || 0),
-    id,
-    firstMs,
-    timeStr,
-    roundNum,
-    Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT),
-    String(payload.station || ""),
-    String(payload.evaluator_name || ""),
-    String(payload.evaluator_team || ""),
-    String(payload.comments || ""),
-    "" // ציון — ימולא כשיגיע station_score
-  ]);
-
-  updateSummaryFromRaceRow_(ss, payload);
-  return "Written 1 row to " + tabName;
+  updateSummary_(ss, payload, t);
 }
 
-// ---------- Station score handler ----------
-function handleStationScore_(ss, payload) {
-  var pid = parseInt(payload.participant_id, 10);
-  var score = Number(payload.score || 0);
-  if (!pid || !score) return buildResponse(false, "Missing pid/score");
-  var msg = writeStationScore_(ss, payload);
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeStationScore_(evalSs, payload); });
-  return buildResponse(true, msg);
-}
-
-// כותב ציון תחנה לקובץ נתון (הראשי או קובץ אישי של מעריך)
-function writeStationScore_(ss, payload) {
-  var pid = parseInt(payload.participant_id, 10);
-  var score = Number(payload.score || 0);
-  var tabName = stationTabName_(payload.station);
-  var sheet = getOrCreateSheet_(ss, tabName);
-  ensureStationHeaders_(sheet);
-
-  // עדכן את עמודת הציון עבור כל שורה ששייכת למשתתף (התאמה ישירה לפי ה-ID)
-  var lastRow = sheet.getLastRow();
-  if (lastRow > 1) {
-    var vals = sheet.getRange(2, STATION_COL.ID, lastRow - 1, 1).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      var rowId = String(vals[i][0] || "").trim();
-      if (rowId !== "" && Number(rowId) === pid) {
-        sheet.getRange(2 + i, STATION_COL.SCORE).setValue(score);
-      }
+function findRaceRow_(sheet, col, id, round, evalName) {
+  var last = sheet.getLastRow();
+  if (last < 2) return -1;
+  var width = sheet.getLastColumn();
+  var vals = sheet.getRange(2, 1, last - 1, width).getValues();
+  var idC = col["ID"] - 1, rC = col["סבב"] - 1, eC = col["מעריך"] - 1;
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (Number(vals[i][idC]) === Number(id) &&
+        Number(vals[i][rC]) === Number(round) &&
+        String(vals[i][eC] || "") === String(evalName)) {
+      return 2 + i;
     }
   }
-
-  updateSummaryScore_(ss, pid, payload.team_id, payload.station, score);
-  return "Score " + score + " recorded for pid " + pid + " on " + tabName;
+  return -1;
 }
 
 // ---------- General note handler ----------
 function handleGeneralNote_(ss, payload) {
-  var pid = parseInt(payload.participant_id, 10);
+  var pid  = parseInt(payload.participant_id, 10);
   var note = String(payload.note || "");
   if (!pid || !note) return buildResponse(false, "Missing pid/note");
-  var msg = writeGeneralNote_(ss, payload);
+
+  writeGeneralNote_(ss, payload);
   mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeGeneralNote_(evalSs, payload); });
-  return buildResponse(true, msg);
+  return buildResponse(true, "Note recorded for pid " + pid);
 }
 
-// כותב הערה כללית לקובץ נתון (הראשי או קובץ אישי של מעריך)
 function writeGeneralNote_(ss, payload) {
-  var pid = parseInt(payload.participant_id, 10);
+  var pid  = parseInt(payload.participant_id, 10);
   var team = payload.team_id;
   var note = String(payload.note || "");
 
-  var sheet = getOrCreateSheet_(ss, SUMMARY_TAB);
-  ensureSummaryHeaders_(sheet);
-  var row = findOrCreateSummaryRow_(sheet, pid, team);
-  var hdr = buildSummaryHeaders_();
-  var notesCol = hdr.length; // עמודת הערות כלליות — האחרונה
-  var existing = String(sheet.getRange(row, notesCol).getValue() || "");
-  var parts = existing ? existing.split("|").map(function(s){ return s.trim(); }) : [];
+  var sheet   = getOrCreateSheet_(ss, SUMMARY_TAB);
+  var headers = summaryHeaders_();
+  ensureHeaders_(sheet, headers, "#34a853");
+  sheet.setFrozenColumns(2);
+  var col = headerIndex_(headers);
+  var row = findOrCreateSummaryRow_(sheet, headers, pid, team);
+
+  var c   = col[GENERAL_NOTES_HEADER];
+  var cur = String(sheet.getRange(row, c).getValue() || "");
+  var parts = cur ? cur.split(" | ").map(function (s) { return s.trim(); }) : [];
   if (parts.indexOf(note) === -1) {
     parts.push(note);
-    sheet.getRange(row, notesCol).setValue(parts.join(" | "));
+    sheet.getRange(row, c).setValue(parts.join(" | "));
   }
-  return "Note recorded for pid " + pid;
+}
+
+// ---------- טאב סיכום (רחב, כל ההערכות — בלי ממוצע) ----------
+function summaryHeaders_() {
+  var h = ["משתתף", "צוות"];
+  for (var i = 0; i < STATION_ORDER.length; i++) {
+    var def = STATION_TYPES[STATION_ORDER[i]];
+    if (def.measure === "place") h.push("מקום — " + def.name);
+    else if (def.measure === "reps") h.push((def.measureLabel || "מספר חזרות") + " — " + def.name);
+    for (var p = 0; p < def.params.length; p++) h.push("ציון — " + def.name + " · " + def.params[p]);
+    h.push("הערות — " + def.name);
+  }
+  h.push(GENERAL_NOTES_HEADER);
+  return h;
+}
+
+function updateSummary_(ss, payload, t) {
+  var def = t.def;
+  var sheet   = getOrCreateSheet_(ss, SUMMARY_TAB);
+  var headers = summaryHeaders_();
+  ensureHeaders_(sheet, headers, "#34a853");
+  sheet.setFrozenColumns(2);
+  var col = headerIndex_(headers);
+
+  var id   = participantId_(payload);
+  var team = teamId_(payload) || "";
+  if (!id) return;
+  var row      = findOrCreateSummaryRow_(sheet, headers, id, team);
+  var evalName = String(payload.evaluator_name || "");
+
+  // מקום / מספר חזרות — אובייקטיבי (זהה לכל המעריכים)
+  if (def.measure === "place") {
+    if (payload.place !== undefined && payload.place !== "" && payload.place !== null)
+      sheet.getRange(row, col["מקום — " + def.name]).setValue(Number(payload.place) || "");
+  } else if (def.measure === "reps") {
+    var lbl = (def.measureLabel || "מספר חזרות") + " — " + def.name;
+    if (payload.reps !== undefined && payload.reps !== "" && payload.reps !== null)
+      sheet.getRange(row, col[lbl]).setValue(Number(payload.reps));
+  }
+
+  // ציונים — מיוחסים למעריך (כל ההערכות, בלי ממוצע; דריסה של אותו מעריך בלבד)
+  var scores = payload.scores || {};
+  for (var p = 0; p < def.params.length; p++) {
+    var pn = def.params[p];
+    var c  = col["ציון — " + def.name + " · " + pn];
+    var sc = scores[pn];
+    upsertAttributed_(sheet, row, c, evalName, (sc !== undefined && sc !== "" && sc !== null) ? String(sc) : "");
+  }
+
+  // הערות התחנה — מיוחסות למעריך
+  var notes = cleanNotes_(payload.comments).split(" | ").filter(Boolean).join("; ");
+  upsertAttributed_(sheet, row, col["הערות — " + def.name], evalName, notes);
+}
+
+function findOrCreateSummaryRow_(sheet, headers, pid, team) {
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var vals = sheet.getRange(2, 1, last - 1, 1).getValues();
+    for (var i = 0; i < vals.length; i++) if (Number(vals[i][0] || 0) === Number(pid)) return 2 + i;
+  }
+  var row = new Array(headers.length);
+  for (var j = 0; j < row.length; j++) row[j] = "";
+  row[0] = Number(pid);
+  row[1] = team || "";
+  sheet.appendRow(row);
+  return sheet.getLastRow();
+}
+
+// כותב לתא ערך מיוחס למעריך: "יוסי: 5 | דנה: 6". דריסה של אותו מעריך = idempotent.
+function upsertAttributed_(sheet, row, colIndex, name, value) {
+  var cur = String(sheet.getRange(row, colIndex).getValue() || "");
+  var entries = cur ? cur.split(" | ") : [];
+  var order = [], map = {};
+  entries.forEach(function (e) {
+    var idx = e.indexOf(": ");
+    var n = idx > 0 ? e.slice(0, idx) : "_";
+    var v = idx > 0 ? e.slice(idx + 2) : e;
+    if (!(n in map)) order.push(n);
+    map[n] = v;
+  });
+  var key = name || "_";
+  if (value) { if (!(key in map)) order.push(key); map[key] = value; }
+  else { delete map[key]; order = order.filter(function (n) { return n !== key; }); }
+
+  var out = order
+    .filter(function (n) { return map[n] != null && map[n] !== ""; })
+    .map(function (n) { return n === "_" ? map[n] : (n + ": " + map[n]); })
+    .join(" | ");
+  sheet.getRange(row, colIndex).setValue(out);
 }
 
 // ---------- Evaluator sheet files ----------
-// יוצר (אם צריך) קובץ Google Sheets אישי למעריך ורושם אותו בטאב הרישום.
-// idempotent — קריאה חוזרת עם אותו uid/name מחזירה את הקובץ הקיים.
 function handleEnsureEvaluatorSheet_(ss, payload) {
   var uid  = String(payload.uid || "").trim();
   var name = String(payload.name || "").trim();
@@ -216,24 +301,22 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   var entry = findEvaluatorEntry_(ss, uid, name);
   if (entry && entry.fileId) {
     try {
-      DriveApp.getFileById(entry.fileId); // הקובץ עדיין קיים?
+      DriveApp.getFileById(entry.fileId);
       return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
-    } catch (gone) { /* הקובץ נמחק מה-Drive — ניצור חדש */ }
+    } catch (gone) { /* נמחק — ניצור חדש */ }
   }
 
   var title = "שיט מעריך — " + (name || uid);
   var newSs = SpreadsheetApp.create(title);
   try {
     var file = DriveApp.getFileById(newSs.getId());
-    var folder = evaluatorFolder_();
-    file.moveTo(folder);
-  } catch (moveErr) { /* אם ההעברה נכשלה הקובץ נשאר ב-My Drive */ }
+    file.moveTo(evaluatorFolder_());
+  } catch (moveErr) { /* נשאר ב-My Drive */ }
 
-  // גיליון פתיחה במקום ה-Sheet1 הריק
   var first = newSs.getSheets()[0];
   first.setName("אודות");
   first.getRange(1, 1).setValue("קובץ שיט אישי — " + (name || uid));
-  first.getRange(2, 1).setValue("טאבים לתחנות ולסיכום ייווצרו אוטומטית עם סנכרון הנתונים הראשון.");
+  first.getRange(2, 1).setValue("טאב סיכום וטאבים לתחנות ייווצרו אוטומטית עם הסנכרון הראשון.");
   first.getRange(1, 1, 2, 1).setFontWeight("bold");
 
   var reg = getEvalRegistrySheet_(ss);
@@ -246,15 +329,12 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   return buildDataResponse_(true, "Evaluator sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
 }
 
-// תיקיית Drive לקבצי המעריכים — לצד הקובץ הראשי (או ב-root כברירת מחדל)
 function evaluatorFolder_() {
   var parent;
   try {
     var parents = DriveApp.getFileById(SHEET_ID).getParents();
     parent = parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
-  } catch (e) {
-    parent = DriveApp.getRootFolder();
-  }
+  } catch (e) { parent = DriveApp.getRootFolder(); }
   var it = parent.getFoldersByName(EVAL_FOLDER_NAME);
   return it.hasNext() ? it.next() : parent.createFolder(EVAL_FOLDER_NAME);
 }
@@ -264,15 +344,12 @@ function getEvalRegistrySheet_(ss) {
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(EVAL_REGISTRY_HEADERS);
     sheet.getRange(1, 1, 1, EVAL_REGISTRY_HEADERS.length)
-         .setFontWeight("bold")
-         .setBackground("#9333ea")
-         .setFontColor("white");
+         .setFontWeight("bold").setBackground("#9333ea").setFontColor("white");
     sheet.setFrozenRows(1);
   }
   return sheet;
 }
 
-// מחפש מעריך ברישום לפי UID (עדיפות) או שם. השורה האחרונה שנמצאה קובעת.
 function findEvaluatorEntry_(ss, uid, name) {
   var sheet = ss.getSheetByName(EVAL_REGISTRY_TAB);
   if (!sheet || sheet.getLastRow() < 2) return null;
@@ -283,15 +360,11 @@ function findEvaluatorEntry_(ss, uid, name) {
     var rowName = String(vals[i][1] || "").trim();
     var matches = (uid && rowUid && rowUid === uid) || (!uid && name && rowName === name) ||
                   (uid && !rowUid && name && rowName === name);
-    if (matches) {
-      found = { fileId: String(vals[i][3] || ""), url: String(vals[i][4] || "") };
-    }
+    if (matches) found = { fileId: String(vals[i][3] || ""), url: String(vals[i][4] || "") };
   }
   return found;
 }
 
-// מריץ פעולת כתיבה גם על הקובץ האישי של המעריך, אם רשום לו קובץ.
-// כשל בשיקוף לא מפיל את הכתיבה לקובץ הראשי.
 function mirrorToEvaluatorFile_(ss, payload, fn) {
   try {
     var uid  = String(payload.evaluator_uid || "").trim();
@@ -300,272 +373,45 @@ function mirrorToEvaluatorFile_(ss, payload, fn) {
     var entry = findEvaluatorEntry_(ss, uid, name);
     if (!entry || !entry.fileId) return;
     fn(SpreadsheetApp.openById(entry.fileId));
-  } catch (err) { /* mirror best-effort */ }
-}
-
-// ---------- Summary helpers ----------
-// עמודות פתיחה: משתתף (1), צוות (2). אחריהן זוגות "מקום/ציון" לכל תחנה.
-function buildSummaryHeaders_() {
-  var hdr = ["משתתף", "צוות"];
-  for (var i = 1; i <= STATION_COUNT; i++) {
-    var key = ("0" + i).slice(-2);
-    var lbl = STATION_NAMES[key] || ("תחנה " + key);
-    hdr.push("מקום " + lbl);
-    hdr.push("ציון " + lbl);
-  }
-  hdr.push("ממוצע מקום");
-  hdr.push("ממוצע ציון");
-  hdr.push("הערות כלליות");
-  return hdr;
-}
-
-function ensureSummaryHeaders_(sheet) {
-  var hdr = buildSummaryHeaders_();
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(hdr);
-    sheet.getRange(1, 1, 1, hdr.length)
-         .setFontWeight("bold")
-         .setBackground("#34a853")
-         .setFontColor("white");
-    sheet.setFrozenRows(1);
-    sheet.setFrozenColumns(2);
-    return;
-  }
-  var existing = sheet.getRange(1, 1, 1, hdr.length).getValues()[0];
-  var mismatch = false;
-  for (var i = 0; i < hdr.length; i++) {
-    if (String(existing[i] || "") !== String(hdr[i])) { mismatch = true; break; }
-  }
-  if (mismatch) {
-    sheet.getRange(1, 1, 1, hdr.length).setValues([hdr]);
-  }
-}
-
-function findOrCreateSummaryRow_(sheet, pid, team) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow >= 2) {
-    var vals = sheet.getRange(2, 1, lastRow - 1, 1).getValues();
-    for (var i = 0; i < vals.length; i++) {
-      if (Number(vals[i][0] || 0) === pid) return 2 + i;
-    }
-  }
-  var hdr = buildSummaryHeaders_();
-  var row = [];
-  for (var j = 0; j < hdr.length; j++) row.push("");
-  row[0] = pid;
-  row[1] = team || "";
-  sheet.appendRow(row);
-  return sheet.getLastRow();
-}
-
-function summaryStationIndex_(station) {
-  var s = String(station || "").trim();
-  var m = s.match(/(\d+)/);
-  if (!m) return 0;
-  var n = parseInt(m[1], 10);
-  if (!n || n < 1 || n > STATION_COUNT) return 0;
-  return n;
-}
-
-function updateSummaryFromRaceRow_(ss, payload) {
-  var pid = participantId_(payload);
-  if (!pid) return;
-  var team = teamId_(payload) || "";
-  var place = Number(payload.place || 0);
-  var stIdx = summaryStationIndex_(payload.station);
-  if (!stIdx) return;
-
-  var sheet = getOrCreateSheet_(ss, SUMMARY_TAB);
-  ensureSummaryHeaders_(sheet);
-  var row = findOrCreateSummaryRow_(sheet, pid, team);
-
-  if (place > 0) {
-    var placeCol = SUMMARY_LEAD_COLS + (stIdx - 1) * 2 + 1; // col index 1-based
-    sheet.getRange(row, placeCol).setValue(place);
-    recomputeSummaryAverages_(sheet, row);
-  }
-}
-
-function updateSummaryScore_(ss, pid, team, station, score) {
-  var stIdx = summaryStationIndex_(station);
-  if (!stIdx) return;
-  var sheet = getOrCreateSheet_(ss, SUMMARY_TAB);
-  ensureSummaryHeaders_(sheet);
-  var row = findOrCreateSummaryRow_(sheet, pid, team);
-  var scoreCol = SUMMARY_LEAD_COLS + (stIdx - 1) * 2 + 2;
-  sheet.getRange(row, scoreCol).setValue(score);
-  recomputeSummaryAverages_(sheet, row);
-}
-
-function recomputeSummaryAverages_(sheet, row) {
-  var hdr = buildSummaryHeaders_();
-  var vals = sheet.getRange(row, 1, 1, hdr.length).getValues()[0];
-  var placeSum = 0, placeCnt = 0, scoreSum = 0, scoreCnt = 0;
-  for (var i = 1; i <= STATION_COUNT; i++) {
-    var pIdx = SUMMARY_LEAD_COLS + (i - 1) * 2 + 1 - 1; // 0-based array index
-    var sIdx = SUMMARY_LEAD_COLS + (i - 1) * 2 + 2 - 1;
-    var p = Number(vals[pIdx] || 0);
-    var s = Number(vals[sIdx] || 0);
-    if (p > 0) { placeSum += p; placeCnt++; }
-    if (s > 0) { scoreSum += s; scoreCnt++; }
-  }
-  var avgPlaceCol = SUMMARY_LEAD_COLS + STATION_COUNT * 2 + 1;
-  var avgScoreCol = avgPlaceCol + 1;
-  sheet.getRange(row, avgPlaceCol).setValue(placeCnt ? Number((placeSum / placeCnt).toFixed(2)) : "");
-  sheet.getRange(row, avgScoreCol).setValue(scoreCnt ? Number((scoreSum / scoreCnt).toFixed(2)) : "");
-}
-
-// ---------- Station tab helpers ----------
-function ensureStationHeaders_(sheet) {
-  if (sheet.getLastRow() === 0) {
-    sheet.appendRow(STATION_HEADERS);
-    sheet.getRange(1, 1, 1, STATION_HEADERS.length)
-         .setFontWeight("bold")
-         .setBackground("#4a86e8")
-         .setFontColor("white");
-    sheet.setFrozenRows(1);
-    return;
-  }
-  var existing = sheet.getRange(1, 1, 1, STATION_HEADERS.length).getValues()[0];
-  var mismatch = false;
-  for (var i = 0; i < STATION_HEADERS.length; i++) {
-    if (String(existing[i] || "") !== STATION_HEADERS[i]) { mismatch = true; break; }
-  }
-  if (mismatch) {
-    sheet.getRange(1, 1, 1, STATION_HEADERS.length).setValues([STATION_HEADERS]);
-  }
-}
-
-function findRowByIdRound_(sheet, id, round) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return -1;
-  var lookback = 1200;
-  var startRow = Math.max(2, lastRow - lookback + 1);
-  var rowCount = lastRow - startRow + 1;
-  if (rowCount <= 0) return -1;
-  // קורא מעמודת ID עד עמודת סבב (כולל)
-  var width = STATION_COL.ROUND - STATION_COL.ID + 1;
-  var vals = sheet.getRange(startRow, STATION_COL.ID, rowCount, width).getValues();
-  var roundIdx = STATION_COL.ROUND - STATION_COL.ID; // 0-based בתוך הטווח
-  for (var i = vals.length - 1; i >= 0; i--) {
-    var rowId = String(vals[i][0] || "").trim();
-    var rowRound = Number(vals[i][roundIdx] || 0);
-    if (rowId !== "" && Number(rowId) === Number(id) && rowRound === round) return startRow + i;
-  }
-  return -1;
-}
-
-function updateStationRow_(sheet, rowIndex, payload) {
-  var oldVals = sheet.getRange(rowIndex, 1, 1, STATION_HEADERS.length).getValues()[0];
-  var oldPlace = Number(oldVals[STATION_COL.PLACE - 1] || 0);
-  var oldFirst = Number(oldVals[STATION_COL.MS - 1] || 0);
-  var oldScore = oldVals[STATION_COL.SCORE - 1];
-
-  var newPlace = Number(payload.place || 0);
-  var newFirst = Number(payload.first_ms || 0);
-  var roundNum = Number(payload.round || 0);
-
-  var bestFirst = oldFirst;
-  if (bestFirst <= 0 || (newFirst > 0 && newFirst < bestFirst)) bestFirst = newFirst;
-  var totalSec = Math.floor(bestFirst / 1000);
-  var minutes = Math.floor(totalSec / 60);
-  var seconds = totalSec % 60;
-  var timeStr = minutes + ":" + ("0" + seconds).slice(-2);
-
-  var place = (newPlace > 0) ? newPlace : oldPlace;
-  var id    = participantId_(payload) || String(oldVals[STATION_COL.ID - 1] || "");
-
-  var station       = String(payload.station || oldVals[STATION_COL.STATION - 1] || "");
-  var evaluatorName = String(payload.evaluator_name || oldVals[STATION_COL.EVAL - 1] || "");
-  var evaluatorTeam = String(payload.evaluator_team || oldVals[STATION_COL.EVAL_TEAM - 1] || "");
-
-  var oldComments = String(oldVals[STATION_COL.COMMENTS - 1] || "");
-  var newComments = String(payload.comments || "");
-  var merged = oldComments;
-  if (newComments) {
-    var oldArr = oldComments ? oldComments.split("|").map(function(s){ return s.trim(); }) : [];
-    var newArr = newComments.split("|").map(function(s){ return s.trim(); });
-    newArr.forEach(function(tag) {
-      if (tag && oldArr.indexOf(tag) === -1) oldArr.push(tag);
-    });
-    merged = oldArr.join("|");
-  }
-
-  // סדר העמודות חייב להתאים ל-STATION_HEADERS / STATION_COL
-  sheet.getRange(rowIndex, 1, 1, STATION_HEADERS.length).setValues([[
-    place,
-    id,
-    bestFirst,
-    timeStr,
-    roundNum,
-    Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT),
-    station,
-    evaluatorName,
-    evaluatorTeam,
-    merged,
-    oldScore
-  ]]);
-}
-
-function isDuplicateStationRow_(sheet, id, firstMs, round) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return false;
-  var lookback = 400;
-  var startRow = Math.max(2, lastRow - lookback + 1);
-  var rowCount = lastRow - startRow + 1;
-  if (rowCount <= 0) return false;
-  var values = sheet.getRange(startRow, 1, rowCount, STATION_COL.ROUND).getValues();
-  for (var i = values.length - 1; i >= 0; i--) {
-    var row = values[i];
-    var rowId = String(row[STATION_COL.ID - 1] || "").trim();
-    var rowFirstMs = Number(row[STATION_COL.MS - 1] || 0);
-    var rowRound = Number(row[STATION_COL.ROUND - 1] || 0);
-    if (rowId !== "" && Number(rowId) === Number(id) && rowFirstMs === firstMs && rowRound === round) return true;
-  }
-  return false;
-}
-
-function appendRoundDividerIfNeeded_(sheet, round) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return;
-  var lastRound = sheet.getRange(lastRow, STATION_COL.ROUND).getValue();
-  if (String(lastRound) !== String(round)) {
-    var divider = ["--- סבב " + round + " ---"];
-    for (var c = 1; c < STATION_HEADERS.length; c++) divider.push("");
-    sheet.appendRow(divider);
-    sheet.getRange(sheet.getLastRow(), 1, 1, STATION_HEADERS.length)
-         .setBackground("#d9ead3")
-         .setFontWeight("bold");
-  }
-}
-
-function getMaxRoundNumeric_(sheet) {
-  var lastRow = sheet.getLastRow();
-  if (lastRow <= 1) return 0;
-  var vals = sheet.getRange(2, STATION_COL.ROUND, lastRow - 1, 1).getValues();
-  var maxRound = 0;
-  for (var i = 0; i < vals.length; i++) {
-    var n = Number(vals[i][0] || 0);
-    if (n > maxRound) maxRound = n;
-  }
-  return maxRound;
+  } catch (err) { /* best-effort */ }
 }
 
 // ---------- Generic helpers ----------
-function stationIdKey_(station) {
-  var s = String(station || "").trim();
-  var m = s.match(/(\d+)/);
-  var n = m ? parseInt(m[1], 10) : 0;
-  if (!n || n < 1) n = 1;
-  return ("0" + n).slice(-2);
+function headerIndex_(headers) {
+  var m = {};
+  for (var i = 0; i < headers.length; i++) m[headers[i]] = i + 1;
+  return m;
 }
 
-function stationTabName_(station) {
-  var key = stationIdKey_(station);
-  return STATION_NAMES[key] || ("תחנה " + key);
+function ensureHeaders_(sheet, headers, bg) {
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length)
+         .setFontWeight("bold").setBackground(bg).setFontColor("white");
+    sheet.setFrozenRows(1);
+    return;
+  }
+  var existing = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
+  var mismatch = false;
+  for (var i = 0; i < headers.length; i++) {
+    if (String(existing[i] || "") !== String(headers[i])) { mismatch = true; break; }
+  }
+  if (mismatch) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
 }
 
-// מזהה משתתף מתוך ה-payload. מעדיף payload.id; נופל חזרה ל-EPC לתאימות לאחור.
+function cleanNotes_(comments) {
+  return String(comments || "").split("|")
+    .map(function (s) { return s.trim(); })
+    .filter(Boolean).join(" | ");
+}
+
+function msToClock_(ms) {
+  var s = Math.floor(ms / 1000);
+  var m = Math.floor(s / 60);
+  var sec = s % 60;
+  return m + ":" + ("0" + sec).slice(-2);
+}
+
 function participantId_(payload) {
   if (payload.id !== undefined && String(payload.id).trim() !== "") {
     var n = parseInt(String(payload.id).replace(/\D+/g, ""), 10);
@@ -574,7 +420,6 @@ function participantId_(payload) {
   return pidFromEpc_(payload.epc);
 }
 
-// מספר צוות מתוך ה-payload. מעדיף payload.team / evaluator_team; נופל חזרה ל-EPC.
 function teamId_(payload) {
   var t = (payload.team !== undefined) ? payload.team : payload.evaluator_team;
   if (t !== undefined && String(t).trim() !== "") {
@@ -584,14 +429,13 @@ function teamId_(payload) {
   return teamFromEpc_(payload.epc);
 }
 
-// --- תאימות לאחור: חילוץ מ-EPC סינתטי ישן (TTPPPP) אם עדיין נשלח ---
+// תאימות לאחור: EPC סינתטי ישן (TTPPPP)
 function pidFromEpc_(epc) {
   var s = String(epc || "");
   if (s.length < 4) return 0;
   var n = parseInt(s.slice(-4), 10);
   return Number.isFinite(n) ? n : 0;
 }
-
 function teamFromEpc_(epc) {
   var s = String(epc || "");
   if (s.length < 6) return 0;

@@ -1344,30 +1344,47 @@
   };
 
   // ═════════ Sheets sync ═════════
-  // מסנכרן את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
-  // Code.gs מבצע dedup לפי (id, round) — כך שלחיצה חוזרת בטוחה ולא מכפילה.
-  //
-  // ב-LITE אין RFID, אז שולחים ישירות id (מספר משתתף) ו-team (מספר צוות).
+  // מסנכרן את הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
+  // כל מעריך שולח את הציונים וההערות *שלו* (dedup ב-Code.gs לפי id+סבב+מעריך).
+  // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
   function buildSyncRowsForRace(race) {
     const rows = [];
+    const uid = currentUser?.uid || '';
     const startMs = tsToMs(race.startedAt) || 0;
+    const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
+    const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
     const tags = Array.isArray(race.tags) ? race.tags : [];
     for (const tag of tags) {
       const pidRaw = String(tag.participantId || '').replace(/\D+/g, '');
       const finishedAtMs = Number(tag.finishedAt) || 0;
       const timeMs = (finishedAtMs && startMs) ? Math.max(0, finishedAtMs - startMs) : 0;
+
+      // הציונים וההערות של המעריך הנוכחי בלבד
+      const myScores = (tag.scores && tag.scores[uid]) || {};
+      const myComments = (Array.isArray(tag.comments) ? tag.comments : [])
+        .map(normalizeComment)
+        .filter(c => c.authorUid === uid)
+        .map(c => c.text).filter(Boolean).join('|');
+
+      // מדלגים על משתתף שהמעריך הזה לא נתן לו כלום (ואין נתון אובייקטיבי)
+      const hasData = Object.keys(myScores).length > 0 || myComments ||
+                      tag.place != null || tag.reps != null;
+      if (!hasData) continue;
+
       const row = {
-        place:          Number(tag.place || 0),
         id:             pidRaw,
         team:           String(race.team || ''),
-        first_ms:       timeMs,
         round:          Number(race.round || 0),
-        // מוציא רק את הטקסט מכל הערה (הן string ישן, הן object חדש)
-        comments:       (Array.isArray(tag.comments) ? tag.comments : [])
-                         .map(c => normalizeComment(c).text).filter(Boolean).join('|'),
         station:        String(race.station || ''),
+        station_type:   st ? st.id : '',
+        station_name:   st ? st.name : '',
+        place:          tag.place != null ? Number(tag.place) : '',
+        reps:           tag.reps  != null ? Number(tag.reps)  : '',
+        first_ms:       timeMs,
+        scores:         myScores,
+        comments:       myComments,
         evaluator_name: currentUser?.name || '',
         evaluator_uid:  currentUser?.uid || '',
         evaluator_team: String(race.team || '')
