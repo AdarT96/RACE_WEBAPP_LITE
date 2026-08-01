@@ -113,6 +113,45 @@
     </div>
   </div>
 
+  <!-- עריכת סוגי תחנות -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>🧩 עריכת סוגי תחנות</h2>
+      <select id="sttype-select" class="role-sel" onchange="onStTypeSelected(this.value)">
+        <option value="">— בחר סוג תחנה —</option>
+      </select>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+      עריכת שמות הפרמטרים, ההערות המהירות וסוג המדידה. שינויים חלים על כל הצוותים.
+      <b>הערות מהירות</b> — בטוח לשנות בכל עת. <b>שם פרמטר / מדידה</b> — משפיע גם על עמודות ה-Sheet.
+    </p>
+
+    <div id="sttype-editor" style="display:none">
+      <div class="section mb-12" style="display:flex; gap:14px; align-items:center; flex-wrap:wrap">
+        <label style="font-size:13px">מדידה:
+          <select id="sttype-measure" class="role-sel" onchange="onStTypeMeasureChange(this.value)">
+            <option value="place">מקום (סדר הגעה)</option>
+            <option value="reps">מספר (חזרות/ברגים/שלב)</option>
+            <option value="none">ללא</option>
+          </select>
+        </label>
+        <label id="sttype-measurelabel-wrap" style="font-size:13px; display:none">תווית המספר:
+          <input id="sttype-measurelabel" class="form-input" style="width:170px"
+                 onchange="onStTypeMeasureLabelChange(this.value)" placeholder="מספר חזרות">
+        </label>
+      </div>
+
+      <div id="sttype-params"></div>
+      <button class="btn btn-ghost" id="sttype-addparam" onclick="addStParam()"
+              style="font-size:13px; padding:6px 12px; margin-top:6px">+ הוסף פרמטר</button>
+    </div>
+
+    <div class="flex" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-top:14px">
+      <span id="sttype-status" style="font-size:12px; color:var(--text-muted)"></span>
+      <button class="btn btn-success" onclick="saveStTypes()" style="padding:10px 20px">💾 שמור סוגי תחנות</button>
+    </div>
+  </div>
+
   <!-- ניהול צוותים -->
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
@@ -141,13 +180,14 @@
         </div>
       </div>
 
-      <!-- שמות תחנות -->
+      <!-- מיפוי תחנות -->
       <div class="section mb-12">
-        <h3 class="mb-8">📍 שמות תחנות עבור הצוות</h3>
+        <h3 class="mb-8">📍 סדר התחנות עבור הצוות</h3>
         <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-          השאר ריק כדי להשתמש בברירת המחדל (מוצגת מימין לשדה).
+          לכל מספר תחנה בחר איזה סוג תחנה יושב בו — כל צוות יכול לעבור את התחנות בסדר אחר.
+          כל 17 התחנות צריכות להופיע פעם אחת.
         </p>
-        <div id="station-names-list"></div>
+        <div id="station-map-list"></div>
       </div>
 
       <div class="flex" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px">
@@ -196,6 +236,7 @@
 <div id="toast-container"></div>
 
 <script src="js/firebase-config.js"></script>
+<script src="js/station-types.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
@@ -219,6 +260,8 @@
       return;
     }
     currentAdmin = { ...snap.data(), uid: user.uid };
+    await loadStationTypesData();   // לפני מיפוי הצוותים והעורך — שמות מעודכנים
+    initStTypeEditor();
     loadUsers();
     loadRaces();
     initTeamManagement();
@@ -552,9 +595,138 @@
   //  ניהול צוותים: משתתפים + שמות תחנות מותאמים לצוות
   // ═══════════════════════════════════════════════════════════
   let currentTeamNumber = null;
-  let currentTeamData   = { participants: [], stationNames: {} };
+  let currentTeamData   = { participants: [], stationMap: {} };
+
+  // סוגי תחנות — עותק ניתן לעריכה; נטען מ-settings/stationTypes אם קיים, אחרת ברירת מחדל
+  const STATION_ORDER = window.DEFAULT_STATION_ORDER || [];
+  const deepClone = (o) => JSON.parse(JSON.stringify(o || {}));
+  let stationTypesData = deepClone(window.DEFAULT_STATION_TYPES);
+
+  async function loadStationTypesData() {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'stationTypes'));
+      if (snap.exists() && snap.data().types && typeof snap.data().types === 'object') {
+        stationTypesData = { ...deepClone(window.DEFAULT_STATION_TYPES), ...deepClone(snap.data().types) };
+      }
+    } catch (e) { /* נשארים עם ברירת המחדל */ }
+  }
 
   function pad2(n) { return String(n).padStart(2, '0'); }
+
+  // ═══════════════════════════════════════════════════════════
+  //  עורך סוגי תחנות (פרמטרים + הערות מהירות + מדידה) → settings/stationTypes
+  // ═══════════════════════════════════════════════════════════
+  let currentStType = null;
+
+  function initStTypeEditor() {
+    const sel = document.getElementById('sttype-select');
+    if (!sel) return;
+    sel.querySelectorAll('option:not(:first-child)').forEach(o => o.remove());
+    STATION_ORDER.forEach(id => {
+      const o = document.createElement('option');
+      o.value = id; o.textContent = stationTypesData[id]?.name || id;
+      sel.appendChild(o);
+    });
+    if (currentStType && stationTypesData[currentStType]) sel.value = currentStType;
+  }
+
+  function setStTypeStatus(m) { const el = document.getElementById('sttype-status'); if (el) el.textContent = m || ''; }
+
+  window.onStTypeSelected = (id) => {
+    currentStType = id || null;
+    const editor = document.getElementById('sttype-editor');
+    if (!id) { editor.style.display = 'none'; return; }
+    editor.style.display = '';
+    const def = stationTypesData[id];
+    document.getElementById('sttype-measure').value = def.measure || 'none';
+    document.getElementById('sttype-measurelabel').value = def.measureLabel || '';
+    document.getElementById('sttype-measurelabel-wrap').style.display = def.measure === 'reps' ? '' : 'none';
+    renderStParams();
+  };
+
+  window.onStTypeMeasureChange = (v) => {
+    if (!currentStType) return;
+    stationTypesData[currentStType].measure = v;
+    document.getElementById('sttype-measurelabel-wrap').style.display = v === 'reps' ? '' : 'none';
+    setStTypeStatus('שינויים לא שמורים');
+  };
+  window.onStTypeMeasureLabelChange = (v) => {
+    if (!currentStType) return;
+    stationTypesData[currentStType].measureLabel = (v || '').trim();
+    setStTypeStatus('שינויים לא שמורים');
+  };
+
+  function renderStParams() {
+    const box = document.getElementById('sttype-params');
+    const def = stationTypesData[currentStType];
+    const params = def.params || [];
+    box.innerHTML = params.map((p, pi) => `
+      <div class="section mb-12" style="border:1px solid var(--border); border-radius:8px; padding:12px">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap">
+          <span style="font-size:12px; color:var(--text-muted); min-width:56px">פרמטר ${pi + 1}</span>
+          <input class="form-input" style="flex:1; min-width:160px" value="${escHtml(p.name)}"
+                 onchange="updateStParamName(${pi}, this.value)" placeholder="שם פרמטר">
+          <button class="btn btn-ghost" onclick="removeStParam(${pi})"
+                  style="font-size:12px; padding:5px 10px; color:var(--danger); border-color:var(--danger)">🗑</button>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-bottom:6px">הערות מהירות:</div>
+        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px">
+          ${(p.quickNotes || []).map((q, qi) => `<span class="participant-pill" style="direction:auto">${escHtml(q)}
+             <button title="הסר" onclick="removeStQuick(${pi},${qi})">✕</button></span>`).join('')
+            || '<span style="color:var(--text-muted); font-size:12px">אין הערות מהירות עדיין.</span>'}
+        </div>
+        <input class="form-input" style="width:100%"
+               placeholder="הוסף הערה מהירה ולחץ Enter"
+               onkeydown="if(event.key==='Enter'){ addStQuick(${pi}, this.value); this.value=''; }">
+      </div>`).join('');
+    document.getElementById('sttype-addparam').style.display = params.length >= 2 ? 'none' : '';
+  }
+
+  window.updateStParamName = (pi, v) => {
+    stationTypesData[currentStType].params[pi].name = (v || '').trim();
+    setStTypeStatus('שינויים לא שמורים');
+  };
+  window.removeStParam = (pi) => {
+    if (!confirm('למחוק פרמטר זה?')) return;
+    stationTypesData[currentStType].params.splice(pi, 1);
+    renderStParams(); setStTypeStatus('שינויים לא שמורים');
+  };
+  window.addStParam = () => {
+    const d = stationTypesData[currentStType];
+    if (!d) return;
+    d.params = d.params || [];
+    if (d.params.length >= 2) { showToast('עד 2 פרמטרים לתחנה', 'error'); return; }
+    d.params.push({ name: 'פרמטר חדש', quickNotes: [] });
+    renderStParams(); setStTypeStatus('שינויים לא שמורים');
+  };
+  window.addStQuick = (pi, val) => {
+    const t = (val || '').trim();
+    if (!t) return;
+    const p = stationTypesData[currentStType].params[pi];
+    p.quickNotes = p.quickNotes || [];
+    if (!p.quickNotes.includes(t)) p.quickNotes.push(t);
+    renderStParams(); setStTypeStatus('שינויים לא שמורים');
+  };
+  window.removeStQuick = (pi, qi) => {
+    stationTypesData[currentStType].params[pi].quickNotes.splice(qi, 1);
+    renderStParams(); setStTypeStatus('שינויים לא שמורים');
+  };
+
+  window.saveStTypes = async () => {
+    setStTypeStatus('שומר…');
+    try {
+      await setDoc(doc(db, 'settings', 'stationTypes'),
+        { types: stationTypesData, updatedAt: serverTimestamp(), updatedBy: currentAdmin?.uid || '' },
+        { merge: true });
+      showToast('סוגי התחנות נשמרו ✓', 'success');
+      setStTypeStatus('נשמר');
+      initStTypeEditor();       // רענון שמות בדרופדאון
+      if (currentTeamNumber) renderStationMap(); // רענון שמות במיפוי הצוות
+    } catch (e) {
+      showToast('שגיאה בשמירה: ' + e.message, 'error');
+      setStTypeStatus('שמירה נכשלה');
+    }
+  };
 
   function initTeamManagement() {
     const sel = document.getElementById('team-select');
@@ -583,10 +755,10 @@
       const data = snap.exists() ? snap.data() : {};
       currentTeamData = {
         participants: Array.isArray(data.participants) ? data.participants.slice() : [],
-        stationNames: (data.stationNames && typeof data.stationNames === 'object') ? { ...data.stationNames } : {}
+        stationMap: (data.stationMap && typeof data.stationMap === 'object') ? { ...data.stationMap } : {}
       };
       renderParticipants();
-      renderStationNames();
+      renderStationMap();
       editor.style.display = '';
       setSaveStatus(snap.exists()
         ? 'נטען בהצלחה'
@@ -615,28 +787,29 @@
     `).join('');
   }
 
-  function renderStationNames() {
-    const container = document.getElementById('station-names-list');
+  function renderStationMap() {
+    const container = document.getElementById('station-map-list');
     if (!container) return;
-    const count    = APP_CONFIG.stationCount || 8;
-    const defaults = APP_CONFIG.defaultStationNames || {};
-    const overrides = currentTeamData.stationNames;
+    const map = currentTeamData.stationMap || {};
+    const count = STATION_ORDER.length;
     let html = '';
     for (let i = 1; i <= count; i++) {
-      const id = pad2(i);
-      const defaultName = defaults[id] || ('תחנה ' + id);
-      const currentName = (overrides[id] !== undefined) ? overrides[id] : '';
+      const slot = pad2(i);
+      const selectedId = map[slot] || STATION_ORDER[i - 1]; // ברירת מחדל = הסדר הרגיל
+      const opts = STATION_ORDER.map(id =>
+        `<option value="${id}" ${id === selectedId ? 'selected' : ''}>${escHtml(stationTypesData[id].name)}</option>`
+      ).join('');
       html += `
         <div class="station-name-row">
-          <span class="station-id">${id}</span>
-          <input class="form-input" data-station="${id}"
-                 placeholder="${escHtml(defaultName)}"
-                 value="${escHtml(currentName)}">
-          <span class="default-hint">ברירת מחדל: ${escHtml(defaultName)}</span>
+          <span class="station-id">${slot}</span>
+          <select class="role-sel" data-slot="${slot}" style="flex:1; min-width:180px"
+                  onchange="onStationMapChange()">${opts}</select>
         </div>`;
     }
     container.innerHTML = html;
   }
+
+  window.onStationMapChange = () => setSaveStatus('שינויים לא שמורים');
 
   window.addParticipant = () => {
     const input = document.getElementById('participant-input');
@@ -661,23 +834,32 @@
     setSaveStatus('שינויים לא שמורים');
   };
 
-  function collectStationNamesFromUI() {
-    const rows = document.querySelectorAll('#station-names-list input[data-station]');
+  function collectStationMapFromUI() {
+    const rows = document.querySelectorAll('#station-map-list select[data-slot]');
     const out = {};
-    rows.forEach(inp => {
-      const id  = inp.dataset.station;
-      const val = (inp.value || '').trim();
-      if (val) out[id] = val; // רק דריסות בפועל — ריק = משתמש בברירת מחדל
-    });
+    rows.forEach(sel => { out[sel.dataset.slot] = sel.value; });
     return out;
   }
 
   window.saveTeam = async () => {
     if (!currentTeamNumber) { showToast('לא נבחר צוות', 'error'); return; }
+    const stationMap = collectStationMapFromUI();
+
+    // אזהרה רכה אם סוג תחנה חוזר על עצמו (כל 17 אמורות להופיע פעם אחת)
+    const used = Object.values(stationMap);
+    const dups = used.filter((v, i) => used.indexOf(v) !== i);
+    if (dups.length) {
+      const names = [...new Set(dups)].map(id => stationTypesData[id]?.name || id).join(', ');
+      if (!confirm('שים לב: התחנות הבאות משויכות ליותר ממספר אחד — ' + names + '.\nלשמור בכל זאת?')) {
+        setSaveStatus('לא נשמר');
+        return;
+      }
+    }
+
     const payload = {
       teamNumber:   currentTeamNumber,
       participants: currentTeamData.participants.map(String),
-      stationNames: collectStationNamesFromUI(),
+      stationMap:   stationMap,
       updatedAt:    serverTimestamp(),
       updatedBy:    currentAdmin?.uid || ''
     };
@@ -685,8 +867,8 @@
     try {
       await setDoc(doc(db, 'teams', currentTeamNumber), payload, { merge: true });
       // עדכן state מקומי מהמה שנשמר, כדי שלא תהיה קופצנות ב-UI
-      currentTeamData.stationNames = payload.stationNames;
-      renderStationNames();
+      currentTeamData.stationMap = payload.stationMap;
+      renderStationMap();
       showToast('צוות ' + currentTeamNumber + ' נשמר ✓', 'success');
       setSaveStatus('נשמר');
     } catch (e) {

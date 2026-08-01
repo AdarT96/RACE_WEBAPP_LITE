@@ -25,8 +25,8 @@ const APP_CONFIG = {
   // Team count for registration.
   maxTeamNumber: 15,
 
-  // Must match STATION_COUNT + STATION_NAMES in scripts/Code.gs. Per-team overrides live in Firestore `teams/{teamNumber}.stationNames`.
-  stationCount: 8,
+  // 17 station types are defined in js/station-types.js. Per-team ordering lives in Firestore `teams/{teamNumber}.stationMap`.
+  stationCount: 17,
   defaultStationNames: {
     "01": "מילוי שק",
     "02": "ספרינטים",

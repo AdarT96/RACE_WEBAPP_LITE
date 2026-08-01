@@ -180,6 +180,14 @@
     body.outdoor-mode .note-picker-btn.selected {
       background: #ffd700; color: #000; border-color: #000;
     }
+    /* נקודת חיווי: למשתתף שכבר קיבל ציון/הערה/מספר/מקום */
+    .note-picker-btn { position: relative; }
+    .note-picker-btn.has-data::after {
+      content: ''; position: absolute; top: 6px; inset-inline-start: 6px;
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #22c55e; border: 1px solid rgba(0,0,0,0.15);
+    }
+    body.outdoor-mode .note-picker-btn.has-data::after { background: #15803d; }
     .gn-note-row {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 10px 12px; background: var(--surface);
@@ -226,6 +234,39 @@
       background: rgba(99,102,241,0.15); border-radius: 999px;
       padding: 4px 10px; font-size: 12px;
     }
+
+    /* ── Station evaluation: 1–7 scores + per-parameter quick notes ── */
+    .sn-param {
+      padding: 12px; margin-bottom: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .sn-param-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .sn-param-name { font-size: 16px; font-weight: 800; }
+    .sn-param-hint { font-size: 11px; color: var(--text-dim); }
+    .sn-score-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .sn-score-btn {
+      flex: 1 1 auto; min-width: 40px; padding: 10px 0;
+      background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 18px; font-weight: 800; font-family: 'Courier New', monospace;
+      cursor: pointer; direction: ltr; user-select: none;
+      transition: transform .08s ease, background .12s, border-color .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sn-score-btn:hover { border-color: var(--accent); }
+    .sn-score-btn:active { transform: scale(0.94); }
+    .sn-score-btn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .sn-quick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sn-quick-pill {
+      padding: 6px 12px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer; font-size: 13px; line-height: 1.3;
+    }
+    .sn-quick-pill:hover { border-color: var(--accent); color: var(--accent); }
+    .sn-quick-pill:active { transform: scale(0.97); }
+    body.outdoor-mode .sn-param { background: #fff; border: 2px solid #000080; }
+    body.outdoor-mode .sn-param-name { color: #000080; }
+    body.outdoor-mode .sn-score-btn { background: #fff; border: 3px solid #000080; color: #000080; }
+    body.outdoor-mode .sn-score-btn.selected { background: #ffd700; color: #000; border-color: #000; }
+    body.outdoor-mode .sn-quick-pill { background: #f7fafc; border-color: #000080; color: #000080; }
   </style>
 </head>
 <body>
@@ -338,19 +379,27 @@
         <span id="sn-info" style="color:var(--text-muted); font-size:12px"></span>
       </div>
       <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px">
-        לחץ על מספר משתתף שסיים כדי להוסיף לו הערה. ההערות נשמרות עם הסבב הזה בלבד ומגיעות ל-Sheets עם שאר הסבב.
+        לחץ על מספר משתתף כדי להעריך אותו — אפשר לתת ציון והערות תוך כדי התחנה, לא רק אחרי שסיים.
+        נקודה ירוקה מציינת משתתף שכבר קיבל ציון/הערה. הנתונים נשמרים עם הסבב הזה ומגיעים ל-Sheets עם שאר הסבב.
       </p>
       <div id="sn-picker" class="note-picker-grid"></div>
       <div id="sn-picker-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
-        אין משתתפים שסיימו עדיין.
+        התחל סבב כדי להעריך את משתתפי הצוות.
       </div>
 
       <div id="sn-selected-area" style="margin-top:16px; display:none">
-        <div style="font-size:13px; margin-bottom:8px">
+        <div style="font-size:13px; margin-bottom:12px">
           נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
+          <span id="sn-station-type" style="color:var(--text-muted)"></span>
         </div>
-        <div id="sn-tag-pills" class="tag-pills mb-8" style="display:flex; flex-wrap:wrap; gap:6px"></div>
-        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap">
+
+        <!-- מדידה כמותית (מספר חזרות / ברגים / שלב) — לפי סוג התחנה -->
+        <div id="sn-measure" style="display:none; margin-bottom:14px"></div>
+
+        <!-- פרמטרים: ציון 1–7 + הערות מהירות לכל פרמטר -->
+        <div id="sn-params"></div>
+
+        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px">
           <textarea id="sn-input" class="form-input" rows="2"
                     style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
                     placeholder="הערה חופשית לתחנה הזאת…"></textarea>
@@ -451,6 +500,7 @@
 
 <!-- Config first, then module -->
 <script src="js/firebase-config.js"></script>
+<script src="js/station-types.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
@@ -479,6 +529,22 @@
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
 
+  // סוגי תחנות — ברירת מחדל מ-station-types.js, נדרסים ע"י settings/stationTypes אם קיים
+  let stationTypes = (typeof window !== 'undefined' && window.DEFAULT_STATION_TYPES) || {};
+  let stationOrder = (typeof window !== 'undefined' && window.DEFAULT_STATION_ORDER) || [];
+
+  async function loadStationTypes() {
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'stationTypes'));
+      if (snap.exists()) {
+        const data = snap.data();
+        if (data && data.types && typeof data.types === 'object') {
+          stationTypes = { ...stationTypes, ...data.types };
+        }
+      }
+    } catch (e) { /* נשארים עם ברירת המחדל */ }
+  }
+
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
   const escHtml = s => (s == null ? '' : String(s))
@@ -506,7 +572,26 @@
     return h > 0 ? `${h}:${m}:${s}.${cc}` : `${m}:${s}.${cc}`;
   }
 
+  // ── פתרון סוג התחנה: לפי מיפוי הצוות, אחרת לפי סדר ברירת המחדל ──
+  function stationTypeIdFor(stationId, teamData) {
+    if (teamData && teamData.stationMap && teamData.stationMap[stationId]) {
+      return teamData.stationMap[stationId];
+    }
+    const n = parseInt(stationId, 10);
+    return (n >= 1 && stationOrder[n - 1]) ? stationOrder[n - 1] : null;
+  }
+  function stationTypeFor(stationId, teamData) {
+    const id = stationTypeIdFor(stationId, teamData);
+    return (id && stationTypes[id]) ? { id, ...stationTypes[id] } : null;
+  }
+  function currentStationType() {
+    return stationTypeFor(selectedStation, teamsCache[selectedTeam]);
+  }
+
   function stationDisplayName(stationId, teamData) {
+    const st = stationTypeFor(stationId, teamData);
+    if (st) return st.name;
+    // תאימות לאחור לנתונים ישנים
     if (teamData && teamData.stationNames && teamData.stationNames[stationId]) {
       return teamData.stationNames[stationId];
     }
@@ -551,6 +636,8 @@
 
     // תיוגים משותפים + real-time refresh
     subscribeToQuickTags();
+    // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים
+    await loadStationTypes();
 
     // המגבש רואה placeholder לגבי זרימת התחנה — אבל שאר החלקים (הערות כלליות) פועלים
     if (currentUser.role === 'operator') {
@@ -665,8 +752,7 @@
       } else {
         quickTags = (APP_CONFIG.commentTags || []).slice();
       }
-      // רענון UI פתוח (סקציית הערות לתחנה + סקציית הערות כלליות)
-      if (typeof renderStationNoteTagPills === 'function') renderStationNoteTagPills();
+      // רענון UI פתוח (התיוגים הגלובליים משמשים כעת רק את ההערות הכלליות)
       if (typeof renderGeneralNotesTags === 'function') renderGeneralNotesTags();
     }, (err) => {
       // שקט — נשארים עם ברירת מחדל / cache אם המנוי נכשל
@@ -787,7 +873,8 @@
     if (!currentRace) return;
     const teamData = teamsCache[selectedTeam] || {};
     const participants = Array.isArray(teamData.participants) ? teamData.participants.map(String) : [];
-    const finished = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const finished = (Array.isArray(currentRace.tags) ? currentRace.tags : [])
+      .filter(t => t.place != null); // רק מי שסומן "סיים" (יש לו מקום)
     const finishedIds = new Set(finished.map(t => String(t.participantId)));
     const remaining = participants.filter(p => !finishedIds.has(String(p)));
 
@@ -943,20 +1030,27 @@
       showToast('אין סבב פעיל', 'error'); return;
     }
     const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    if (existing.some(t => String(t.participantId) === String(participantId))) {
-      showToast('משתתף כבר סומן כסיים', 'info'); return;
+    // מקום = לפי מספר מי שכבר קיבל מקום (לא לפי סך ה-tags, שכן ייתכנו tags עם ציון בלבד)
+    const nextPlace = existing.filter(t => t.place != null).length + 1;
+    const idx = existing.findIndex(t => String(t.participantId) === String(participantId));
+
+    let updated;
+    if (idx >= 0) {
+      if (existing[idx].place != null) { showToast('משתתף כבר סומן כסיים', 'info'); return; }
+      // יש כבר tag (ציון/הערה) — רק מוסיפים לו מקום וזמן סיום
+      updated = existing.map((t, i) => i === idx
+        ? { ...t, place: nextPlace, finishedAt: Date.now() }
+        : t);
+    } else {
+      updated = [...existing, {
+        participantId: String(participantId),
+        place:         nextPlace,
+        finishedAt:    Date.now(),
+        comments:      []
+      }];
     }
-    const nextPlace = existing.length + 1;
-    const newTag = {
-      participantId: String(participantId),
-      place:         nextPlace,
-      finishedAt:    Date.now(),
-      comments:      []
-    };
     try {
-      await updateDoc(doc(db, 'races', currentRaceId), {
-        tags: [...existing, newTag]
-      });
+      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
       // onSnapshot will re-render
     } catch (e) {
       showToast('שגיאה בסימון: ' + e.message, 'error');
@@ -1007,28 +1101,41 @@
       return;
     }
 
-    const finished = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    info.textContent = `סבב #${currentRace.round || 1} · ${finished.length} סיימו`;
+    // כל משתתפי הצוות — אפשר להעריך כל אחד בכל רגע, גם לפני שסיים
+    const teamData = teamsCache[selectedTeam] || {};
+    const participants = Array.isArray(teamData.participants) ? teamData.participants.map(String) : [];
+    const tags = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const placedCount = tags.filter(t => t.place != null).length;
+    info.textContent = `סבב #${currentRace.round || 1} · ${participants.length} משתתפים · ${placedCount} סיימו`;
 
-    if (finished.length === 0) {
+    if (participants.length === 0) {
       picker.innerHTML = '';
       pickerEmpty.style.display = '';
+      pickerEmpty.textContent = 'אין משתתפים לצוות זה. פנה למנהל.';
       selectedArea.style.display = 'none';
       stationNoteSelectedPid = null;
       return;
     }
     pickerEmpty.style.display = 'none';
 
-    const sorted = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
-    picker.innerHTML = sorted.map(t => {
-      const pid = String(t.participantId);
+    // מסמן מי כבר קיבל נתונים (ציון/הערה/מספר/מקום) כדי שהמעריך יראה התקדמות
+    const hasData = (t) => t && (
+      (t.scores && Object.keys(t.scores).length) ||
+      (Array.isArray(t.comments) && t.comments.length) ||
+      t.reps != null || t.place != null
+    );
+
+    const sorted = participants.slice().sort((a, b) => Number(a) - Number(b));
+    picker.innerHTML = sorted.map(pid => {
+      const tag = tags.find(t => String(t.participantId) === pid);
       const selected = stationNoteSelectedPid === pid;
-      return `<button class="note-picker-btn ${selected ? 'selected' : ''}"
+      const dataCls = hasData(tag) ? ' has-data' : '';
+      return `<button class="note-picker-btn ${selected ? 'selected' : ''}${dataCls}"
                      onclick="selectStationNoteParticipant('${escHtml(pid)}', false)">${escHtml(pid)}</button>`;
     }).join('');
 
     // אם המשתתף שנבחר לפני עדיין ברשימה — נשמור בחירה; אחרת נאפס
-    const stillHere = sorted.some(t => String(t.participantId) === stationNoteSelectedPid);
+    const stillHere = sorted.includes(stationNoteSelectedPid);
     if (stationNoteSelectedPid && stillHere) {
       renderStationNoteSelectedArea();
     } else {
@@ -1053,17 +1160,107 @@
     }
     document.getElementById('sn-selected-area').style.display = '';
     setText('sn-selected-label', stationNoteSelectedPid);
-    renderStationNoteTagPills();
+    const st = currentStationType();
+    setText('sn-station-type', st ? '· ' + st.name : '');
+    renderStationMeasure(st);
+    renderStationParams(st);
     renderStationNotesList();
   }
 
-  window.renderStationNoteTagPills = () => {
-    const container = document.getElementById('sn-tag-pills');
-    if (!container) return;
-    const tags = getQuickTags();
-    container.innerHTML = tags.map(t =>
-      `<span class="tag-pill" onclick="addStationNoteFromTag('${escHtml(t)}')">${escHtml(t)}</span>`
-    ).join('');
+  // מחזיר את ה-tag של המשתתף הנבחר בסבב הנוכחי
+  function selectedTag() {
+    return (currentRace?.tags || []).find(t => String(t.participantId) === stationNoteSelectedPid) || null;
+  }
+
+  // מחזיר עותק חדש של מערך ה-tags שבו ה-tag של pid קיים (נוצר אם חסר) ועבר mutate.
+  // כך אפשר לתת ציון/הערה/מספר גם למשתתף שעדיין לא סומן "סיים".
+  function upsertTags(existing, pid, mutate) {
+    const arr = (Array.isArray(existing) ? existing : []).map(t => ({ ...t }));
+    let tag = arr.find(t => String(t.participantId) === String(pid));
+    if (!tag) { tag = { participantId: String(pid), comments: [] }; arr.push(tag); }
+    mutate(tag);
+    return arr;
+  }
+
+  // שדה מדידה כמותית (רק כאשר measure === "reps")
+  function renderStationMeasure(st) {
+    const box = document.getElementById('sn-measure');
+    if (!box) return;
+    if (!st || st.measure !== 'reps') { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const tag = selectedTag();
+    const val = (tag && tag.reps != null) ? tag.reps : '';
+    const label = st.measureLabel || 'מספר חזרות';
+    box.style.display = '';
+    box.innerHTML = `
+      <label style="font-size:15px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        ${escHtml(label)}:
+        <input id="sn-reps-input" type="number" inputmode="numeric" min="0" value="${escHtml(String(val))}"
+               onchange="setStationReps(this.value)"
+               class="form-input" style="width:100px; padding:8px 10px; direction:ltr; text-align:center">
+      </label>`;
+  }
+
+  // פרמטרים: לכל פרמטר — ציון 1–7 (של המעריך הנוכחי) + הערות מהירות
+  function renderStationParams(st) {
+    const box = document.getElementById('sn-params');
+    if (!box) return;
+    if (!st || !Array.isArray(st.params) || st.params.length === 0) { box.innerHTML = ''; return; }
+    const tag = selectedTag();
+    const myScores = (tag && tag.scores && tag.scores[currentUser?.uid]) || {};
+    box.innerHTML = st.params.map((p, pi) => {
+      const cur = Number(myScores[p.name] || 0);
+      const scoreBtns = [1,2,3,4,5,6,7].map(v =>
+        `<button class="sn-score-btn ${cur === v ? 'selected' : ''}" onclick="setStationScore(${pi}, ${v})">${v}</button>`
+      ).join('');
+      const quick = (Array.isArray(p.quickNotes) ? p.quickNotes : []).map((q, qi) =>
+        `<span class="sn-quick-pill" onclick="addStationQuickNote(${pi}, ${qi})">${escHtml(q)}</span>`
+      ).join('');
+      return `
+        <div class="sn-param">
+          <div class="sn-param-head">
+            <span class="sn-param-name">${escHtml(p.name)}</span>
+            <span class="sn-param-hint">ציון 1–7 · לחיצה שנייה מנקה</span>
+          </div>
+          <div class="sn-score-row">${scoreBtns}</div>
+          <div class="sn-quick-row">${quick}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // קובע/מנקה ציון פרמטר עבור המעריך הנוכחי (לחיצה חוזרת על אותו ערך = ניקוי)
+  window.setStationScore = async (pi, val) => {
+    const st = currentStationType();
+    const p = st?.params?.[pi];
+    if (!p || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    const uid = currentUser?.uid || '_';
+    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
+      const scores = { ...(tag.scores || {}) };
+      const mine = { ...(scores[uid] || {}) };
+      if (Number(mine[p.name]) === Number(val)) delete mine[p.name];
+      else mine[p.name] = Number(val);
+      scores[uid] = mine;
+      tag.scores = scores;
+    });
+    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
+  };
+
+  // קובע/מנקה ערך מדידה כמותית (מספר חזרות/ברגים/שלב) — ערך יחיד אובייקטיבי
+  window.setStationReps = async (val) => {
+    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    const num = (val === '' || val == null) ? null : Number(val);
+    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
+      if (num == null || isNaN(num)) delete tag.reps; else tag.reps = num;
+    });
+    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
+  };
+
+  // הערה מהירה של פרמטר → נכנסת אל תוך ההערות המילוליות
+  window.addStationQuickNote = async (pi, qi) => {
+    const st = currentStationType();
+    const note = st?.params?.[pi]?.quickNotes?.[qi];
+    if (note) await appendStationNote(note);
   };
 
   function renderStationNotesList() {
@@ -1123,12 +1320,9 @@
       authorUid:  currentUser?.uid || '',
       at:         Date.now()
     };
-    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    const updated = existing.map(t => {
-      if (String(t.participantId) !== stationNoteSelectedPid) return t;
-      const cs = Array.isArray(t.comments) ? t.comments.slice() : [];
-      cs.push(noteObj);
-      return { ...t, comments: cs };
+    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
+      tag.comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
+      tag.comments.push(noteObj);
     });
     try {
       await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
@@ -1164,30 +1358,50 @@
   };
 
   // ═════════ Sheets sync ═════════
-  // מסנכרן את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
-  // Code.gs מבצע dedup לפי (id, round) — כך שלחיצה חוזרת בטוחה ולא מכפילה.
-  //
-  // ב-LITE אין RFID, אז שולחים ישירות id (מספר משתתף) ו-team (מספר צוות).
+  // מסנכרן את הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
+  // כל מעריך שולח את הציונים וההערות *שלו* (dedup ב-Code.gs לפי id+סבב+מעריך).
+  // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
   function buildSyncRowsForRace(race) {
     const rows = [];
+    const uid = currentUser?.uid || '';
     const startMs = tsToMs(race.startedAt) || 0;
+    const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
+    const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
     const tags = Array.isArray(race.tags) ? race.tags : [];
     for (const tag of tags) {
       const pidRaw = String(tag.participantId || '').replace(/\D+/g, '');
       const finishedAtMs = Number(tag.finishedAt) || 0;
       const timeMs = (finishedAtMs && startMs) ? Math.max(0, finishedAtMs - startMs) : 0;
+
+      // הציונים וההערות של המעריך הנוכחי בלבד
+      const myScores = (tag.scores && tag.scores[uid]) || {};
+      const myComments = (Array.isArray(tag.comments) ? tag.comments : [])
+        .map(normalizeComment)
+        .filter(c => c.authorUid === uid)
+        .map(c => c.text).filter(Boolean).join('|');
+
+      // מדלגים על משתתף שהמעריך הזה לא נתן לו כלום (ואין נתון אובייקטיבי)
+      const hasData = Object.keys(myScores).length > 0 || myComments ||
+                      tag.place != null || tag.reps != null;
+      if (!hasData) continue;
+
       const row = {
-        place:          Number(tag.place || 0),
         id:             pidRaw,
         team:           String(race.team || ''),
-        first_ms:       timeMs,
         round:          Number(race.round || 0),
-        // מוציא רק את הטקסט מכל הערה (הן string ישן, הן object חדש)
-        comments:       (Array.isArray(tag.comments) ? tag.comments : [])
-                         .map(c => normalizeComment(c).text).filter(Boolean).join('|'),
         station:        String(race.station || ''),
+        station_type:   st ? st.id : '',
+        station_name:   st ? st.name : '',
+        params:         st ? st.params.map(p => p.name) : [],
+        measure:        st ? st.measure : '',
+        measure_label:  st ? (st.measureLabel || '') : '',
+        place:          tag.place != null ? Number(tag.place) : '',
+        reps:           tag.reps  != null ? Number(tag.reps)  : '',
+        first_ms:       timeMs,
+        scores:         myScores,
+        comments:       myComments,
         evaluator_name: currentUser?.name || '',
         evaluator_uid:  currentUser?.uid || '',
         evaluator_team: String(race.team || '')
