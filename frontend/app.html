@@ -1363,6 +1363,20 @@
   // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
+  // שולח את הבקשה הראשונה לבד (היא יוצרת את קובץ הצוות) וממתין לסיומה,
+  // ורק אז שולח את השאר במקביל — כך בקשות מקבילות מוצאות קובץ קיים ולא מכפילות.
+  async function sendRowsFirstThenRest(rows) {
+    const send = (row) => fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
+    if (rows.length === 0) return 0;
+    let ok = 0;
+    try { const r0 = await send(rows[0]); if (r0.ok) ok++; } catch (e) {}
+    if (rows.length > 1) {
+      const rest = await Promise.allSettled(rows.slice(1).map(send));
+      ok += rest.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+    }
+    return ok;
+  }
+
   function buildSyncRowsForRace(race) {
     const rows = [];
     const uid = currentUser?.uid || '';
@@ -1450,15 +1464,11 @@
       if (allRows.length === 0) { showToast('אין משתתפים שסיימו לסנכרון', 'error'); return; }
 
       // Content-Type ברירת מחדל (text/plain) — נמנע מ-CORS preflight ש-Apps Script לא תומך בו טוב.
-      const requests = allRows.map(row =>
-        fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) })
-      );
-      const results = await Promise.allSettled(requests);
-      const ok   = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
-      const fail = results.length - ok;
+      const ok = await sendRowsFirstThenRest(allRows);
+      const fail = allRows.length - ok;
       if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות ל-Sheets`, 'success');
       else if (ok === 0) showToast(`הסנכרון נכשל (${fail} רשומות)`, 'error');
-      else showToast(`סונכרנו ${ok}/${results.length} (${fail} נכשלו)`, 'error');
+      else showToast(`סונכרנו ${ok}/${allRows.length} (${fail} נכשלו)`, 'error');
     } catch (e) {
       showToast('שגיאה בסנכרון: ' + e.message, 'error');
     } finally {
@@ -1750,15 +1760,11 @@
 
       if (rows.length === 0) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
 
-      const requests = rows.map(body =>
-        fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) })
-      );
-      const results = await Promise.allSettled(requests);
-      const ok = results.filter(r => r.status === 'fulfilled' && r.value.ok).length;
-      const fail = results.length - ok;
+      const ok = await sendRowsFirstThenRest(rows);
+      const fail = rows.length - ok;
       if (fail === 0) showToast(`✓ סונכרנו ${ok} הערות מכל המשתתפים`, 'success');
       else if (ok === 0) showToast(`הסנכרון נכשל (${fail} הערות)`, 'error');
-      else showToast(`סונכרנו ${ok}/${results.length}, ${fail} נכשלו`, 'error');
+      else showToast(`סונכרנו ${ok}/${rows.length}, ${fail} נכשלו`, 'error');
     } catch (e) {
       showToast('שגיאה בסנכרון: ' + e.message, 'error');
     } finally {
