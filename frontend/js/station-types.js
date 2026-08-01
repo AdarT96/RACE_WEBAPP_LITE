@@ -99,7 +99,8 @@ const DEFAULT_STATION_TYPES = {
 
   ironNerves: {
     name: "עצבים מברזל",
-    measure: "none",
+    measure: "reps",
+    measureLabel: "מספר ברגים",
     markingNote: "לסמן לכל מועמד את מספר הברגים שהצליח לסדר + הערות על איכות הביצוע (ברגים הפוכים, לא עד הסוף וכו')",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
@@ -283,7 +284,8 @@ const DEFAULT_STATION_TYPES = {
 
   ladder: {
     name: "צא מזה – סולם ההצלחה",
-    measure: "none",
+    measure: "reps",
+    measureLabel: "שלב שהגיע אליו",
     markingNote: "מקום לסמן האם המועמד לא הצליח לסיים אחד השלבים (איזה שלב לא הצליח לסיים, עד 10 שלבים)",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
