@@ -188,6 +188,14 @@
       background: #22c55e; border: 1px solid rgba(0,0,0,0.15);
     }
     body.outdoor-mode .note-picker-btn.has-data::after { background: #15803d; }
+    /* כפתור ספירת חזרות: מספר משתתף + מונה גדול */
+    .participant-btn.reps-btn { flex-direction: column; gap: 2px; line-height: 1.1; }
+    .reps-btn .reps-pid { font-size: clamp(15px, 2.4vw, 20px); opacity: .85; }
+    .reps-btn .reps-count {
+      font-size: clamp(26px, 5vw, 40px); font-weight: 900; color: var(--accent);
+      font-variant-numeric: tabular-nums;
+    }
+    body.outdoor-mode .reps-btn .reps-count { color: #b45309; }
     .gn-note-row {
       display: flex; align-items: flex-start; gap: 10px;
       padding: 10px 12px; background: var(--surface);
@@ -351,7 +359,7 @@
     <!-- Participants to finish -->
     <div class="section" id="grid-section">
       <div class="flex flex-center flex-between mb-8">
-        <h3>👥 משתתפים למירוץ</h3>
+        <h3 id="grid-title">👥 משתתפים למירוץ</h3>
         <span id="grid-count" style="color:var(--text-muted); font-size:13px">—</span>
       </div>
       <div id="participants-grid" class="participants-grid"></div>
@@ -361,7 +369,7 @@
     </div>
 
     <!-- Finished list -->
-    <div class="section">
+    <div class="section" id="finished-section">
       <div class="flex flex-center flex-between mb-8">
         <h3>🏁 סיימו — לפי סדר</h3>
         <span id="finished-count" style="color:var(--text-muted); font-size:13px">0</span>
@@ -528,6 +536,11 @@
   let quickTags = [];              // תיוגים משותפים מ-settings/commentTags
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
+
+  // ספירת חזרות: מונה מקומי (פידבק מיידי) + שמירה מקובצת ל-Firestore
+  let localReps    = {};
+  let repsSaveTimer = null;
+  let repsSaving    = false;
 
   // סוגי תחנות — ברירת מחדל מ-station-types.js, נדרסים ע"י settings/stationTypes אם קיים
   let stationTypes = (typeof window !== 'undefined' && window.DEFAULT_STATION_TYPES) || {};
@@ -818,6 +831,7 @@
   async function loadCurrentSession() {
     if (!selectedTeam || !selectedStation) return;
 
+    localReps = {}; // איפוס מונה החזרות המקומי בכל החלפת צוות/תחנה
     detachRaceSubscription();
 
     // Find latest race for team+station
@@ -878,11 +892,21 @@
     const finishedIds = new Set(finished.map(t => String(t.participantId)));
     const remaining = participants.filter(p => !finishedIds.has(String(p)));
 
+    // סוג המדידה של התחנה קובע את התנהגות הרשת: מקום / ספירת חזרות / ללא
+    const st = currentStationType();
+    const measure = st?.measure || 'place';
+    const allTags = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const repsByPid = {};
+    allTags.forEach(t => { if (t.reps != null) repsByPid[String(t.participantId)] = t.reps; });
+
     // Header status strip
     setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
     setText('hdr-round', '#' + (currentRace.round || 1));
     setText('hdr-status', currentRace.status === 'running' ? '🟢 פעיל' : '🔴 עצור');
-    setText('hdr-progress', finished.length + ' / ' + participants.length);
+    setText('hdr-progress',
+      measure === 'place' ? (finished.length + ' / ' + participants.length)
+      : measure === 'reps' ? (Object.keys(repsByPid).length + ' / ' + participants.length)
+      : '—');
 
     // Hide idle
     document.getElementById('idle-panel').style.display = 'none';
@@ -892,7 +916,23 @@
     const grid = document.getElementById('participants-grid');
     const gridCount = document.getElementById('grid-count');
     const gridEmpty = document.getElementById('grid-empty');
-    if (currentRace.status === 'running') {
+    const gridTitle = document.getElementById('grid-title');
+    if (currentRace.status === 'running' && measure === 'reps') {
+      // ספירת חזרות: הקשה על משתתף מוסיפה 1, והמונה מוצג על הכפתור
+      gridTitle.textContent = '🔢 ספירת ' + (st.measureLabel || 'חזרות');
+      const allSorted = participants.slice().sort((a, b) => Number(a) - Number(b));
+      grid.innerHTML = allSorted.map(id => {
+        const c = (localReps[id] != null) ? localReps[id] : Number(repsByPid[id] || 0);
+        return `<button class="participant-btn reps-btn" data-pid="${escHtml(id)}"
+                        onclick="incrementReps('${escHtml(id)}')">
+          <span class="reps-pid">${escHtml(id)}</span><span class="reps-count">${c}</span>
+        </button>`;
+      }).join('');
+      gridCount.textContent = 'הקש על משתתף כדי להוסיף 1';
+      gridEmpty.style.display = allSorted.length === 0 ? '' : 'none';
+      document.getElementById('grid-section').style.display = '';
+    } else if (currentRace.status === 'running' && measure === 'place') {
+      gridTitle.textContent = '👥 משתתפים למירוץ';
       const sortedRemaining = remaining.slice().sort((a,b) => Number(a) - Number(b));
       grid.innerHTML = sortedRemaining.map(id => `
         <button class="participant-btn" data-pid="${escHtml(id)}"
@@ -902,31 +942,37 @@
       gridEmpty.style.display = sortedRemaining.length === 0 ? '' : 'none';
       document.getElementById('grid-section').style.display = '';
     } else {
-      // stopped session — hide the grid, show the summary
+      // תחנת "ללא" מדידה, או סשן עצור — אין רשת הקשה; ההערכה דרך הבורר למטה
       document.getElementById('grid-section').style.display = 'none';
     }
 
-    // Finished list — לחיצה על pill מקפיצה את הבחירה בסקציית "הערות לתחנה" למטה
-    const finishedList = document.getElementById('finished-list');
-    const finishedCount = document.getElementById('finished-count');
-    const finishedEmpty = document.getElementById('finished-empty');
-    const startMs = tsToMs(currentRace.startedAt);
-    const sortedFinished = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
-    finishedList.innerHTML = sortedFinished.map(t => {
-      const commentsN = visibleCommentsFor(t).length;
-      const cmtLbl = commentsN > 0 ? `<span class="comments-count">💬 ${commentsN}</span>` : '';
-      const timeLbl = (startMs && t.finishedAt)
-        ? `<span class="time">${formatMMSS(t.finishedAt - startMs)}</span>` : '';
-      const pid = escHtml(String(t.participantId));
-      return `<span class="finished-pill" onclick="selectStationNoteParticipant('${pid}', true)">
-        <span class="place">${t.place || '?'}</span>
-        <span class="pid">${pid}</span>
-        ${timeLbl}
-        ${cmtLbl}
-      </span>`;
-    }).join('');
-    finishedCount.textContent = String(sortedFinished.length);
-    finishedEmpty.style.display = sortedFinished.length === 0 ? '' : 'none';
+    // Finished list — רק בתחנות סדר הגעה (מקום)
+    const finishedSection = document.getElementById('finished-section');
+    if (measure === 'place') {
+      finishedSection.style.display = '';
+      const finishedList = document.getElementById('finished-list');
+      const finishedCount = document.getElementById('finished-count');
+      const finishedEmpty = document.getElementById('finished-empty');
+      const startMs = tsToMs(currentRace.startedAt);
+      const sortedFinished = finished.slice().sort((a, b) => (a.place || 0) - (b.place || 0));
+      finishedList.innerHTML = sortedFinished.map(t => {
+        const commentsN = visibleCommentsFor(t).length;
+        const cmtLbl = commentsN > 0 ? `<span class="comments-count">💬 ${commentsN}</span>` : '';
+        const timeLbl = (startMs && t.finishedAt)
+          ? `<span class="time">${formatMMSS(t.finishedAt - startMs)}</span>` : '';
+        const pid = escHtml(String(t.participantId));
+        return `<span class="finished-pill" onclick="selectStationNoteParticipant('${pid}', true)">
+          <span class="place">${t.place || '?'}</span>
+          <span class="pid">${pid}</span>
+          ${timeLbl}
+          ${cmtLbl}
+        </span>`;
+      }).join('');
+      finishedCount.textContent = String(sortedFinished.length);
+      finishedEmpty.style.display = sortedFinished.length === 0 ? '' : 'none';
+    } else {
+      finishedSection.style.display = 'none';
+    }
 
     // Station notes picker (finished participants only)
     renderStationNotesSection();
@@ -1061,6 +1107,7 @@
     if (!currentRaceId) return;
     if (!confirm('לסיים את הסבב הנוכחי?')) return;
     try {
+      await commitPendingReps(); // לשמור ספירות חזרות ממתינות לפני סיום
       await updateDoc(doc(db, 'races', currentRaceId), {
         status:  'stopped',
         endedAt: serverTimestamp()
@@ -1180,6 +1227,51 @@
     if (!tag) { tag = { participantId: String(pid), comments: [] }; arr.push(tag); }
     mutate(tag);
     return arr;
+  }
+
+  // ═════════ ספירת חזרות (תחנות reps) ═════════
+  // הקשה מוסיפה 1 למונה המקומי (פידבק מיידי), והשמירה ל-Firestore מקובצת
+  // כדי לא לאבד הקשות מהירות (read-modify-write אחד לכל הצבירה).
+  window.incrementReps = (pid) => {
+    if (!currentRace || currentRace.status !== 'running') { showToast('אין סבב פעיל', 'error'); return; }
+    pid = String(pid);
+    if (localReps[pid] == null) {
+      const tag = (currentRace.tags || []).find(t => String(t.participantId) === pid);
+      localReps[pid] = Number(tag && tag.reps) || 0;
+    }
+    localReps[pid] += 1;
+    const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
+    if (el) el.textContent = String(localReps[pid]);
+    scheduleRepsSave();
+  };
+
+  function scheduleRepsSave() {
+    if (repsSaveTimer) clearTimeout(repsSaveTimer);
+    repsSaveTimer = setTimeout(flushRepsSave, 450);
+  }
+
+  async function flushRepsSave() {
+    repsSaveTimer = null;
+    if (repsSaving) { scheduleRepsSave(); return; }
+    if (!currentRaceId || !currentRace) return;
+    const pids = Object.keys(localReps);
+    if (pids.length === 0) return;
+    repsSaving = true;
+    try {
+      let updated = Array.isArray(currentRace.tags) ? currentRace.tags.map(t => ({ ...t })) : [];
+      pids.forEach(pid => { updated = upsertTags(updated, pid, (tag) => { tag.reps = localReps[pid]; }); });
+      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
+    } catch (e) {
+      showToast('שגיאה בשמירת ספירה: ' + e.message, 'error');
+    } finally {
+      repsSaving = false;
+    }
+  }
+
+  // שמירה מיידית של ספירות ממתינות (לפני סנכרון / סיום סשן)
+  async function commitPendingReps() {
+    if (repsSaveTimer) { clearTimeout(repsSaveTimer); repsSaveTimer = null; }
+    await flushRepsSave();
   }
 
   // שדה מדידה כמותית (רק כאשר measure === "reps")
@@ -1456,6 +1548,7 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
 
     try {
+      await commitPendingReps(); // לשמור ספירות חזרות ממתינות לפני הסנכרון
       const races = await gatherRacesForCurrentContext();
       if (races.length === 0) { showToast('אין סבבים לתחנה זו', 'error'); return; }
 
