@@ -227,9 +227,8 @@ function writeGeneralNoteRow_(ss, payload) {
 // ---------- קבצי צוותים ----------
 function getTeamFile_(ss, team) {
   var entry = findTeamEntry_(ss, team);
-  if (entry && entry.fileId) {
-    try { DriveApp.getFileById(entry.fileId); return SpreadsheetApp.openById(entry.fileId); }
-    catch (gone) { /* נמחק — ניצור חדש */ }
+  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
+    return SpreadsheetApp.openById(entry.fileId);
   }
   var newSs = SpreadsheetApp.create("צוות " + team + " — גיבוש");
   try { DriveApp.getFileById(newSs.getId()).moveTo(teamFolder_()); } catch (moveErr) {}
@@ -304,11 +303,8 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   if (!uid && !name) return buildResponse(false, "Missing uid/name");
 
   var entry = findEvaluatorEntry_(ss, uid, name);
-  if (entry && entry.fileId) {
-    try {
-      DriveApp.getFileById(entry.fileId);
-      return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
-    } catch (gone) { /* נמחק — ניצור חדש */ }
+  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
+    return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
   var newSs = SpreadsheetApp.create("שיט מעריך — " + (name || uid));
@@ -359,9 +355,15 @@ function mirrorToEvaluatorFile_(ss, payload, fn) {
     var name = String(payload.evaluator_name || "").trim();
     if (!uid && !name) return;
     var entry = findEvaluatorEntry_(ss, uid, name);
-    if (!entry || !entry.fileId) return;
+    if (!entry || !entry.fileId || !fileAlive_(entry.fileId)) return;
     fn(SpreadsheetApp.openById(entry.fileId));
   } catch (err) { /* best-effort */ }
+}
+
+// האם הקובץ קיים ולא בסל המחזור?
+function fileAlive_(id) {
+  try { return !DriveApp.getFileById(id).isTrashed(); }
+  catch (e) { return false; }
 }
 
 // ---------- Generic helpers ----------
