@@ -339,7 +339,9 @@
             ${statusBadge}
             ${u.role === 'evaluator' ? (u.sheetUrl
               ? `<a class="btn btn-ghost" href="${escHtml(u.sheetUrl)}" target="_blank" rel="noopener"
-                   style="font-size:12px; padding:5px 10px" title="קובץ שיט של המעריך">📄 שיט</a>`
+                   style="font-size:12px; padding:5px 10px" title="קובץ שיט של המעריך">📄 שיט</a>
+                 <button class="btn btn-ghost" onclick="recreateEvaluatorSheet('${u.uid}')"
+                   style="font-size:12px; padding:5px 8px" title="צור קובץ חדש (אם הקודם נמחק)">↻</button>`
               : `<button class="btn btn-ghost" onclick="createEvaluatorSheet('${u.uid}')"
                    style="font-size:12px; padding:5px 10px" title="צור קובץ שיט למעריך">📄 צור שיט</button>`) : ''}
             <select class="role-sel" onchange="changeRole('${u.uid}', this.value)" ${u.uid === currentAdmin?.uid ? 'disabled' : ''}>
@@ -388,9 +390,9 @@
   // מבטיח קובץ שיט למעריך יחיד. idempotent: מדלג אם כבר יש קישור שמור,
   // וגם ה-Apps Script עצמו לא יוצר כפילות (מחזיר את הקובץ הקיים).
   // מחזיר: 'created' | 'skipped' | 'not-evaluator' | 'error'
-  async function ensureSheetForUser(uid, u) {
+  async function ensureSheetForUser(uid, u, force = false) {
     if (u.role !== 'evaluator') return 'not-evaluator';
-    if (u.sheetUrl) return 'skipped'; // כבר יש קובץ
+    if (u.sheetUrl && !force) return 'skipped'; // כבר יש קובץ (אלא אם ביקשו יצירה מחדש)
     const body = {
       type: 'ensure_evaluator_sheet',
       uid:  uid,
@@ -423,6 +425,24 @@
     }
   }
   window.createEvaluatorSheet = (uid) => createEvaluatorSheetFor(uid);
+
+  // יצירה מחדש — למקרה שהקובץ הקודם נמחק. מכריח יצירה גם אם יש sheetUrl.
+  window.recreateEvaluatorSheet = async (uid) => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    if (!confirm('ליצור קובץ שיט חדש למעריך זה? (השתמש אם הקובץ הקודם נמחק)')) return;
+    try {
+      const snap = await getDoc(doc(db, 'users', uid));
+      if (!snap.exists()) return;
+      const u = snap.data();
+      showToast('יוצר קובץ שיט חדש…', 'info');
+      const result = await ensureSheetForUser(uid, u, true); // force
+      if (result === 'created') { showToast('נוצר קובץ שיט חדש ✓', 'success'); loadUsers(); }
+    } catch (e) {
+      showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
+    }
+  };
 
   // יצירה לכל המעריכים הקיימים בבת אחת. מדלג על מי שכבר יש לו קובץ.
   window.createAllEvaluatorSheets = async () => {
