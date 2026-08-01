@@ -77,7 +77,13 @@
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
       <h2>👥 כל המשתמשים</h2>
-      <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
+      <div class="flex gap-8" style="flex-wrap:wrap">
+        <button id="btn-create-all-sheets" class="btn btn-primary" onclick="createAllEvaluatorSheets()"
+                style="font-size:13px; padding:6px 12px" title="יוצר קובץ שיט לכל מעריך שאין לו עדיין">
+          📄 צור קבצי שיט לכל המעריכים
+        </button>
+        <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
+      </div>
     </div>
     <div id="users-list">
       <div class="empty-state"><div class="spinner"></div></div>
@@ -336,6 +342,29 @@
   // ═══════════════════════════════════════════════════════════
   //  קובץ שיט אישי לכל מעריך — נוצר אוטומטית דרך Apps Script
   // ═══════════════════════════════════════════════════════════
+  // מבטיח קובץ שיט למעריך יחיד. idempotent: מדלג אם כבר יש קישור שמור,
+  // וגם ה-Apps Script עצמו לא יוצר כפילות (מחזיר את הקובץ הקיים).
+  // מחזיר: 'created' | 'skipped' | 'not-evaluator' | 'error'
+  async function ensureSheetForUser(uid, u) {
+    if (u.role !== 'evaluator') return 'not-evaluator';
+    if (u.sheetUrl) return 'skipped'; // כבר יש קובץ
+    const body = {
+      type: 'ensure_evaluator_sheet',
+      uid:  uid,
+      name: u.name || '',
+      team: String(u.team || '')
+    };
+    if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+      body.key = APP_CONFIG.sheetsApiKey;
+    }
+    const res  = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+    const data = await res.json();
+    if (!data.success || !data.url) throw new Error(data.message || 'יצירת הקובץ נכשלה');
+    await updateDoc(doc(db, 'users', uid), { sheetUrl: data.url, sheetFileId: data.fileId || '' });
+    return 'created';
+  }
+
+  // יצירה למעריך יחיד (כפתור ליד השם / אוטומטית באישור)
   async function createEvaluatorSheetFor(uid) {
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) return;
     try {
@@ -344,26 +373,47 @@
       const u = snap.data();
       if (u.role !== 'evaluator' || u.sheetUrl) return; // לא מעריך / כבר יש קובץ
       showToast('יוצר קובץ שיט למעריך…', 'info');
-      const body = {
-        type: 'ensure_evaluator_sheet',
-        uid:  uid,
-        name: u.name || '',
-        team: String(u.team || '')
-      };
-      if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-        body.key = APP_CONFIG.sheetsApiKey;
-      }
-      const res  = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
-      const data = await res.json();
-      if (!data.success || !data.url) throw new Error(data.message || 'יצירת הקובץ נכשלה');
-      await updateDoc(doc(db, 'users', uid), { sheetUrl: data.url, sheetFileId: data.fileId || '' });
-      showToast('קובץ שיט נוצר למעריך ✓', 'success');
-      loadUsers();
+      const result = await ensureSheetForUser(uid, u);
+      if (result === 'created') { showToast('קובץ שיט נוצר למעריך ✓', 'success'); loadUsers(); }
     } catch (e) {
       showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
     }
   }
   window.createEvaluatorSheet = (uid) => createEvaluatorSheetFor(uid);
+
+  // יצירה לכל המעריכים הקיימים בבת אחת. מדלג על מי שכבר יש לו קובץ.
+  window.createAllEvaluatorSheets = async () => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    const btn = document.getElementById('btn-create-all-sheets');
+    const orig = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
+    try {
+      const snap = await getDocs(collection(db, 'users'));
+      const evaluators = [];
+      snap.forEach(d => { const u = d.data(); if (u.role === 'evaluator') evaluators.push({ uid: d.id, ...u }); });
+      if (evaluators.length === 0) { showToast('אין מעריכים במערכת', 'info'); return; }
+
+      let created = 0, skipped = 0, failed = 0;
+      // רציף בכוונה — כל יצירת קובץ תופסת נעילת סקריפט ולוקחת כמה שניות
+      for (const u of evaluators) {
+        try {
+          const r = await ensureSheetForUser(u.uid, u);
+          if (r === 'created') created++;
+          else if (r === 'skipped') skipped++;
+        } catch (e) { failed++; }
+      }
+      loadUsers();
+      let msg = `נוצרו ${created} · דילוג (כבר קיים) ${skipped}`;
+      if (failed) msg += ` · נכשלו ${failed}`;
+      showToast(msg, failed ? 'error' : 'success');
+    } catch (e) {
+      showToast('שגיאה: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; if (orig) btn.innerHTML = orig; }
+    }
+  };
   window.changeTeam = async (uid, newTeam) => {
     const teamNum = newTeam ? parseInt(newTeam) : null;
     try { await updateDoc(doc(db,'users',uid),{team: teamNum || ''}); showToast('צוות עודכן: ' + (teamNum || '—'),'success'); }
