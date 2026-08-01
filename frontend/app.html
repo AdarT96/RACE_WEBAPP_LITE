@@ -1165,40 +1165,31 @@
 
   // ═════════ Sheets sync ═════════
   // מסנכרן את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
-  // Code.gs מבצע dedup לפי (epc, round) — כך שלחיצה חוזרת בטוחה ולא מכפילה.
+  // Code.gs מבצע dedup לפי (id, round) — כך שלחיצה חוזרת בטוחה ולא מכפילה.
   //
-  // EPC סינתטי: LITE לא סורק תגים, אז אנחנו בונים "epc" בפורמט TTPPPP
-  // (2 ספרות צוות + 4 ספרות משתתף) כדי ש-`pidFromEpc_` ו-`teamFromEpc_`
-  // ב-Code.gs יחלצו את הערכים כרגיל.
+  // ב-LITE אין RFID, אז שולחים ישירות id (מספר משתתף) ו-team (מספר צוות).
   let sheetsSyncInProgress = false;
 
   function buildSyncRowsForRace(race) {
     const rows = [];
-    const teamCode = String(race.team || '00').padStart(2, '0').slice(-2);
     const startMs = tsToMs(race.startedAt) || 0;
     const tags = Array.isArray(race.tags) ? race.tags : [];
     for (const tag of tags) {
       const pidRaw = String(tag.participantId || '').replace(/\D+/g, '');
-      const pid4 = pidRaw.padStart(4, '0').slice(-4);
-      const epc  = teamCode + pid4;
       const finishedAtMs = Number(tag.finishedAt) || 0;
       const timeMs = (finishedAtMs && startMs) ? Math.max(0, finishedAtMs - startMs) : 0;
       const row = {
         place:          Number(tag.place || 0),
-        epc:            epc,
+        id:             pidRaw,
+        team:           String(race.team || ''),
         first_ms:       timeMs,
-        last_ms:        timeMs,
-        antenna:        0,
-        rssi:           0,
         round:          Number(race.round || 0),
-        count:          1,
-        mode:           'arrival',
-        laps:           0,
         // מוציא רק את הטקסט מכל הערה (הן string ישן, הן object חדש)
         comments:       (Array.isArray(tag.comments) ? tag.comments : [])
                          .map(c => normalizeComment(c).text).filter(Boolean).join('|'),
         station:        String(race.station || ''),
         evaluator_name: currentUser?.name || '',
+        evaluator_uid:  currentUser?.uid || '',
         evaluator_team: String(race.team || '')
       };
       if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
@@ -1532,7 +1523,9 @@
             type:           'general_note',
             participant_id: pid,
             team_id:        team,
-            note:           n.text || ''
+            note:           n.text || '',
+            evaluator_name: n.authorName || '',
+            evaluator_uid:  n.authorUid || ''
           };
           if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
             body.key = APP_CONFIG.sheetsApiKey;
