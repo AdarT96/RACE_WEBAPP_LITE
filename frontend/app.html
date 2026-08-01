@@ -226,6 +226,39 @@
       background: rgba(99,102,241,0.15); border-radius: 999px;
       padding: 4px 10px; font-size: 12px;
     }
+
+    /* ── Station evaluation: 1–7 scores + per-parameter quick notes ── */
+    .sn-param {
+      padding: 12px; margin-bottom: 12px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    }
+    .sn-param-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .sn-param-name { font-size: 16px; font-weight: 800; }
+    .sn-param-hint { font-size: 11px; color: var(--text-dim); }
+    .sn-score-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    .sn-score-btn {
+      flex: 1 1 auto; min-width: 40px; padding: 10px 0;
+      background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
+      color: var(--text); font-size: 18px; font-weight: 800; font-family: 'Courier New', monospace;
+      cursor: pointer; direction: ltr; user-select: none;
+      transition: transform .08s ease, background .12s, border-color .12s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .sn-score-btn:hover { border-color: var(--accent); }
+    .sn-score-btn:active { transform: scale(0.94); }
+    .sn-score-btn.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .sn-quick-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .sn-quick-pill {
+      padding: 6px 12px; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 999px; cursor: pointer; font-size: 13px; line-height: 1.3;
+    }
+    .sn-quick-pill:hover { border-color: var(--accent); color: var(--accent); }
+    .sn-quick-pill:active { transform: scale(0.97); }
+    body.outdoor-mode .sn-param { background: #fff; border: 2px solid #000080; }
+    body.outdoor-mode .sn-param-name { color: #000080; }
+    body.outdoor-mode .sn-score-btn { background: #fff; border: 3px solid #000080; color: #000080; }
+    body.outdoor-mode .sn-score-btn.selected { background: #ffd700; color: #000; border-color: #000; }
+    body.outdoor-mode .sn-quick-pill { background: #f7fafc; border-color: #000080; color: #000080; }
   </style>
 </head>
 <body>
@@ -346,11 +379,18 @@
       </div>
 
       <div id="sn-selected-area" style="margin-top:16px; display:none">
-        <div style="font-size:13px; margin-bottom:8px">
+        <div style="font-size:13px; margin-bottom:12px">
           נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
+          <span id="sn-station-type" style="color:var(--text-muted)"></span>
         </div>
-        <div id="sn-tag-pills" class="tag-pills mb-8" style="display:flex; flex-wrap:wrap; gap:6px"></div>
-        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap">
+
+        <!-- מדידה כמותית (מספר חזרות / ברגים / שלב) — לפי סוג התחנה -->
+        <div id="sn-measure" style="display:none; margin-bottom:14px"></div>
+
+        <!-- פרמטרים: ציון 1–7 + הערות מהירות לכל פרמטר -->
+        <div id="sn-params"></div>
+
+        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px">
           <textarea id="sn-input" class="form-input" rows="2"
                     style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
                     placeholder="הערה חופשית לתחנה הזאת…"></textarea>
@@ -451,6 +491,7 @@
 
 <!-- Config first, then module -->
 <script src="js/firebase-config.js"></script>
+<script src="js/station-types.js"></script>
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
@@ -479,6 +520,10 @@
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
 
+  // סוגי תחנות (ברירת מחדל מ-station-types.js; בהמשך המנהל יוכל לדרוס דרך Firestore)
+  let stationTypes = (typeof window !== 'undefined' && window.DEFAULT_STATION_TYPES) || {};
+  let stationOrder = (typeof window !== 'undefined' && window.DEFAULT_STATION_ORDER) || [];
+
   // ═════════ Helpers ═════════
   const pad2 = n => String(n).padStart(2, '0');
   const escHtml = s => (s == null ? '' : String(s))
@@ -506,7 +551,26 @@
     return h > 0 ? `${h}:${m}:${s}.${cc}` : `${m}:${s}.${cc}`;
   }
 
+  // ── פתרון סוג התחנה: לפי מיפוי הצוות, אחרת לפי סדר ברירת המחדל ──
+  function stationTypeIdFor(stationId, teamData) {
+    if (teamData && teamData.stationMap && teamData.stationMap[stationId]) {
+      return teamData.stationMap[stationId];
+    }
+    const n = parseInt(stationId, 10);
+    return (n >= 1 && stationOrder[n - 1]) ? stationOrder[n - 1] : null;
+  }
+  function stationTypeFor(stationId, teamData) {
+    const id = stationTypeIdFor(stationId, teamData);
+    return (id && stationTypes[id]) ? { id, ...stationTypes[id] } : null;
+  }
+  function currentStationType() {
+    return stationTypeFor(selectedStation, teamsCache[selectedTeam]);
+  }
+
   function stationDisplayName(stationId, teamData) {
+    const st = stationTypeFor(stationId, teamData);
+    if (st) return st.name;
+    // תאימות לאחור לנתונים ישנים
     if (teamData && teamData.stationNames && teamData.stationNames[stationId]) {
       return teamData.stationNames[stationId];
     }
@@ -665,8 +729,7 @@
       } else {
         quickTags = (APP_CONFIG.commentTags || []).slice();
       }
-      // רענון UI פתוח (סקציית הערות לתחנה + סקציית הערות כלליות)
-      if (typeof renderStationNoteTagPills === 'function') renderStationNoteTagPills();
+      // רענון UI פתוח (התיוגים הגלובליים משמשים כעת רק את ההערות הכלליות)
       if (typeof renderGeneralNotesTags === 'function') renderGeneralNotesTags();
     }, (err) => {
       // שקט — נשארים עם ברירת מחדל / cache אם המנוי נכשל
@@ -1053,17 +1116,103 @@
     }
     document.getElementById('sn-selected-area').style.display = '';
     setText('sn-selected-label', stationNoteSelectedPid);
-    renderStationNoteTagPills();
+    const st = currentStationType();
+    setText('sn-station-type', st ? '· ' + st.name : '');
+    renderStationMeasure(st);
+    renderStationParams(st);
     renderStationNotesList();
   }
 
-  window.renderStationNoteTagPills = () => {
-    const container = document.getElementById('sn-tag-pills');
-    if (!container) return;
-    const tags = getQuickTags();
-    container.innerHTML = tags.map(t =>
-      `<span class="tag-pill" onclick="addStationNoteFromTag('${escHtml(t)}')">${escHtml(t)}</span>`
-    ).join('');
+  // מחזיר את ה-tag של המשתתף הנבחר בסבב הנוכחי
+  function selectedTag() {
+    return (currentRace?.tags || []).find(t => String(t.participantId) === stationNoteSelectedPid) || null;
+  }
+
+  // שדה מדידה כמותית (רק כאשר measure === "reps")
+  function renderStationMeasure(st) {
+    const box = document.getElementById('sn-measure');
+    if (!box) return;
+    if (!st || st.measure !== 'reps') { box.style.display = 'none'; box.innerHTML = ''; return; }
+    const tag = selectedTag();
+    const val = (tag && tag.reps != null) ? tag.reps : '';
+    const label = st.measureLabel || 'מספר חזרות';
+    box.style.display = '';
+    box.innerHTML = `
+      <label style="font-size:15px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+        ${escHtml(label)}:
+        <input id="sn-reps-input" type="number" inputmode="numeric" min="0" value="${escHtml(String(val))}"
+               onchange="setStationReps(this.value)"
+               class="form-input" style="width:100px; padding:8px 10px; direction:ltr; text-align:center">
+      </label>`;
+  }
+
+  // פרמטרים: לכל פרמטר — ציון 1–7 (של המעריך הנוכחי) + הערות מהירות
+  function renderStationParams(st) {
+    const box = document.getElementById('sn-params');
+    if (!box) return;
+    if (!st || !Array.isArray(st.params) || st.params.length === 0) { box.innerHTML = ''; return; }
+    const tag = selectedTag();
+    const myScores = (tag && tag.scores && tag.scores[currentUser?.uid]) || {};
+    box.innerHTML = st.params.map((p, pi) => {
+      const cur = Number(myScores[p.name] || 0);
+      const scoreBtns = [1,2,3,4,5,6,7].map(v =>
+        `<button class="sn-score-btn ${cur === v ? 'selected' : ''}" onclick="setStationScore(${pi}, ${v})">${v}</button>`
+      ).join('');
+      const quick = (Array.isArray(p.quickNotes) ? p.quickNotes : []).map((q, qi) =>
+        `<span class="sn-quick-pill" onclick="addStationQuickNote(${pi}, ${qi})">${escHtml(q)}</span>`
+      ).join('');
+      return `
+        <div class="sn-param">
+          <div class="sn-param-head">
+            <span class="sn-param-name">${escHtml(p.name)}</span>
+            <span class="sn-param-hint">ציון 1–7 · לחיצה שנייה מנקה</span>
+          </div>
+          <div class="sn-score-row">${scoreBtns}</div>
+          <div class="sn-quick-row">${quick}</div>
+        </div>`;
+    }).join('');
+  }
+
+  // קובע/מנקה ציון פרמטר עבור המעריך הנוכחי (לחיצה חוזרת על אותו ערך = ניקוי)
+  window.setStationScore = async (pi, val) => {
+    const st = currentStationType();
+    const p = st?.params?.[pi];
+    if (!p || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    const uid = currentUser?.uid || '_';
+    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const updated = existing.map(t => {
+      if (String(t.participantId) !== stationNoteSelectedPid) return t;
+      const scores = { ...(t.scores || {}) };
+      const mine = { ...(scores[uid] || {}) };
+      if (Number(mine[p.name]) === Number(val)) delete mine[p.name];
+      else mine[p.name] = Number(val);
+      scores[uid] = mine;
+      return { ...t, scores };
+    });
+    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
+  };
+
+  // קובע/מנקה ערך מדידה כמותית (מספר חזרות/ברגים/שלב) — ערך יחיד אובייקטיבי
+  window.setStationReps = async (val) => {
+    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    const num = (val === '' || val == null) ? null : Number(val);
+    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
+    const updated = existing.map(t => {
+      if (String(t.participantId) !== stationNoteSelectedPid) return t;
+      const nt = { ...t };
+      if (num == null || isNaN(num)) delete nt.reps; else nt.reps = num;
+      return nt;
+    });
+    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
+  };
+
+  // הערה מהירה של פרמטר → נכנסת אל תוך ההערות המילוליות
+  window.addStationQuickNote = async (pi, qi) => {
+    const st = currentStationType();
+    const note = st?.params?.[pi]?.quickNotes?.[qi];
+    if (note) await appendStationNote(note);
   };
 
   function renderStationNotesList() {
