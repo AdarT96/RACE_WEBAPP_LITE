@@ -433,8 +433,8 @@
         📈 גרף השוואה
       </button>
       <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px"
-              title="שולח את כל הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets">
-        📊 סנכרן תחנה ל-Sheets
+              title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
+        📊 סנכרן תחנה + הערות
       </button>
     </div>
   </div>
@@ -476,13 +476,9 @@
       בחר משתתף מהרשימה למעלה.
     </div>
 
-    <!-- Sync כל ההערות שלי, לא רק של המשתתף הנבחר — לכן מחוץ ל-list-wrap -->
-    <div style="text-align:left; margin-top:14px; padding-top:12px; border-top:1px solid var(--border)">
-      <button class="btn btn-info" onclick="syncGeneralNotes()"
-              title="שולח את כל ההערות שכתבת עד עכשיו, לכל המשתתפים, לטאב 'סיכום' ב-Google Sheets"
-              style="padding:10px 18px; font-size:13px">
-        📤 סנכרן את כל ההערות שלי ל-Sheets
-      </button>
+    <!-- ההערות מסונכרנות יחד עם תוצאות התחנה בכפתור "📊 סנכרן תחנה + הערות" למעלה -->
+    <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted)">
+      💡 ההערות הכלליות מסונכרנות אוטומטית יחד עם תוצאות התחנה — בלחיצה על <b>📊 סנכרן תחנה + הערות</b>.
     </div>
   </div>
 
@@ -1549,17 +1545,23 @@
 
     try {
       await commitPendingReps(); // לשמור ספירות חזרות ממתינות לפני הסנכרון
+
+      // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
       const races = await gatherRacesForCurrentContext();
-      if (races.length === 0) { showToast('אין סבבים לתחנה זו', 'error'); return; }
+      let stationRows = [];
+      for (const r of races) stationRows = stationRows.concat(buildSyncRowsForRace(r));
 
-      let allRows = [];
-      for (const r of races) allRows = allRows.concat(buildSyncRowsForRace(r));
-      if (allRows.length === 0) { showToast('אין משתתפים שסיימו לסנכרון', 'error'); return; }
+      // הערות כלליות של הצוות הנוכחי בלבד
+      const noteRows = await collectTeamNoteRows(selectedTeam);
 
-      // Content-Type ברירת מחדל (text/plain) — נמנע מ-CORS preflight ש-Apps Script לא תומך בו טוב.
+      const allRows = stationRows.concat(noteRows);
+      if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
+
+      // שולח קודם שורה אחת (יוצרת את קובץ הצוות) ואז את השאר — מונע כפילות.
       const ok = await sendRowsFirstThenRest(allRows);
       const fail = allRows.length - ok;
-      if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות ל-Sheets`, 'success');
+      const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
+      if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
       else if (ok === 0) showToast(`הסנכרון נכשל (${fail} רשומות)`, 'error');
       else showToast(`סונכרנו ${ok}/${allRows.length} (${fail} נכשלו)`, 'error');
     } catch (e) {
@@ -1810,61 +1812,35 @@
     }
   };
 
-  let gnSyncInProgress = false;
-  window.syncGeneralNotes = async () => {
-    if (gnSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
-    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
-      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
-    }
-
-    gnSyncInProgress = true;
-    const btn = document.querySelector('button[onclick="syncGeneralNotes()"]');
-    const origHtml = btn ? btn.innerHTML : null;
-    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
-
-    try {
-      // איסוף כל מסמכי general_notes שהמשתמש מורשה לקרוא
-      // (Firestore rules כבר מסננים לפי צוות עבור מגבש/מעריך; מנהל רואה הכל)
-      const snap = await getDocs(collection(db, 'general_notes'));
-      const rows = [];
-      snap.forEach(d => {
-        const data = d.data();
-        const team = data.team;
-        const pid  = data.participantId;
-        if (!team || !pid) return;
-        const notes = Array.isArray(data.notes) ? data.notes : [];
-        for (const n of notes) {
-          // סינון "רואה רק את שלך" (מנהל = הכל)
-          if (!isAdmin() && n.authorUid !== currentUser?.uid) continue;
-          const body = {
-            type:           'general_note',
-            participant_id: pid,
-            team_id:        team,
-            note:           n.text || '',
-            evaluator_name: n.authorName || '',
-            evaluator_uid:  n.authorUid || ''
-          };
-          if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-            body.key = APP_CONFIG.sheetsApiKey;
-          }
-          rows.push(body);
+  // אוסף שורות הערות כלליות של צוות מסוים בלבד (מעריך → רק ההערות שלו; מנהל → כולן).
+  // שאילתה ממוקדת לצוות (where team ==) — לא קורא את כל ה-collection, ולכן עובר את חוקי Firestore.
+  async function collectTeamNoteRows(team) {
+    const rows = [];
+    if (!team) return rows;
+    const snap = await getDocs(query(collection(db, 'general_notes'), where('team', '==', team)));
+    snap.forEach(d => {
+      const data = d.data();
+      const pid = data.participantId;
+      if (!pid) return;
+      const notes = Array.isArray(data.notes) ? data.notes : [];
+      for (const n of notes) {
+        if (!isAdmin() && n.authorUid !== currentUser?.uid) continue; // מעריך → רק שלו
+        const body = {
+          type:           'general_note',
+          participant_id: pid,
+          team_id:        data.team,
+          note:           n.text || '',
+          evaluator_name: n.authorName || '',
+          evaluator_uid:  n.authorUid || ''
+        };
+        if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+          body.key = APP_CONFIG.sheetsApiKey;
         }
-      });
-
-      if (rows.length === 0) { showToast('אין הערות שלך לסנכרון', 'error'); return; }
-
-      const ok = await sendRowsFirstThenRest(rows);
-      const fail = rows.length - ok;
-      if (fail === 0) showToast(`✓ סונכרנו ${ok} הערות מכל המשתתפים`, 'success');
-      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} הערות)`, 'error');
-      else showToast(`סונכרנו ${ok}/${rows.length}, ${fail} נכשלו`, 'error');
-    } catch (e) {
-      showToast('שגיאה בסנכרון: ' + e.message, 'error');
-    } finally {
-      gnSyncInProgress = false;
-      if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
-    }
-  };
+        rows.push(body);
+      }
+    });
+    return rows;
+  }
 
   // ═════════ Comparison chart ═════════
   let compareChartInstance = null;

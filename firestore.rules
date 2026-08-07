@@ -1,0 +1,47 @@
+rules_version = '2';
+// חוקי אבטחה ל-Firestore — RACE_WEBAPP_LITE
+// להדביק ב-Firebase Console → Firestore Database → Rules → Publish.
+// עיקרון: קריאה פתוחה למשתמש מחובר (כמו races); כתיבה מוגבלת לפי תפקיד/צוות.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // משתמשים — כל אחד את עצמו, ומנהל את כולם
+    match /users/{uid} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // סבבים — קריאה לכל מחובר; כתיבה למגבש/מעריך/מנהל
+    match /races/{raceId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin','operator','evaluator'];
+    }
+
+    // צוותים (משתתפים + מיפוי תחנות) — קריאה לכל מחובר; כתיבה למנהל
+    match /teams/{teamNumber} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // הגדרות (תיוגים, סוגי תחנות) — קריאה לכל מחובר; כתיבה למנהל
+    match /settings/{key} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // הערות כלליות — קריאה לכל מחובר (הסינון "רואה רק את שלי" באפליקציה);
+    // כתיבה: מנהל, או מגבש/מעריך רק בצוות שלו (מזהה המסמך = "<צוות>_<משתתף>")
+    match /general_notes/{noteId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['operator','evaluator'] &&
+        int(noteId.split('_')[0]) == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team;
+    }
+  }
+}
