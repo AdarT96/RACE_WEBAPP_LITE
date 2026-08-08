@@ -626,7 +626,12 @@
     try {
       const snap = await getDoc(doc(db, 'settings', 'stationTypes'));
       if (snap.exists() && snap.data().types && typeof snap.data().types === 'object') {
-        stationTypesData = { ...deepClone(window.DEFAULT_STATION_TYPES), ...deepClone(snap.data().types) };
+        const defaults = deepClone(window.DEFAULT_STATION_TYPES);
+        const savedTypes = deepClone(snap.data().types);
+        stationTypesData = { ...defaults };
+        Object.entries(savedTypes).forEach(([id, saved]) => {
+          stationTypesData[id] = { ...(defaults[id] || {}), ...(saved || {}) };
+        });
       }
     } catch (e) { /* נשארים עם ברירת המחדל */ }
   }
