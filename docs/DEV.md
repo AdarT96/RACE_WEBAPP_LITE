@@ -4,7 +4,7 @@
 
 ## קישורים חיים
 - כניסה: https://adart96.github.io/RACE_WEBAPP_LITE/
-- אפליקציה (מגבש/מעריך): `/app.html` · פאנל מנהל: `/admin.html`
+- אפליקציה (מפק״צ/מעריך): `/app.html` · פאנל מנהל: `/admin.html`
 - מוגש דרך **GitHub Pages מענף `master`** (path `/`). דחיפה ל-`master` = דיפלוי אוטומטי (~1–2 דק').
 
 ## סטאק
@@ -16,7 +16,7 @@
 ```
 frontend/
   index.html            כניסה/הרשמה
-  app.html              מגבש + מעריך (הליבה)
+  app.html              מפק״צ + מעריך (הליבה)
   admin.html            פאנל מנהל
   css/main.css
   js/
@@ -35,7 +35,7 @@ docs/
 - `teams/{teamNumber}` — `participants: []`, `stationMap: { "01": typeId, ... }` (סדר התחנות של הצוות; ברירת מחדל = הסדר ב-station-types).
 - `settings/commentTags` — תיוגי הערות כלליות.
 - `settings/stationTypes` — `{ types: {...} }` — עריכות המנהל לסוגי התחנות (דורס את ברירת המחדל שב-station-types.js).
-- `races/{race_team_station_round}` — סבב: `team, station, round, status, startedAt`, ו-`tags: []`.
+- `races/{race_team_station_round}` — סבב: `team, station, round, status, startedAt, startedBy, endedAt?, endedBy?`, ו-`tags: []`.
   כל tag: `{ participantId, place?, reps?, finishedAt?, comments: [{text,authorName,authorUid,at}], scores: { <uid>: { <paramName>: 1..7 } } }`.
 - `general_notes/{team_participant}` — הערות כלליות למשתתף.
 
@@ -43,6 +43,14 @@ docs/
 17 סוגים, לכל אחד `measure`: `place` (סדר הגעה), `reps` (ספירת חזרות/ברגים/שלב), או `none` (ציונים+הערות בלבד), ו-1–2 `params` (כל פרמטר → ציון 1–7).
 - ברירת המחדל ב-`js/station-types.js`. המנהל עורך ב-`settings/stationTypes` (פאנל → "עריכת סוגי תחנות").
 - ה-app טוען מ-Firestore מעל ברירת המחדל. ה-sync שולח `params/measure/measure_label` ב-payload כך ש-**עריכות שמות פרמטרים/מדידה זורמות ל-Sheet בלי לגעת ב-Code.gs**. `STATION_TYPES` ב-Code.gs הוא fallback בלבד.
+
+## זרימת סבבים והרשאות
+- התפקיד הפנימי `operator` מוצג כ-**מפק״צ**. רק הוא (או מנהל) יוצר סבב ועוצר אותו.
+- מעריכים מקבלים את כל הסבבים בזמן אמת משאילת `races` ואינם יכולים לשנות שדות חיים/זמן.
+- טאבים נגללים של סבבים מוצגים **רק** כאשר סוג התחנה הוא `sprints` או `stretcher` (ספרינטים/אלונקה).
+- המפק״צ תמיד נשאר בסבב האחרון. מעריך רשאי לעבור בין הטאבים; ציונים/הערות ניתנים לעריכה בסבב היסטורי, אך מדידת מקום/חזרות נעולה.
+- כל שינוי `tags` מתבצע בטרנזקציה כדי למנוע דריסה הדדית בין שני מעריכים.
+- `firestore.rules` הוא מקור האמת להרשאות. חובה לפרסם אותו בקונסול ביחד עם הפרונטאנד.
 
 ## מבנה הפלט ב-Google Sheets
 - **קובץ נפרד לכל צוות** (נוצר אוטומטית), ובתוכו **טאב לכל מועמד**: שורה לכל (תחנה × סבב × מעריך) — כל ההערכות, בלי ממוצע.
@@ -58,6 +66,7 @@ docs/
    - אם נוצרת פריסה חדשה עם **כתובת חדשה** — לעדכן `sheetsApiUrl` ב-`firebase-config.js` ולמזג ל-master.
    - פעם ראשונה: לאשר הרשאת **Google Drive** (יצירת קבצים/תיקיות).
 3. **Firebase** — קונפיג ב-`firebase-config.js`. מפתחות ה-client ציבוריים (אבטחה דרך Firestore rules + Authorized domains).
+4. **Firestore Rules** — לפרסם את `firestore.rules` ידנית ב-Firebase Console → Firestore Database → Rules → Publish.
 
 ## עבודה במקביל
 - ענף לכל שינוי; מיזוג ל-`master` דרך PR או תיאום. **לא דוחפים ישירות ל-master בלי בדיקה** — הוא האתר החי.
@@ -65,6 +74,7 @@ docs/
 - אחרי שינוי ב-`Code.gs` — לפרוס מחדש, אחרת הסנכרון לא מתעדכן.
 
 ## בדיקה מהירה (מקצה לקצה)
-מנהל: הגדר צוות (משתתפים + סדר תחנות) → מעריך: ▶ התחל, בתחנת מקום סמן סדר הגעה / בתחנת חזרות הקש לספירה, תן ציונים 1–7 והערות → **סנכרן ל-Sheets** → בדוק בתיקיית `גיבוש …` בקובץ הצוות שנוצר טאב למועמד.
+מנהל: הגדר צוות (משתתפים + סדר תחנות) → מפק״צ: ▶ התחל → שני מעריכים: ודאו שהזמן התחיל, סמנו תוצאות/ציונים/הערות במקביל → מפק״צ: ⏹ עצור →
+בספרינטים/אלונקה העבירו מעריך לסבב קודם וחזרה → **סנכרן ל-Sheets** → בדוק בתיקיית `גיבוש …` בקובץ הצוות.
 
 רקע מלא על פיצ'ר ההערכה: ראו [PLAN-evaluation-metrics.md](PLAN-evaluation-metrics.md).

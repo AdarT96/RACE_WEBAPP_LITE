@@ -1,7 +1,7 @@
 # RACE_WEBAPP_LITE
 
 גרסת **LITE** של [`RFID_Race_WebApp`](https://github.com/AdarT96/RFID_Race_WebApp) —
-בלי ESP32/RFID, עם זרימה ידנית של המעריך.
+בלי ESP32/RFID, עם שליטת זמן ידנית של המפק״צ והערכה דרך הדפדפן.
 
 - הפורק נעשה מתוך התג [`v1-full-esp32`](https://github.com/AdarT96/RFID_Race_WebApp/releases/tag/v1-full-esp32) של הפרויקט המקורי.
 - מסונכרן לאותו Google Sheet של הפרויקט המקורי — שדות שאינם רלוונטיים (EPC, RSSI, אנטנה, הקפות RFID) נשלחים ריקים.
@@ -14,7 +14,7 @@
 RACE_WEBAPP_LITE/
 ├── frontend/
 │   ├── index.html          ← מסך כניסה / הרשמה
-│   ├── app.html            ← תצוגות מגבש + מעריך
+│   ├── app.html            ← תצוגות מפק״צ + מעריך
 │   ├── admin.html          ← פאנל מנהל
 │   ├── css/
 │   │   └── main.css
@@ -33,7 +33,7 @@ RACE_WEBAPP_LITE/
 |------|-------------|------|
 | חומרה | בקר ESP32 + קורא RFID | ללא — הכל דרך הדפדפן |
 | מקור נתוני משתתפים | סריקת תגי RFID | המנהל מזין ידנית לכל צוות |
-| התחלת תחנה | לחיצה על ▶ בבקר | לחיצה על ▶ באפליקציה |
+| התחלת תחנה | לחיצה על ▶ בבקר | המפק״צ לוחץ ▶ באפליקציה |
 | סימון סיום משתתף | תג RFID נקלט אוטומטית | המעריך לוחץ על מספר המשתתף בחלון |
 | הגדרות טכניאן (עוצמת שידור, אנטנות) | קיים | הוסר |
 | שמות תחנות | קבועים ב-Code.gs | ניתן לעריכה בפאנל המנהל, לכל צוות בנפרד |
@@ -50,48 +50,13 @@ RACE_WEBAPP_LITE/
 1. פתח [console.firebase.google.com](https://console.firebase.google.com) → צור פרויקט
 2. הפעל **Authentication** → Sign-in method → **Email/Password**
 3. הפעל **Firestore Database** → Start in production mode
-4. הוסף Firestore security rules (למטה)
+4. הדבק ופרסם את הקובץ `firestore.rules` ב-Firestore Database → Rules
 5. Project Settings → Your apps → Add web app → העתק את הconfig
 6. ערוך את `frontend/js/firebase-config.js` והכנס את הconfig שלך
 
-**Firestore Security Rules:**
-```
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      allow read, write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    match /races/{raceId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin','operator','evaluator'];
-    }
-    match /teams/{teamNumber} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    match /settings/{key} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    // ההערות שמורות תחת doc-id בפורמט "{team}_{participantId}", למשל "01_1234".
-    // מנהל — קריאה+כתיבה בכל מקום. מגבש/מעריך — רק בתוך הצוות שהוא משוייך אליו
-    // ("01_..." יאושר רק למי שאצלו users/{uid}.team == 1).
-    match /general_notes/{noteId} {
-      allow read, write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow read, write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['operator','evaluator'] &&
-        int(noteId.split('_')[0]) == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team;
-    }
-  }
-}
-```
+`firestore.rules` הוא מקור האמת היחיד להרשאות: מפק״צ של הצוות שולט בחיי הסבב,
+מעריכים מעדכנים רק את נתוני ההערכה (`tags`), ומנהל רשאי לשנות תפקיד/צוות/אישור.
+אין להעתיק קטע כללים ישן מההיסטוריה או ממסמך אחר.
 
 ### 2. יצירת אדמין ראשון
 
@@ -140,13 +105,14 @@ LITE משתמש באותו Apps Script של הגרסה המלאה. אם עדיי
 
 ## תפקידים
 
-### מגבש (Operator)
-מפעיל את התחנה שלו: לוחץ **▶ התחל** לפתיחת סבב חדש, **⏹ עצור** לסיום.
-_(הזרימה הידנית תיבנה בשלב הבא של הפיתוח.)_
+### מפק״צ (Operator)
+שולט בזמן הצוות: **▶ התחל** יוצר סבב חדש ו-**⏹ עצור** מסיים אותו.
+הוא נשאר תמיד בסבב האחרון ואינו מנווט אחורה.
 
 ### מעריך (Evaluator)
-רואה חלון גדול עם מספרי המשתתפים של הצוות הפעיל. לחיצה על משתתף = סימון סיום, והוא נעלם מהחלון עד הסשן הבא. יכול להוסיף תיוגים והערות למשתתפים.
-_(זרימה זו תיבנה בשלב הבא של הפיתוח.)_
+רואה בזמן אמת את הסבב שהמפק״צ התחיל/עצר, אך אינו יכול לשנות את חיי הסבב.
+ממשיך לסמן תוצאות, ציונים והערות. בספרינטים ובאלונקה בלבד מוצגים טאבים נגללים של הסבבים;
+המעריך יכול לעבור ביניהם ולחזור בלחיצה לסבב הפעיל.
 
 ### מנהל (Admin)
 - אישור/דחייה של משתמשים חדשים
@@ -172,7 +138,7 @@ _(הפאנל LITE יורחב בשלב הבא של הפיתוח.)_
 - **`races/{raceId}`** — כל סבב (session) הוא מסמך משלו. `raceId = race_{team}_{station}_{round}` (למשל `race_01_03_2`). מבנה:
   - `team`, `station`, `round` — מזהים
   - `status` — `"running"` / `"stopped"`
-  - `startedAt`, `endedAt`, `startedBy` — טיימסטמפים ו-UID
+  - `startedAt`, `endedAt`, `startedBy`, `endedBy` — טיימסטמפים ו-UID
   - `tags` — מערך של משתתפים שסיימו לפי סדר: `{ participantId, place, finishedAt (ms), comments: [] }`
 
 ## היסטוריה
@@ -181,18 +147,17 @@ _(הפאנל LITE יורחב בשלב הבא של הפיתוח.)_
 - **v0.2-lite** — פאנל מנהל: משתתפים לכל צוות + עריכת שמות תחנות פר-צוות (`teams/{teamNumber}`).
 - **v0.3-lite** — זרימת מירוץ ידנית: בורר צוות+תחנה, כפתור **▶ התחל תחנה**, grid של משתתפים גדול וידידותי למגע, סימון סיום בלחיצה, רשימה של מי סיים לפי סדר, הערות ותיוגים לכל משתתף, ריבוי סבבים (sessions) פר צוות+תחנה, סנכרון real-time בין מכשירים דרך `onSnapshot`, טיימר מאיות.
 - **v0.4-lite** — סנכרון ידני ל-Google Sheets לאותו endpoint של הגרסה המלאה: הכפתור **📊 סנכרן תחנה ל-Sheets** אוסף את כל הסבבים של הצוות+תחנה הנוכחיים, בונה EPC סינתטי בפורמט `TTPPPP` (2 ספרות צוות + 4 ספרות משתתף) שמאפשר ל-`pidFromEpc_`/`teamFromEpc_` ב-Code.gs לחלץ מזהים כרגיל, ושולח שורה אחת לכל משתתף שסיים. `Code.gs` מבצע dedup לפי (epc, round) — לחיצה חוזרת בטוחה.
-- **v0.5-lite** (הנוכחי) — הערות + גרף השוואה:
+- **v0.5-lite** — הערות + גרף השוואה:
   - **תיוגים ניתנים לעריכה** — הועברו מ-`APP_CONFIG.commentTags` ל-Firestore `settings/commentTags` (מסמך יחיד עם `tags: [...]`). המנהל עורך בפאנל תחת "💬 תיוגים מהירים למעריכים"; שני הצדדים (מודל הערות תחנה + הערות כלליות) מתעדכנים ב-real-time דרך `onSnapshot`.
   - **הערות כלליות למשתתף** — `general_notes/{team}_{participantId}` = `{ team, participantId, notes: [{ text, authorName, authorUid, at }] }`. סקציה בlite-app.html: בחירת צוות (dropdown למנהל, קבוע לאחרים) + משתתף → הוספה בלחיצה על תיוג מהיר או כתיבה חופשית + מחיקה + סנכרון ל-`SUMMARY_TAB` דרך `handleGeneralNote_` ב-Code.gs.
-    - **תצוגה מוגבלת:** מגבש/מעריך רואה רק הערות שהוא עצמו כתב (`authorUid == currentUser.uid`); מנהל רואה הכל. הפילטר client-side.
-    - **כתיבה מוגבלת:** חוקי Firestore מונעים ממגבש/מעריך לכתוב תחת doc-id של צוות שאינו שלהם — בלי קשר למה שקרה ב-UI.
-- **v0.6-lite** (הנוכחי) — UI מוגדל לבחירת משתתפים:
+    - **תצוגה מוגבלת:** מפק״צ/מעריך רואה רק הערות שהוא עצמו כתב (`authorUid == currentUser.uid`); מנהל רואה הכל. הפילטר client-side.
+    - **כתיבה מוגבלת:** חוקי Firestore מונעים ממפק״צ/מעריך לכתוב תחת doc-id של צוות שאינו שלהם — בלי קשר למה שקרה ב-UI.
+- **v0.6-lite** — UI מוגדל לבחירת משתתפים:
   - **גריד לחיצה במקום dropdowns.** בהערות כלליות המשתתפים מופיעים ככפתורים ריבועיים גדולים (מאותה משפחת CSS של grid הסבב). בחירת משתתף = לחיצה על מספר.
   - **סקציית "💬 הערות לתחנה זו"** ברitri panel של הסבב. picker של משתתפים שסיימו את הסבב הנוכחי בלבד; שמירה ל-`races/{raceId}.tags[i].comments` (מתאפסת בכל סבב חדש). ההערות נשלחות עם שאר הסבב לSheets דרך `📊 סנכרן תחנה ל-Sheets`.
   - **סכימת comments חדשה בתוך `tags[i]`**: מערך של `{ text, authorName, authorUid, at }` (במקום מחרוזות). תאימות לאחור מלאה — הערות ישנות שנשמרו כמחרוזות מנורמלות בקריאה. אותו סינון "רואה רק את שלך" חל גם כאן.
   - המודל של הערות תחנה הישן הוסר; לחיצה על finished pill קופצת עכשיו לסקציית ההערות ומסמנת את המשתתף.
   - **גרף השוואה** — כפתור "📈 גרף השוואה" ב-race panel פותח modal עם multi-select של משתתפים ו-line chart של המקום שהגיעו לכל סבב באותה תחנה (`spanGaps:false` — סבב שלא סיימו בו = פער בקו). ציר Y הפוך כדי שמקום 1 יופיע למעלה.
+- **v0.7-lite** (הנוכחי) — המפק״צ שולט בהתחלה ובעצירה; המעריכים צופים בזמן אמת וממשיכים להעריך. בספרינטים ובאלונקה בלבד נוספו טאבים נגללים למעבר בין סבבים, עם נעילת המפק״צ לסבב האחרון והרשאות Firestore תואמות.
 
 **הערה על מפתח Sheets:** אם `API_SECRET_KEY` ב-Code.gs עדיין בערך ברירת המחדל `YOUR_SECRET_KEY_HERE`, השרת מקבל בקשות ללא בדיקת מפתח. אחרת יש להעתיק אותו ערך בדיוק ל-`APP_CONFIG.sheetsApiKey` ב-`firebase-config.js`.
-
-- שלב הבא: פאנל למגבש (סקירת כל התחנות של הצוות, סטטוס real-time של כל סבב פעיל, ניהול תחנות מרוכז).

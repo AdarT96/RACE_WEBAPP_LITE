@@ -290,7 +290,7 @@
   };
 
   function roleLabel(role) {
-    return { admin:'מנהל', operator:'מגבש', evaluator:'מעריך' }[role] || role;
+    return { admin:'מנהל', operator:'מפק״צ', evaluator:'מעריך' }[role] || role;
   }
 
   function renderPendingList(users) {
@@ -345,7 +345,7 @@
               : `<button class="btn btn-ghost" onclick="createEvaluatorSheet('${u.uid}')"
                    style="font-size:12px; padding:5px 10px" title="צור קובץ שיט למעריך">📄 צור שיט</button>`) : ''}
             <select class="role-sel" onchange="changeRole('${u.uid}', this.value)" ${u.uid === currentAdmin?.uid ? 'disabled' : ''}>
-              <option value="operator"  ${u.role==='operator'  ? 'selected':''}>מגבש</option>
+              <option value="operator"  ${u.role==='operator'  ? 'selected':''}>מפק״צ</option>
               <option value="evaluator" ${u.role==='evaluator' ? 'selected':''}>מעריך</option>
               <option value="admin"     ${u.role==='admin'     ? 'selected':''}>מנהל</option>
             </select>
