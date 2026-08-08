@@ -26,7 +26,7 @@
 
     /* ── Status strip ──────────────────────────────────── */
     .status-strip {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
       gap: 10px; margin-top: 12px;
     }
     .status-cell {
@@ -74,6 +74,96 @@
     .live-round-banner strong { color: var(--success); }
     .evaluator-only[hidden], .session-control-only[hidden] { display: none !important; }
 
+    /* ── Page hierarchy ─────────────────────────────────── */
+    .app-section {
+      position: relative; overflow: hidden; border-top-width: 4px;
+      box-shadow: 0 8px 22px rgba(0,0,0,.18);
+    }
+    .section--overview {
+      border-top-color: var(--info);
+      background: linear-gradient(135deg, rgba(59,130,246,.13), var(--surface) 55%);
+    }
+    .section--action {
+      border-top-color: var(--warning);
+      background: linear-gradient(135deg, rgba(245,158,11,.11), var(--surface) 52%);
+    }
+    .section--results {
+      border-top-color: var(--success);
+      background: linear-gradient(135deg, rgba(34,197,94,.10), var(--surface) 52%);
+    }
+    .section--evaluation {
+      border-top-color: var(--accent);
+      background: linear-gradient(135deg, rgba(99,102,241,.13), var(--surface) 52%);
+    }
+    .section--general {
+      border-top-color: #14b8a6;
+      background: linear-gradient(135deg, rgba(20,184,166,.10), var(--surface) 52%);
+      margin-top: 34px !important;
+    }
+    .section-title-row, .section-summary {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; min-width: 0;
+    }
+    .section-title-group { min-width: 0; }
+    .section-kicker {
+      display: block; margin-bottom: 2px; color: var(--text-muted);
+      font-size: 11px; font-weight: 800; letter-spacing: .04em;
+    }
+    .section-title-row h2, .section-summary h2 {
+      margin: 0; font-size: clamp(17px, 4.2vw, 21px); font-weight: 800;
+    }
+    .section-help { margin-top: 5px; font-size: 12px; color: var(--text-muted); }
+
+    /* ── Station description ────────────────────────────── */
+    .station-overview { margin-top: 14px; }
+    .station-overview h1 { font-size: clamp(21px, 5vw, 28px); }
+    .station-guidance {
+      display: none; margin-top: 7px; padding: 9px 11px;
+      border-inline-start: 3px solid var(--info); border-radius: 8px;
+      background: rgba(59,130,246,.08); color: var(--text); font-size: 13px;
+    }
+    .station-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
+    .station-meta-chip {
+      display: inline-flex; align-items: center; min-height: 27px; padding: 4px 9px;
+      border: 1px solid rgba(59,130,246,.35); border-radius: 999px;
+      background: rgba(59,130,246,.10); color: var(--text); font-size: 11px; font-weight: 700;
+    }
+
+    /* ── Compact status that stays visible while scrolling ─ */
+    .sticky-status {
+      position: sticky; top: 62px; z-index: 95;
+      display: none; align-items: center; gap: 10px;
+      min-height: 45px; margin: -4px 0 14px; padding: 8px 12px;
+      border: 1px solid rgba(99,102,241,.45); border-radius: 11px;
+      background: rgba(26,29,39,.94); box-shadow: 0 8px 24px rgba(0,0,0,.35);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      font-size: 12px;
+    }
+    .sticky-status.visible { display: flex; }
+    .sticky-status .station {
+      flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; font-weight: 800; color: var(--text);
+    }
+    .sticky-status .item { white-space: nowrap; color: var(--text-muted); }
+    .sticky-status .time {
+      white-space: nowrap; direction: ltr; font-family: 'Courier New', monospace;
+      color: var(--accent); font-size: 15px; font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Native, reliable collapsible sections ──────────── */
+    details.collapsible-section > summary { list-style: none; cursor: pointer; user-select: none; }
+    details.collapsible-section > summary::-webkit-details-marker { display: none; }
+    details.collapsible-section .section-body { margin-top: 13px; }
+    .section-summary-side { display: flex; align-items: center; gap: 9px; color: var(--text-muted); }
+    .section-chevron {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 50%;
+      color: var(--text-muted); transition: transform .15s ease;
+    }
+    .section-chevron::before { content: '⌄'; font-size: 18px; line-height: 1; transform: translateY(-2px); }
+    details[open] > summary .section-chevron { transform: rotate(180deg); }
+
     /* ── Idle panel ────────────────────────────────────── */
     .idle-panel { text-align: center; padding: 40px 20px; }
     .idle-panel .btn-huge {
@@ -112,6 +202,15 @@
       direction: ltr;
       user-select: none;
       -webkit-tap-highlight-color: transparent;
+    }
+    .section--action { padding: 12px; }
+    .section--action .participants-grid {
+      grid-template-columns: repeat(var(--participant-columns, 3), minmax(0, 1fr));
+      gap: 6px; margin-top: 10px;
+    }
+    .section--action .participant-btn {
+      min-width: 0; min-height: 48px; aspect-ratio: 1 / 1;
+      border-radius: 10px; font-size: clamp(17px, 5.4vw, 25px);
     }
     .participant-btn:hover {
       background: rgba(99,102,241,0.10);
@@ -187,17 +286,18 @@
     /* ── Note picker grid (smaller variant of participants-grid) ── */
     .note-picker-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-      gap: 10px;
+      grid-template-columns: repeat(var(--participant-columns, 3), minmax(0, 1fr));
+      gap: 6px;
       margin-top: 8px;
     }
     .note-picker-btn {
+      min-width: 0; min-height: 48px;
       aspect-ratio: 1 / 1;
       display: flex; align-items: center; justify-content: center;
       background: var(--surface); border: 2px solid var(--border);
-      border-radius: 14px; color: var(--text);
+      border-radius: 10px; color: var(--text);
       font-family: 'Courier New', monospace;
-      font-size: clamp(22px, 3.8vw, 32px); font-weight: 900;
+      font-size: clamp(17px, 5vw, 24px); font-weight: 900;
       cursor: pointer;
       transition: transform .08s ease, background .12s, border-color .12s;
       direction: ltr;
@@ -225,10 +325,10 @@
     }
     body.outdoor-mode .note-picker-btn.has-data::after { background: #15803d; }
     /* כפתור ספירת חזרות: מספר משתתף + מונה גדול */
-    .participant-btn.reps-btn { flex-direction: column; gap: 2px; line-height: 1.1; }
-    .reps-btn .reps-pid { font-size: clamp(15px, 2.4vw, 20px); opacity: .85; }
+    .participant-btn.reps-btn { flex-direction: column; gap: 1px; line-height: 1.05; }
+    .reps-btn .reps-pid { font-size: clamp(10px, 2.8vw, 15px); opacity: .85; }
     .reps-btn .reps-count {
-      font-size: clamp(26px, 5vw, 40px); font-weight: 900; color: var(--accent);
+      font-size: clamp(20px, 6vw, 31px); font-weight: 900; color: var(--accent);
       font-variant-numeric: tabular-nums;
     }
     body.outdoor-mode .reps-btn .reps-count { color: #b45309; }
@@ -284,6 +384,18 @@
       padding: 12px; margin-bottom: 12px;
       background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
     }
+    .measure-entry {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      padding: 11px 12px; border: 1px solid var(--border); border-radius: 11px;
+      background: rgba(15,17,23,.42);
+    }
+    .measure-entry.manual { border-color: rgba(99,102,241,.55); background: rgba(99,102,241,.10); }
+    .measure-entry label { font-size: 14px; font-weight: 800; }
+    .measure-entry input {
+      width: 105px; padding: 8px 10px; direction: ltr; text-align: center;
+      font-size: 20px; font-weight: 900; font-variant-numeric: tabular-nums;
+    }
+    .measure-entry .hint { flex: 1 1 180px; color: var(--text-muted); font-size: 11px; }
     .sn-param-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .sn-param-name { font-size: 16px; font-weight: 800; }
     .sn-param-hint { font-size: 11px; color: var(--text-dim); }
@@ -307,10 +419,47 @@
     .sn-quick-pill:hover { border-color: var(--accent); color: var(--accent); }
     .sn-quick-pill:active { transform: scale(0.97); }
     body.outdoor-mode .sn-param { background: #fff; border: 2px solid #000080; }
+    body.outdoor-mode .measure-entry { background: #f8fafc; border-color: #64748b; }
+    body.outdoor-mode .measure-entry.manual { background: #eef2ff; border-color: #4f46e5; }
     body.outdoor-mode .sn-param-name { color: #000080; }
     body.outdoor-mode .sn-score-btn { background: #fff; border: 3px solid #000080; color: #000080; }
     body.outdoor-mode .sn-score-btn.selected { background: #ffd700; color: #000; border-color: #000; }
     body.outdoor-mode .sn-quick-pill { background: #f7fafc; border-color: #000080; color: #000080; }
+    body.outdoor-mode .app-section { background: #fff; box-shadow: 0 5px 16px rgba(15,23,42,.12); }
+    body.outdoor-mode .section--overview { border-top-color: #2563eb; }
+    body.outdoor-mode .section--action { border-top-color: #d97706; }
+    body.outdoor-mode .section--results { border-top-color: #15803d; }
+    body.outdoor-mode .section--evaluation { border-top-color: #4f46e5; }
+    body.outdoor-mode .section--general { border-top-color: #0f766e; }
+    body.outdoor-mode .station-guidance { background: #eff6ff; border-inline-start-color: #2563eb; color: #172554; }
+    body.outdoor-mode .station-meta-chip { background: #eff6ff; border-color: #93c5fd; color: #172554; }
+    body.outdoor-mode .sticky-status { background: rgba(255,255,255,.96); border-color: #818cf8; }
+    body.outdoor-mode .sticky-status .station { color: #1e1b4b; }
+    body.outdoor-mode .sticky-status .item { color: #475569; }
+    body.outdoor-mode .sticky-status .time { color: #4338ca; }
+
+    @media (min-width: 700px) {
+      .section--action .participants-grid {
+        grid-template-columns: repeat(var(--participant-columns, 3), minmax(76px, 130px));
+        justify-content: center; gap: 8px;
+      }
+      .section--action .participant-btn { font-size: clamp(20px, 2.8vw, 30px); }
+      .note-picker-grid {
+        grid-template-columns: repeat(var(--participant-columns, 3), minmax(76px, 130px));
+        justify-content: center; gap: 8px;
+      }
+      .note-picker-btn { font-size: clamp(20px, 2.8vw, 28px); }
+    }
+    @media (max-width: 600px) {
+      .app-section { padding: 12px; }
+      .section--action { padding: 10px; }
+      .sticky-status { top: 56px; gap: 7px; padding: 7px 9px; }
+      .sticky-status .item { font-size: 11px; }
+      .station-overview { margin-top: 11px; }
+      .status-strip { gap: 7px; }
+      .status-cell { padding: 8px 7px; }
+      .status-cell .val { font-size: 19px; }
+    }
   </style>
 </head>
 <body>
@@ -337,7 +486,7 @@
 <div class="container" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
-  <div class="section" id="station-header-section">
+  <div class="section app-section section--overview" id="station-header-section">
     <div class="station-header">
       <div class="picker">
         <span>צוות:</span>
@@ -350,11 +499,14 @@
       </div>
     </div>
 
+    <div class="station-overview">
+      <span class="section-kicker">סקירת תחנה</span>
+      <h1 id="station-overview-title">—</h1>
+      <p id="station-guidance" class="station-guidance"></p>
+      <div id="station-meta" class="station-meta"></div>
+    </div>
+
     <div class="status-strip">
-      <div class="status-cell">
-        <div class="val" id="hdr-station-name">—</div>
-        <div class="lbl">תחנה</div>
-      </div>
       <div class="status-cell">
         <div class="val" id="hdr-round">—</div>
         <div class="lbl">סבב</div>
@@ -389,6 +541,13 @@
 
   </div>
 
+  <div id="sticky-status" class="sticky-status" aria-label="סטטוס תחנה קבוע">
+    <span id="sticky-station" class="station">—</span>
+    <span id="sticky-round" class="item">סבב —</span>
+    <span id="sticky-state" class="item">—</span>
+    <strong id="sticky-time" class="time">00:00.00</strong>
+  </div>
+
   <!-- ══════════ IDLE panel ══════════ -->
   <div id="idle-panel" class="section idle-panel" style="display:none">
     <div id="idle-warn" class="warn" style="display:none; margin-bottom:20px"></div>
@@ -400,11 +559,15 @@
   <div id="race-panel" style="display:none">
 
     <!-- Participants to finish -->
-    <div class="section evaluator-only" id="grid-section">
-      <div class="flex flex-center flex-between mb-8">
-        <h3 id="grid-title">👥 משתתפים למירוץ</h3>
+    <div class="section app-section section--action evaluator-only" id="grid-section">
+      <div class="section-title-row">
+        <div class="section-title-group">
+          <span class="section-kicker">פעולה בזמן אמת</span>
+          <h2 id="grid-title">👥 משתתפים למירוץ</h2>
+        </div>
         <span id="grid-count" style="color:var(--text-muted); font-size:13px">—</span>
       </div>
+      <p id="grid-instruction" class="section-help"></p>
       <div id="participants-grid" class="participants-grid"></div>
       <div id="grid-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
         כולם סיימו! 🎉
@@ -412,56 +575,69 @@
     </div>
 
     <!-- Finished list -->
-    <div class="section evaluator-only" id="finished-section">
-      <div class="flex flex-center flex-between mb-8">
-        <h3>🏁 סיימו — לפי סדר</h3>
-        <span id="finished-count" style="color:var(--text-muted); font-size:13px">0</span>
+    <details class="section app-section section--results collapsible-section evaluator-only" id="finished-section" open>
+      <summary class="section-summary">
+        <div class="section-title-group">
+          <span class="section-kicker">תוצאות הסבב</span>
+          <h2>🏁 סיימו — לפי סדר</h2>
+        </div>
+        <span class="section-summary-side">
+          <span id="finished-count">0</span><span class="section-chevron" aria-hidden="true"></span>
+        </span>
+      </summary>
+      <div class="section-body">
+        <div id="finished-list" class="finished-list"></div>
+        <div id="finished-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
+          עדיין אף אחד לא סיים.
+        </div>
       </div>
-      <div id="finished-list" class="finished-list"></div>
-      <div id="finished-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
-        עדיין אף אחד לא סיים.
-      </div>
-    </div>
+    </details>
 
     <!-- ══════════ Station notes (per-race, resets each session) ══════════ -->
-    <div class="section evaluator-only" id="station-notes-section">
-      <div class="flex flex-center flex-between mb-8">
-        <h3>💬 הערות לתחנה זו</h3>
-        <span id="sn-info" style="color:var(--text-muted); font-size:12px"></span>
-      </div>
-      <p style="font-size:12px; color:var(--text-muted); margin:0 0 12px">
-        לחץ על מספר משתתף כדי להעריך אותו — אפשר לתת ציון והערות תוך כדי התחנה, לא רק אחרי שסיים.
-        נקודה ירוקה מציינת משתתף שכבר קיבל ציון/הערה. הנתונים נשמרים עם הסבב הזה ומגיעים ל-Sheets עם שאר הסבב.
-      </p>
-      <div id="sn-picker" class="note-picker-grid"></div>
-      <div id="sn-picker-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
-        התחל סבב כדי להעריך את משתתפי הצוות.
-      </div>
-
-      <div id="sn-selected-area" style="margin-top:16px; display:none">
-        <div style="font-size:13px; margin-bottom:12px">
-          נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
-          <span id="sn-station-type" style="color:var(--text-muted)"></span>
+    <details class="section app-section section--evaluation collapsible-section evaluator-only" id="station-notes-section">
+      <summary class="section-summary">
+        <div class="section-title-group">
+          <span class="section-kicker">הערכה לסבב הנבחר</span>
+          <h2>📝 הערכת התחנה</h2>
+        </div>
+        <span class="section-summary-side">
+          <span id="sn-info" style="font-size:12px"></span><span class="section-chevron" aria-hidden="true"></span>
+        </span>
+      </summary>
+      <div class="section-body">
+        <p id="sn-help" style="font-size:12px; color:var(--text-muted); margin:0 0 12px">
+          בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נשמרו עבורו נתונים.
+        </p>
+        <div id="sn-picker" class="note-picker-grid"></div>
+        <div id="sn-picker-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
+          התחל סבב כדי להעריך את משתתפי הצוות.
         </div>
 
-        <!-- מדידה כמותית (מספר חזרות / ברגים / שלב) — לפי סוג התחנה -->
-        <div id="sn-measure" style="display:none; margin-bottom:14px"></div>
+        <div id="sn-selected-area" style="margin-top:16px; display:none">
+          <div style="font-size:13px; margin-bottom:12px">
+            נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
+            <span id="sn-station-type" style="color:var(--text-muted)"></span>
+          </div>
 
-        <!-- פרמטרים: ציון 1–7 + הערות מהירות לכל פרמטר -->
-        <div id="sn-params"></div>
+          <!-- מדידה כמותית (מספר חזרות / ברגים / שלב) — לפי סוג התחנה -->
+          <div id="sn-measure" style="display:none; margin-bottom:14px"></div>
 
-        <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px">
-          <textarea id="sn-input" class="form-input" rows="2"
-                    style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
-                    placeholder="הערה חופשית לתחנה הזאת…"></textarea>
-          <button class="btn btn-primary" onclick="addStationNote()"
-                  style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
+          <!-- פרמטרים: ציון 1–7 + הערות מהירות לכל פרמטר -->
+          <div id="sn-params"></div>
+
+          <div style="display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; margin-top:6px">
+            <textarea id="sn-input" class="form-input" rows="2"
+                      style="flex:1; min-width:200px; padding:8px 12px; font-family:inherit"
+                      placeholder="הערה חופשית לתחנה הזאת…"></textarea>
+            <button class="btn btn-primary" onclick="addStationNote()"
+                    style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
+          </div>
+          <div id="sn-list-title" style="font-size:12px; color:var(--text-muted); margin:14px 0 6px">הערות שלי לסבב הזה:</div>
+          <div id="sn-list"></div>
+          <div id="sn-list-empty" style="color:var(--text-muted); font-size:13px">עוד לא נכתבו הערות למשתתף זה בסבב הזה.</div>
         </div>
-        <div id="sn-list-title" style="font-size:12px; color:var(--text-muted); margin:14px 0 6px">הערות שלי לסבב הזה:</div>
-        <div id="sn-list"></div>
-        <div id="sn-list-empty" style="color:var(--text-muted); font-size:13px">עוד לא נכתבו הערות למשתתף זה בסבב הזה.</div>
       </div>
-    </div>
+    </details>
 
     <!-- Actions -->
     <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
@@ -483,11 +659,18 @@
   </div>
 
   <!-- ══════════ General notes (station-independent) ══════════ -->
-  <div class="section" id="general-notes-section" style="margin-top:24px">
-    <h2>🗒 הערות כלליות למשתתף</h2>
-    <p style="font-size:12px; color:var(--text-muted); margin:6px 0 14px">
-      הערות שלא קשורות לתחנה מסוימת. נשמרות ליד המשתתף וזמינות למעריכים ולמפק״צ.
-    </p>
+  <details class="section app-section section--general collapsible-section" id="general-notes-section">
+    <summary class="section-summary">
+      <div class="section-title-group">
+        <span class="section-kicker">לא קשור לתחנה או לסבב</span>
+        <h2>🗒 הערות כלליות למשתתף</h2>
+      </div>
+      <span class="section-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="section-body">
+      <p style="font-size:12px; color:var(--text-muted); margin:6px 0 14px">
+        הערות קבועות על המשתתף. נשמרות לידו וזמינות למעריכים ולמפק״צ בכל התחנות.
+      </p>
 
     <div class="gn-picker mb-12">
       <span>צוות:</span>
@@ -520,10 +703,11 @@
     </div>
 
     <!-- ההערות מסונכרנות יחד עם תוצאות התחנה בכפתור "📊 סנכרן תחנה + הערות" למעלה -->
-    <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted)">
-      💡 ההערות הכלליות מסונכרנות אוטומטית יחד עם תוצאות התחנה — בלחיצה על <b>📊 סנכרן תחנה + הערות</b>.
+      <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; color:var(--text-muted)">
+        💡 ההערות הכלליות מסונכרנות אוטומטית יחד עם תוצאות התחנה — בלחיצה על <b>📊 סנכרן תחנה + הערות</b>.
+      </div>
     </div>
-  </div>
+  </details>
 
 </div><!-- /container -->
 
@@ -596,7 +780,9 @@
       if (snap.exists()) {
         const data = snap.data();
         if (data && data.types && typeof data.types === 'object') {
-          stationTypes = { ...stationTypes, ...data.types };
+          Object.entries(data.types).forEach(([id, saved]) => {
+            stationTypes[id] = { ...(stationTypes[id] || {}), ...(saved || {}) };
+          });
         }
       }
     } catch (e) { /* נשארים עם ברירת המחדל */ }
@@ -652,6 +838,28 @@
   function supportsRoundTabs() {
     return ['sprints', 'stretcher'].includes(currentStationType()?.id);
   }
+  function measureInputMode(st) {
+    return st?.measureInput === 'manual' ? 'manual' : 'tap';
+  }
+  function usesTapCounter(st) {
+    return st?.measure === 'reps' && measureInputMode(st) === 'tap';
+  }
+  function usesManualMeasure(st) {
+    return st?.measure === 'reps' && measureInputMode(st) === 'manual';
+  }
+  // פריסה לאורך: עד 18 משתתפים נשארים בשלוש עמודות ומנצלים את גובה המסך.
+  // החישוב נעשה לפי גודל הצוות המלא, כך שמספר העמודות וגודל הכפתורים לא משתנים באמצע הסבב.
+  function participantGridColumns(count) {
+    const total = Math.max(0, Number(count) || 0);
+    if (total <= 1) return 1;
+    if (total <= 6) return 2;
+    if (total <= 18) return 3;
+    if (total <= 24) return 4;
+    return 5;
+  }
+  function sizeParticipantGrid(grid, count) {
+    if (grid) grid.style.setProperty('--participant-columns', String(participantGridColumns(count)));
+  }
 
   function stationDisplayName(stationId, teamData) {
     const st = stationTypeFor(stationId, teamData);
@@ -662,6 +870,36 @@
     }
     const defaults = APP_CONFIG.defaultStationNames || {};
     return defaults[stationId] || ('תחנה ' + stationId);
+  }
+
+  function stationMeasureSummary(st) {
+    if (!st || st.measure === 'none') return 'הערכה איכותנית';
+    if (st.measure === 'place') return 'סימון סדר הגעה';
+    const label = st.measureLabel || 'מספר חזרות';
+    return usesManualMeasure(st) ? `${label} · הזנה ידנית` : `${label} · ספירה בלחיצה`;
+  }
+
+  function renderStationOverview(st, teamData) {
+    const name = stationDisplayName(selectedStation, teamData);
+    setText('station-overview-title', name);
+    const guidance = document.getElementById('station-guidance');
+    const note = String(st?.markingNote || '').trim();
+    guidance.textContent = note;
+    guidance.style.display = note ? '' : 'none';
+
+    const chips = [stationMeasureSummary(st)];
+    (Array.isArray(st?.params) ? st.params : []).forEach(param => {
+      if (param?.name) chips.push(param.name);
+    });
+    document.getElementById('station-meta').innerHTML = chips
+      .map(label => `<span class="station-meta-chip">${escHtml(label)}</span>`).join('');
+    setText('sticky-station', name);
+    document.getElementById('sticky-status').classList.toggle('visible', Boolean(selectedTeam && selectedStation));
+  }
+
+  function renderStickyRound(round, status) {
+    setText('sticky-round', `סבב ${round || '—'}`);
+    setText('sticky-state', status || '—');
   }
 
   // ═════════ Outdoor mode ═════════
@@ -704,6 +942,7 @@
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים
     await loadStationTypes();
     applyRoleVisibility();
+    initCollapsibleSections();
     initRoundNavigationKeyboard();
 
     // Populate station selector
@@ -776,6 +1015,24 @@
     document.querySelectorAll('.session-control-only').forEach(el => { el.hidden = !canControlSession(); });
   }
 
+  function collapsibleStorageKey(id) { return `lite:section:${id}`; }
+
+  function initCollapsibleSections() {
+    const defaults = { 'finished-section': true, 'station-notes-section': false, 'general-notes-section': false };
+    document.querySelectorAll('details.collapsible-section').forEach(section => {
+      const saved = localStorage.getItem(collapsibleStorageKey(section.id));
+      section.open = saved == null ? Boolean(defaults[section.id]) : saved === '1';
+      section.addEventListener('toggle', () => {
+        localStorage.setItem(collapsibleStorageKey(section.id), section.open ? '1' : '0');
+      });
+    });
+  }
+
+  function openCollapsibleSection(id) {
+    const section = document.getElementById(id);
+    if (section?.tagName === 'DETAILS') section.open = true;
+  }
+
   function initRoundNavigationKeyboard() {
     const tabs = document.getElementById('round-tabs');
     tabs.addEventListener('keydown', async (event) => {
@@ -815,6 +1072,7 @@
     document.getElementById('idle-warn').textContent = '⚠️ ' + msg;
     document.getElementById('start-btn').style.display = 'none';
     document.getElementById('race-panel').style.display = 'none';
+    document.getElementById('sticky-status').classList.remove('visible');
   }
 
   function renderIdlePlaceholder(hint) {
@@ -823,6 +1081,7 @@
     document.getElementById('start-btn').style.display = 'none';
     document.getElementById('race-panel').style.display = 'none';
     setText('idle-hint', hint || '');
+    document.getElementById('sticky-status').classList.toggle('visible', Boolean(selectedTeam && selectedStation));
   }
 
   // ═════════ Quick tags (shared, editable by admin) ═════════
@@ -1045,10 +1304,12 @@
     const repsByPid = {};
     allTags.forEach(t => { if (t.reps != null) repsByPid[String(t.participantId)] = t.reps; });
 
-    // Header status strip
-    setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
+    // Station overview + status
+    renderStationOverview(st, teamData);
     setText('hdr-round', '#' + (currentRace.round || 1));
-    setText('hdr-status', currentRace.status === 'running' ? '🟢 פעיל' : '🔴 עצור');
+    const statusLabel = currentRace.status === 'running' ? '🟢 פעיל' : '🔴 עצור';
+    setText('hdr-status', statusLabel);
+    renderStickyRound(currentRace.round || 1, statusLabel);
     setText('hdr-progress',
       measure === 'place' ? (finished.length + ' / ' + participants.length)
       : measure === 'reps' ? (Object.keys(repsByPid).length + ' / ' + participants.length)
@@ -1063,34 +1324,43 @@
     const gridCount = document.getElementById('grid-count');
     const gridEmpty = document.getElementById('grid-empty');
     const gridTitle = document.getElementById('grid-title');
+    sizeParticipantGrid(grid, participants.length);
     const isLiveViewedRound = currentRace.id === latestRace?.id && currentRace.status === 'running';
-    if (canEvaluate() && isLiveViewedRound && measure === 'reps') {
+    if (canEvaluate() && isLiveViewedRound && usesTapCounter(st)) {
       // ספירת חזרות: הקשה על משתתף מוסיפה 1, והמונה מוצג על הכפתור
       gridTitle.textContent = '🔢 ספירת ' + (st.measureLabel || 'חזרות');
+      setText('grid-instruction', 'כל לחיצה מוסיפה 1. המספר נשמר אוטומטית.');
       const allSorted = participants.slice().sort((a, b) => Number(a) - Number(b));
       grid.innerHTML = allSorted.map(id => {
         const c = (localReps[id] != null) ? localReps[id] : Number(repsByPid[id] || 0);
         return `<button class="participant-btn reps-btn" data-pid="${escHtml(id)}"
-                        onclick="incrementReps('${escHtml(id)}')">
+                        aria-label="הוסף אחד למשתתף ${escHtml(id)}" onclick="incrementReps('${escHtml(id)}')">
           <span class="reps-pid">${escHtml(id)}</span><span class="reps-count">${c}</span>
         </button>`;
       }).join('');
-      gridCount.textContent = 'הקש על משתתף כדי להוסיף 1';
+      gridCount.textContent = allSorted.length + ' משתתפים';
       gridEmpty.style.display = allSorted.length === 0 ? '' : 'none';
       document.getElementById('grid-section').style.display = '';
     } else if (canEvaluate() && isLiveViewedRound && measure === 'place') {
       gridTitle.textContent = '👥 משתתפים למירוץ';
+      setText('grid-instruction', 'לחץ על מספר המשתתף ברגע ההגעה. הסדר והזמן נשמרים מיד.');
       const sortedRemaining = remaining.slice().sort((a,b) => Number(a) - Number(b));
       grid.innerHTML = sortedRemaining.map(id => `
         <button class="participant-btn" data-pid="${escHtml(id)}"
+                aria-label="סמן הגעה של משתתף ${escHtml(id)}"
                 onclick="markFinished('${escHtml(id)}')">${escHtml(id)}</button>
       `).join('');
       gridCount.textContent = sortedRemaining.length + ' נותרו';
       gridEmpty.style.display = sortedRemaining.length === 0 ? '' : 'none';
       document.getElementById('grid-section').style.display = '';
     } else {
-      // תחנת "ללא" מדידה, או סשן עצור — אין רשת הקשה; ההערכה דרך הבורר למטה
+      // תחנה ידנית/ללא מדידה, או סשן עצור — ההערכה דרך הבורר למטה
       document.getElementById('grid-section').style.display = 'none';
+    }
+
+    if (canEvaluate() && usesManualMeasure(st) &&
+        localStorage.getItem(collapsibleStorageKey('station-notes-section')) == null) {
+      openCollapsibleSection('station-notes-section');
     }
 
     // Finished list — רק בתחנות סדר הגעה (מקום)
@@ -1151,13 +1421,15 @@
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
   function updateSessionTimerDisplay() {
-    if (!currentRace) { setText('hdr-time', '00:00.00'); return; }
+    if (!currentRace) { setText('hdr-time', '00:00.00'); setText('sticky-time', '00:00.00'); return; }
     const startMs = tsToMs(currentRace.startedAt);
-    if (!startMs) { setText('hdr-time', '00:00.00'); return; }
+    if (!startMs) { setText('hdr-time', '00:00.00'); setText('sticky-time', '00:00.00'); return; }
     const nowMs = currentRace.status === 'running'
       ? Date.now()
       : (tsToMs(currentRace.endedAt) || Date.now());
-    setText('hdr-time', formatMMSS(nowMs - startMs));
+    const elapsed = formatMMSS(nowMs - startMs);
+    setText('hdr-time', elapsed);
+    setText('sticky-time', elapsed);
     renderLiveRoundBanner();
   }
 
@@ -1175,13 +1447,16 @@
   function renderIdleForNextRound(nextRound) {
     const teamData = teamsCache[selectedTeam] || {};
     const participants = Array.isArray(teamData.participants) ? teamData.participants : [];
+    const st = currentStationType();
 
     stopSessionTimer();
-    setText('hdr-station-name', stationDisplayName(selectedStation, teamData));
+    renderStationOverview(st, teamData);
     setText('hdr-round', '#' + nextRound);
     setText('hdr-status', '— טרם התחיל');
+    renderStickyRound(nextRound, 'טרם התחיל');
     setText('hdr-progress', '0 / ' + participants.length);
     setText('hdr-time', '00:00.00');
+    setText('sticky-time', '00:00.00');
 
     document.getElementById('race-panel').style.display = 'none';
     document.getElementById('idle-panel').style.display = '';
@@ -1338,8 +1613,12 @@
     const teamData = teamsCache[selectedTeam] || {};
     const participants = Array.isArray(teamData.participants) ? teamData.participants.map(String) : [];
     const tags = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    const placedCount = tags.filter(t => t.place != null).length;
-    info.textContent = `סבב #${currentRace.round || 1} · ${participants.length} משתתפים · ${placedCount} סיימו`;
+    sizeParticipantGrid(picker, participants.length);
+    info.textContent = `#${currentRace.round || 1} · ${participants.length}`;
+    const st = currentStationType();
+    setText('sn-help', usesManualMeasure(st)
+      ? `בחר משתתף והזן ${st.measureLabel || 'את התוצאה'} בסיום התחנה. אפשר להשלים או לתקן גם אחרי עצירת הסבב.`
+      : 'בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נשמרו עבורו נתונים.');
 
     if (participants.length === 0) {
       picker.innerHTML = '';
@@ -1378,8 +1657,14 @@
   }
 
   window.selectStationNoteParticipant = (pid, scroll = false) => {
+    openCollapsibleSection('station-notes-section');
     stationNoteSelectedPid = String(pid);
     renderStationNotesSection();
+    if (usesManualMeasure(currentStationType())) {
+      requestAnimationFrame(() => document.getElementById('sn-measure')
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+      return;
+    }
     if (scroll) {
       document.getElementById('station-notes-section')
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1524,16 +1809,19 @@
     const tag = selectedTag();
     const val = (tag && tag.reps != null) ? tag.reps : '';
     const label = st.measureLabel || 'מספר חזרות';
-    const canEditMeasure = currentRace?.id === latestRace?.id && currentRace?.status === 'running';
+    const manual = usesManualMeasure(st);
+    const canEditMeasure = canEvaluate() && (manual ||
+      (currentRace?.id === latestRace?.id && currentRace?.status === 'running'));
     box.style.display = '';
     box.innerHTML = `
-      <label style="font-size:15px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
-        ${escHtml(label)}:
+      <div class="measure-entry ${manual ? 'manual' : ''}">
+        <label for="sn-reps-input">${escHtml(label)}:</label>
         <input id="sn-reps-input" type="number" inputmode="numeric" min="0" value="${escHtml(String(val))}"
-               onchange="setStationReps(this.value)"
-               class="form-input" style="width:100px; padding:8px 10px; direction:ltr; text-align:center"
+               step="1" onchange="setStationReps(this.value)" onfocus="this.select()"
+               class="form-input"
                ${canEditMeasure ? '' : 'disabled'}>
-      </label>`;
+        <span class="hint">${manual ? 'הזן את התוצאה הסופית. השמירה מתבצעת ביציאה מהשדה.' : 'ניתן לתקן ידנית בזמן שהסבב פעיל.'}</span>
+      </div>`;
   }
 
   // פרמטרים: לכל פרמטר — ציון 1–7 (של המעריך הנוכחי) + הערות מהירות
@@ -1587,21 +1875,33 @@
 
   // קובע/מנקה ערך מדידה כמותית (מספר חזרות/ברגים/שלב) — ערך יחיד אובייקטיבי
   window.setStationReps = async (val) => {
-    if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid ||
-        currentRace.id !== latestRace?.id || currentRace.status !== 'running') {
+    const st = currentStationType();
+    const manual = usesManualMeasure(st);
+    const activeTapRound = currentRace?.id === latestRace?.id && currentRace?.status === 'running';
+    if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) {
+      showToast('לא נבחר משתתף לעדכון', 'error'); return;
+    }
+    if (!manual && !activeTapRound) {
       showToast('אפשר לעדכן מדידה רק בסבב הפעיל', 'error'); return;
     }
-    const num = (val === '' || val == null) ? null : Number(val);
+    const raw = String(val ?? '').trim();
+    const num = raw === '' ? null : Number(raw);
+    if (num != null && (!Number.isInteger(num) || num < 0)) {
+      showToast('יש להזין מספר שלם שאינו שלילי', 'error');
+      renderStationMeasure(st);
+      return;
+    }
     const raceId = currentRaceId;
     const pid = stationNoteSelectedPid;
     try {
       if (!await commitPendingReps()) return;
       await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
-        if (num == null || isNaN(num)) delete tag.reps; else tag.reps = num;
+        if (num == null) delete tag.reps; else tag.reps = num;
       }));
       if (currentRaceId === raceId) {
-        if (num == null || isNaN(num)) delete localReps[pid]; else localReps[pid] = num;
+        if (num == null) delete localReps[pid]; else localReps[pid] = num;
       }
+      showToast(`${st?.measureLabel || 'המדידה'} נשמרה`, 'success');
     }
     catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
   };
@@ -1888,6 +2188,7 @@
     if (!teamData) teamData = await loadTeamData(gnState.team);
     const participants = (teamData && Array.isArray(teamData.participants))
       ? teamData.participants.slice().sort((a, b) => Number(a) - Number(b)) : [];
+    sizeParticipantGrid(grid, participants.length);
 
     if (participants.length === 0) {
       empty.style.display = '';
