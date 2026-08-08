@@ -1,47 +1,106 @@
 rules_version = '2';
-// חוקי אבטחה ל-Firestore — RACE_WEBAPP_LITE
-// להדביק ב-Firebase Console → Firestore Database → Rules → Publish.
-// עיקרון: קריאה פתוחה למשתמש מחובר (כמו races); כתיבה מוגבלת לפי תפקיד/צוות.
+// Firestore security rules — RACE_WEBAPP_LITE
+// Publish from Firebase Console after testing. The UI is not an authorization boundary.
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // משתמשים — כל אחד את עצמו, ומנהל את כולם
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function caller() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isAdmin() {
+      return signedIn() && caller().role == 'admin';
+    }
+
+    function isApprovedRole(role) {
+      return signedIn() && caller().approved == true && caller().role == role;
+    }
+
+    function isOwnTeam(team) {
+      return int(team) == int(caller().team);
+    }
+
+    // Users register themselves as unapproved operator/evaluator accounts. Only an
+    // admin may later approve them or change role/team; self-promotion is forbidden.
     match /users/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      allow read, write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow read: if isAdmin();
+
+      allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.uid == request.auth.uid &&
+        request.resource.data.approved == false &&
+        request.resource.data.role in ['operator', 'evaluator'] &&
+        request.resource.data.team is int &&
+        request.resource.data.team >= 1 && request.resource.data.team <= 15;
+
+      allow update: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']);
+      allow update, delete: if isAdmin();
     }
 
-    // סבבים — קריאה לכל מחובר; כתיבה למגבש/מעריך/מנהל
+    // Race lifecycle is controlled by the team's commander (internal role:
+    // operator). Evaluators may change only the shared evaluation payload (`tags`).
     match /races/{raceId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin','operator','evaluator'];
+      allow read: if isAdmin() ||
+        (signedIn() && caller().approved == true && isOwnTeam(resource.data.team));
+
+      allow create: if isAdmin() ||
+        (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
+         request.resource.data.keys()
+           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'tags']) &&
+         request.resource.data.team is string && request.resource.data.station is string &&
+         request.resource.data.status == 'running' &&
+         request.resource.data.startedBy == request.auth.uid &&
+         request.resource.data.startedAt == request.time &&
+         request.resource.data.round is int && request.resource.data.round > 0 &&
+         request.resource.data.tags is list && request.resource.data.tags.size() == 0);
+
+      allow update: if isAdmin();
+
+      // Commander: forward-only running -> stopped transition, without touching tags.
+      allow update: if isApprovedRole('operator') && isOwnTeam(resource.data.team) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'endedAt', 'endedBy']) &&
+        resource.data.status == 'running' &&
+        request.resource.data.status == 'stopped' &&
+        request.resource.data.endedAt == request.time &&
+        request.resource.data.endedAt >= resource.data.startedAt &&
+        request.resource.data.endedBy == request.auth.uid;
+
+      // Evaluator: may work on current or historical evaluations, but cannot alter
+      // team/station/round or any timing/lifecycle field.
+      allow update: if isApprovedRole('evaluator') && isOwnTeam(resource.data.team) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags']);
+
+      allow delete: if isAdmin();
     }
 
-    // צוותים (משתתפים + מיפוי תחנות) — קריאה לכל מחובר; כתיבה למנהל
+    // Teams (participants + station mapping): team members read, admins write.
     match /teams/{teamNumber} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if isAdmin() ||
+        (signedIn() && caller().approved == true && int(teamNumber) == int(caller().team));
+      allow write: if isAdmin();
     }
 
-    // הגדרות (תיוגים, סוגי תחנות) — קריאה לכל מחובר; כתיבה למנהל
+    // Shared station types and quick-comment settings.
     match /settings/{key} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if signedIn() && (caller().approved == true || isAdmin());
+      allow write: if isAdmin();
     }
 
-    // הערות כלליות — קריאה לכל מחובר (הסינון "רואה רק את שלי" באפליקציה);
-    // כתיבה: מנהל, או מגבש/מעריך רק בצוות שלו (מזהה המסמך = "<צוות>_<משתתף>")
+    // General notes use document IDs in the form "<team>_<participant>".
     match /general_notes/{noteId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['operator','evaluator'] &&
-        int(noteId.split('_')[0]) == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.team;
+      allow read: if isAdmin() ||
+        (signedIn() && caller().approved == true &&
+         int(noteId.split('_')[0]) == int(caller().team));
+      allow write: if isAdmin();
+      allow write: if signedIn() && caller().approved == true &&
+        caller().role in ['operator', 'evaluator'] &&
+        int(noteId.split('_')[0]) == int(caller().team);
     }
   }
 }

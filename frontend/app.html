@@ -38,6 +38,42 @@
     }
     .status-cell .lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
 
+    /* ── Round navigation (sprints + stretcher only) ──────── */
+    .round-nav { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+    .round-tabs {
+      display: flex; flex: 1; gap: 8px; overflow-x: auto; direction: rtl;
+      scroll-snap-type: x proximity; scroll-behavior: smooth;
+      -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 3px 1px 7px;
+    }
+    .round-tabs::-webkit-scrollbar { display: none; }
+    .round-tab {
+      flex: 0 0 auto; min-width: 104px; min-height: 48px; padding: 8px 14px;
+      border: 1px solid var(--border); border-radius: 12px; background: var(--card);
+      color: var(--text); font: inherit; font-weight: 700; cursor: pointer;
+      scroll-snap-align: center; transition: border-color .15s, background .15s;
+    }
+    .round-tab:hover { border-color: var(--accent); }
+    .round-tab.selected { border-color: var(--accent); background: rgba(99,102,241,.14); }
+    .round-tab.running { border-color: var(--success); }
+    .round-tab:disabled { cursor: default; opacity: .78; }
+    .round-tab .round-state {
+      display: block; margin-top: 2px; font-size: 11px; font-weight: 500; color: var(--text-muted);
+    }
+    .round-tab.running .round-state { color: var(--success); }
+    .round-nav-btn {
+      flex: 0 0 auto; width: 42px; height: 42px; padding: 0; border-radius: 50%;
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      font-size: 20px; cursor: pointer;
+    }
+    .round-nav-btn:disabled { opacity: .35; cursor: default; }
+    .live-round-banner {
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      flex-wrap: wrap; margin-top: 8px; padding: 9px 12px; border-radius: 10px;
+      border: 1px solid var(--success); background: rgba(34,197,94,.10); font-size: 13px;
+    }
+    .live-round-banner strong { color: var(--success); }
+    .evaluator-only[hidden], .session-control-only[hidden] { display: none !important; }
+
     /* ── Idle panel ────────────────────────────────────── */
     .idle-panel { text-align: center; padding: 40px 20px; }
     .idle-panel .btn-huge {
@@ -336,20 +372,27 @@
         <div class="lbl">זמן מתחילת הסבב</div>
       </div>
     </div>
-  </div>
+    <div id="round-nav" class="round-nav" style="display:none" aria-label="ניווט בין סבבים">
+      <button id="round-older-btn" class="round-nav-btn" onclick="moveViewedRound(-1)"
+              aria-label="סבב קודם" title="סבב קודם">→</button>
+      <div id="round-tabs" class="round-tabs" role="tablist" aria-label="סבבים"></div>
+      <button id="round-newer-btn" class="round-nav-btn" onclick="moveViewedRound(1)"
+              aria-label="סבב הבא" title="סבב הבא">←</button>
+    </div>
+    <div id="live-round-banner" class="live-round-banner" style="display:none">
+      <strong id="live-round-label"></strong>
+      <span id="live-round-time">00:00.00</span>
+      <button class="btn btn-success" onclick="returnToLiveRound()" style="padding:5px 10px; font-size:12px">
+        חזור לסבב הפעיל
+      </button>
+    </div>
 
-  <!-- ══════════ Operator placeholder (until Phase 5) ══════════ -->
-  <div id="operator-placeholder" class="section placeholder-view" style="display:none">
-    <div class="icon">🎮</div>
-    <h2>פאנל המגבש</h2>
-    <p>מסך זה יורחב בקרוב עם תפריט מותאם למגבש (סקירת סבבים, סטטוס תחנות וכו').</p>
-    <p style="margin-top:20px; font-size:13px">בינתיים, המעריך שבתחנה הוא מי שמתחיל סבב ומסמן סיום.</p>
   </div>
 
   <!-- ══════════ IDLE panel ══════════ -->
   <div id="idle-panel" class="section idle-panel" style="display:none">
     <div id="idle-warn" class="warn" style="display:none; margin-bottom:20px"></div>
-    <button id="start-btn" class="btn btn-success btn-huge" onclick="startSession()">▶ התחל תחנה</button>
+    <button id="start-btn" class="btn btn-success btn-huge" onclick="startSession()">▶ התחל סבב 1</button>
     <div class="hint" id="idle-hint"></div>
   </div>
 
@@ -357,7 +400,7 @@
   <div id="race-panel" style="display:none">
 
     <!-- Participants to finish -->
-    <div class="section" id="grid-section">
+    <div class="section evaluator-only" id="grid-section">
       <div class="flex flex-center flex-between mb-8">
         <h3 id="grid-title">👥 משתתפים למירוץ</h3>
         <span id="grid-count" style="color:var(--text-muted); font-size:13px">—</span>
@@ -369,7 +412,7 @@
     </div>
 
     <!-- Finished list -->
-    <div class="section" id="finished-section">
+    <div class="section evaluator-only" id="finished-section">
       <div class="flex flex-center flex-between mb-8">
         <h3>🏁 סיימו — לפי סדר</h3>
         <span id="finished-count" style="color:var(--text-muted); font-size:13px">0</span>
@@ -381,7 +424,7 @@
     </div>
 
     <!-- ══════════ Station notes (per-race, resets each session) ══════════ -->
-    <div class="section" id="station-notes-section">
+    <div class="section evaluator-only" id="station-notes-section">
       <div class="flex flex-center flex-between mb-8">
         <h3>💬 הערות לתחנה זו</h3>
         <span id="sn-info" style="color:var(--text-muted); font-size:12px"></span>
@@ -422,17 +465,17 @@
 
     <!-- Actions -->
     <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
-      <button id="end-btn" class="btn btn-danger btn-xl" onclick="endSession()" style="display:none">
-        ⏹ סיים סשן
+      <button id="end-btn" class="btn btn-danger btn-xl session-control-only" onclick="endSession()" style="display:none">
+        ⏹ עצור סבב
       </button>
-      <button id="new-round-btn" class="btn btn-success btn-xl" onclick="startSession()" style="display:none">
+      <button id="new-round-btn" class="btn btn-success btn-xl session-control-only" onclick="startSession()" style="display:none">
         ▶ סבב חדש
       </button>
-      <button class="btn btn-info" onclick="openCompareChart()" style="padding:12px 20px"
+      <button class="btn btn-info evaluator-only" onclick="openCompareChart()" style="padding:12px 20px"
               title="השווה את המקום שהמשתתפים הגיעו בכל סבב בתחנה הזאת">
         📈 גרף השוואה
       </button>
-      <button class="btn btn-info" onclick="doSyncSheets()" style="padding:12px 20px"
+      <button class="btn btn-info evaluator-only" onclick="doSyncSheets()" style="padding:12px 20px"
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
@@ -443,7 +486,7 @@
   <div class="section" id="general-notes-section" style="margin-top:24px">
     <h2>🗒 הערות כלליות למשתתף</h2>
     <p style="font-size:12px; color:var(--text-muted); margin:6px 0 14px">
-      הערות שלא קשורות לתחנה מסוימת. נשמרות ליד המשתתף וזמינות לכל המעריכים/מגבשים.
+      הערות שלא קשורות לתחנה מסוימת. נשמרות ליד המשתתף וזמינות למעריכים ולמפק״צ.
     </p>
 
     <div class="gn-picker mb-12">
@@ -513,7 +556,7 @@
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     getFirestore, doc, getDoc, setDoc, updateDoc, collection,
-    onSnapshot, query, where, getDocs, serverTimestamp
+    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -525,18 +568,23 @@
   let teamsCache  = {};            // teamNumber → teamData
   let selectedTeam = null;         // "01"
   let selectedStation = null;      // "01"
-  let currentRace = null;          // Firestore doc data
+  let racesForContext = [];        // all rounds for selected team+station, oldest first
+  let latestRace = null;           // newest round; lifecycle actions always target this
+  let currentRace = null;          // round currently viewed/evaluated
   let currentRaceId = null;
-  let raceUnsubscribe = null;
+  let followLatest = true;          // evaluator stays on live round until they browse backwards
+  let raceQueryUnsubscribe = null;
+  let controlActionInProgress = false;
   let timerInterval = null;
   let quickTags = [];              // תיוגים משותפים מ-settings/commentTags
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
 
-  // ספירת חזרות: מונה מקומי (פידבק מיידי) + שמירה מקובצת ל-Firestore
+  // ספירת חזרות: תצוגה מקומית + תור הפרשים לכל סבב, כדי לא לדרוס מעריך אחר
   let localReps    = {};
+  let pendingRepsByRace = {};
   let repsSaveTimer = null;
-  let repsSaving    = false;
+  let repsSavePromise = null;
 
   // סוגי תחנות — ברירת מחדל מ-station-types.js, נדרסים ע"י settings/stationTypes אם קיים
   let stationTypes = (typeof window !== 'undefined' && window.DEFAULT_STATION_TYPES) || {};
@@ -560,6 +608,11 @@
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
   const raceIdFor = (team, station, round) => `race_${team}_${station}_${round}`;
+
+  function isOperator() { return currentUser?.role === 'operator'; }
+  function isEvaluator() { return currentUser?.role === 'evaluator'; }
+  function canControlSession() { return isOperator() || isAdmin(); }
+  function canEvaluate() { return isEvaluator() || isAdmin(); }
 
   function tsToMs(ts) {
     // Firestore Timestamp → ms; fallback for plain numbers or nullish
@@ -595,6 +648,9 @@
   }
   function currentStationType() {
     return stationTypeFor(selectedStation, teamsCache[selectedTeam]);
+  }
+  function supportsRoundTabs() {
+    return ['sprints', 'stretcher'].includes(currentStationType()?.id);
   }
 
   function stationDisplayName(stationId, teamData) {
@@ -638,7 +694,7 @@
 
   // ═════════ Init ═════════
   async function initApp() {
-    const roleLabels = { operator: 'מגבש', evaluator: 'מעריך', admin: 'מנהל' };
+    const roleLabels = { operator: 'מפק״צ', evaluator: 'מעריך', admin: 'מנהל' };
     const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
     setText('user-role-badge', (roleLabels[currentUser.role] || currentUser.role) + teamLabel);
     setConnectedFirebase(true);
@@ -647,16 +703,8 @@
     subscribeToQuickTags();
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים
     await loadStationTypes();
-
-    // המגבש רואה placeholder לגבי זרימת התחנה — אבל שאר החלקים (הערות כלליות) פועלים
-    if (currentUser.role === 'operator') {
-      document.getElementById('station-header-section').style.display = 'none';
-      document.getElementById('idle-panel').style.display = 'none';
-      document.getElementById('race-panel').style.display = 'none';
-      document.getElementById('operator-placeholder').style.display = '';
-      initGeneralNotes(); // המגבש עדיין יכול לכתוב הערות כלליות
-      return;
-    }
+    applyRoleVisibility();
+    initRoundNavigationKeyboard();
 
     // Populate station selector
     const stationSel = document.getElementById('station-select');
@@ -721,6 +769,36 @@
 
     // הערות כלליות זמינות תמיד לצד התחנה
     initGeneralNotes();
+  }
+
+  function applyRoleVisibility() {
+    document.querySelectorAll('.evaluator-only').forEach(el => { el.hidden = !canEvaluate(); });
+    document.querySelectorAll('.session-control-only').forEach(el => { el.hidden = !canControlSession(); });
+  }
+
+  function initRoundNavigationKeyboard() {
+    const tabs = document.getElementById('round-tabs');
+    tabs.addEventListener('keydown', async (event) => {
+      if (!canEvaluate() || !supportsRoundTabs()) return;
+      let target = null;
+      if (event.key === 'ArrowRight') {
+        const index = racesForContext.findIndex(r => r.id === currentRaceId);
+        target = racesForContext[index - 1];
+      } else if (event.key === 'ArrowLeft') {
+        const index = racesForContext.findIndex(r => r.id === currentRaceId);
+        target = racesForContext[index + 1];
+      } else if (event.key === 'Home') {
+        target = racesForContext[0];
+      } else if (event.key === 'End') {
+        target = latestRace;
+      } else {
+        return;
+      }
+      if (!target) return;
+      event.preventDefault();
+      await window.selectViewedRound(target.id);
+      document.querySelector('.round-tab.selected')?.focus();
+    });
   }
 
   function setConnectedFirebase(ok) {
@@ -802,9 +880,11 @@
 
   // ═════════ Team / Station change ═════════
   window.onTeamChange = async (v) => {
+    await commitPendingReps();
     selectedTeam = v || null;
     localStorage.setItem('lite:lastTeam', selectedTeam || '');
     if (!selectedTeam) {
+      detachRaceSubscription();
       renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
       return;
     }
@@ -814,6 +894,7 @@
   };
 
   window.onStationChange = async (v) => {
+    await commitPendingReps();
     selectedStation = v;
     localStorage.setItem('lite:lastStation', v);
     if (!selectedTeam) {
@@ -823,64 +904,133 @@
     await loadCurrentSession();
   };
 
-  // ═════════ Session lookup ═════════
-  async function loadCurrentSession() {
+  // ═════════ Live rounds for the selected team + station ═════════
+  function loadCurrentSession() {
     if (!selectedTeam || !selectedStation) return;
 
-    localReps = {}; // איפוס מונה החזרות המקומי בכל החלפת צוות/תחנה
+    localReps = {};
+    followLatest = true;
     detachRaceSubscription();
 
-    // Find latest race for team+station
-    try {
-      const q = query(collection(db, 'races'),
-        where('team', '==', selectedTeam),
-        where('station', '==', selectedStation));
-      const snap = await getDocs(q);
-      let latest = null;
-      snap.forEach(d => {
-        const data = d.data();
-        if (!latest || (data.round || 0) > (latest.round || 0)) {
-          latest = { id: d.id, ...data };
-        }
-      });
+    const q = query(collection(db, 'races'),
+      where('team', '==', selectedTeam),
+      where('station', '==', selectedStation));
 
-      if (!latest) {
-        // No sessions yet — show start button for round 1
+    raceQueryUnsubscribe = onSnapshot(q, (snap) => {
+      const previousLatestId = latestRace?.id || null;
+      const previousViewedId = currentRaceId;
+      const list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a, b) => Number(a.round || 0) - Number(b.round || 0) || a.id.localeCompare(b.id));
+      racesForContext = list;
+      latestRace = list.length ? list[list.length - 1] : null;
+
+      if (!latestRace) {
         currentRace = null;
         currentRaceId = null;
+        renderRoundNavigation();
         renderIdleForNextRound(1);
         return;
       }
 
-      // Attach live subscription
-      currentRaceId = latest.id;
-      subscribeToRace(latest.id);
+      const previousStillExists = previousViewedId && list.some(r => r.id === previousViewedId);
+      const mustFollowLatest = isOperator() || !supportsRoundTabs() || followLatest || !previousStillExists;
+      const targetId = mustFollowLatest ? latestRace.id : previousViewedId;
+      const target = list.find(r => r.id === targetId) || latestRace;
+      const roundChanged = target.id !== previousViewedId;
 
-    } catch (e) {
-      showToast('שגיאה בטעינת סבב אחרון: ' + e.message, 'error');
-      renderIdlePlaceholder('שגיאה. נסה לרענן.');
-    }
-  }
+      currentRace = target;
+      currentRaceId = target.id;
+      followLatest = target.id === latestRace.id;
+      if (roundChanged) {
+        localReps = {};
+        stationNoteSelectedPid = null;
+      }
 
-  function subscribeToRace(raceId) {
-    raceUnsubscribe = onSnapshot(doc(db, 'races', raceId), (snap) => {
-      if (!snap.exists()) return;
-      currentRace = snap.data();
+      const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
+      if (newRoundArrived && isEvaluator() && !followLatest) {
+        showToast(`סבב ${latestRace.round} התחיל — אפשר לחזור אליו משורת הסטטוס`, 'info');
+      }
       renderRace();
     }, (err) => {
-      showToast('שגיאה בהאזנה לסבב: ' + err.message, 'error');
+      showToast('שגיאה בהאזנה לסבבים: ' + err.message, 'error');
+      renderIdlePlaceholder('שגיאה. נסה לרענן.');
     });
   }
 
   function detachRaceSubscription() {
-    if (raceUnsubscribe) { raceUnsubscribe(); raceUnsubscribe = null; }
+    if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
+    racesForContext = [];
+    latestRace = null;
     currentRace = null;
     currentRaceId = null;
+    renderRoundNavigation();
+  }
+
+  window.selectViewedRound = async (raceId) => {
+    if (!canEvaluate() || !supportsRoundTabs()) return;
+    const race = racesForContext.find(r => r.id === raceId);
+    if (!race || race.id === currentRaceId) return;
+    await commitPendingReps();
+    currentRace = race;
+    currentRaceId = race.id;
+    followLatest = race.id === latestRace?.id;
+    localReps = {};
+    stationNoteSelectedPid = null;
+    renderRace();
+  };
+
+  window.moveViewedRound = async (delta) => {
+    if (!canEvaluate() || !supportsRoundTabs() || !currentRaceId) return;
+    const index = racesForContext.findIndex(r => r.id === currentRaceId);
+    const target = racesForContext[index + Number(delta)];
+    if (target) await window.selectViewedRound(target.id);
+  };
+
+  window.returnToLiveRound = async () => {
+    if (latestRace) await window.selectViewedRound(latestRace.id);
+  };
+
+  function renderRoundNavigation() {
+    const nav = document.getElementById('round-nav');
+    const tabs = document.getElementById('round-tabs');
+    const show = supportsRoundTabs() && racesForContext.length > 0;
+    nav.style.display = show ? '' : 'none';
+    if (!show) {
+      tabs.innerHTML = '';
+      document.getElementById('live-round-banner').style.display = 'none';
+      return;
+    }
+
+    tabs.innerHTML = racesForContext.map(race => {
+      const selected = race.id === currentRaceId;
+      const running = race.status === 'running';
+      const duration = tsToMs(race.endedAt) && tsToMs(race.startedAt)
+        ? formatMMSS(tsToMs(race.endedAt) - tsToMs(race.startedAt)) : '';
+      const state = running ? '● פעיל' : (duration || 'הסתיים');
+      return `<button class="round-tab ${selected ? 'selected' : ''} ${running ? 'running' : ''}"
+                      role="tab" aria-selected="${selected}" tabindex="${selected ? '0' : '-1'}"
+                      data-race-id="${escHtml(race.id)}"
+                      onclick="selectViewedRound('${escHtml(race.id)}')" ${isOperator() ? 'disabled' : ''}>
+        סבב ${Number(race.round || 0)}<span class="round-state">${escHtml(state)}</span>
+      </button>`;
+    }).join('');
+
+    const index = racesForContext.findIndex(r => r.id === currentRaceId);
+    const canBrowse = canEvaluate() && !isOperator();
+    document.getElementById('round-older-btn').disabled = !canBrowse || index <= 0;
+    document.getElementById('round-newer-btn').disabled = !canBrowse || index < 0 || index >= racesForContext.length - 1;
+
+    requestAnimationFrame(() => {
+      tabs.querySelector('.round-tab.selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    });
   }
 
   // ═════════ Rendering ═════════
   function renderRace() {
     if (!currentRace) return;
+    applyRoleVisibility();
+    renderRoundNavigation();
     const teamData = teamsCache[selectedTeam] || {};
     const participants = Array.isArray(teamData.participants) ? teamData.participants.map(String) : [];
     const finished = (Array.isArray(currentRace.tags) ? currentRace.tags : [])
@@ -913,7 +1063,8 @@
     const gridCount = document.getElementById('grid-count');
     const gridEmpty = document.getElementById('grid-empty');
     const gridTitle = document.getElementById('grid-title');
-    if (currentRace.status === 'running' && measure === 'reps') {
+    const isLiveViewedRound = currentRace.id === latestRace?.id && currentRace.status === 'running';
+    if (canEvaluate() && isLiveViewedRound && measure === 'reps') {
       // ספירת חזרות: הקשה על משתתף מוסיפה 1, והמונה מוצג על הכפתור
       gridTitle.textContent = '🔢 ספירת ' + (st.measureLabel || 'חזרות');
       const allSorted = participants.slice().sort((a, b) => Number(a) - Number(b));
@@ -927,7 +1078,7 @@
       gridCount.textContent = 'הקש על משתתף כדי להוסיף 1';
       gridEmpty.style.display = allSorted.length === 0 ? '' : 'none';
       document.getElementById('grid-section').style.display = '';
-    } else if (currentRace.status === 'running' && measure === 'place') {
+    } else if (canEvaluate() && isLiveViewedRound && measure === 'place') {
       gridTitle.textContent = '👥 משתתפים למירוץ';
       const sortedRemaining = remaining.slice().sort((a,b) => Number(a) - Number(b));
       grid.innerHTML = sortedRemaining.map(id => `
@@ -971,22 +1122,23 @@
     }
 
     // Station notes picker (finished participants only)
-    renderStationNotesSection();
+    if (canEvaluate()) renderStationNotesSection();
 
     // Buttons
     const endBtn = document.getElementById('end-btn');
     const newRoundBtn = document.getElementById('new-round-btn');
     if (currentRace.status === 'running') {
-      endBtn.style.display = '';
+      endBtn.style.display = canControlSession() ? '' : 'none';
       newRoundBtn.style.display = 'none';
-      startSessionTimer();
     } else {
       endBtn.style.display = 'none';
-      newRoundBtn.style.display = '';
+      newRoundBtn.style.display = canControlSession() && currentRace.id === latestRace?.id ? '' : 'none';
       newRoundBtn.textContent = '▶ התחל סבב ' + ((currentRace.round || 1) + 1);
-      stopSessionTimer();
-      updateSessionTimerDisplay(); // freeze at final elapsed
     }
+
+    const liveRoundNeedsTimer = latestRace?.status === 'running' && latestRace.id !== currentRace.id;
+    if (currentRace.status === 'running' || liveRoundNeedsTimer) startSessionTimer();
+    else { stopSessionTimer(); updateSessionTimerDisplay(); }
   }
 
   function startSessionTimer() {
@@ -1006,6 +1158,18 @@
       ? Date.now()
       : (tsToMs(currentRace.endedAt) || Date.now());
     setText('hdr-time', formatMMSS(nowMs - startMs));
+    renderLiveRoundBanner();
+  }
+
+  function renderLiveRoundBanner() {
+    const banner = document.getElementById('live-round-banner');
+    const show = canEvaluate() && supportsRoundTabs() && latestRace?.status === 'running' &&
+      currentRaceId && currentRaceId !== latestRace.id;
+    banner.style.display = show ? '' : 'none';
+    if (!show) return;
+    setText('live-round-label', `סבב ${latestRace.round} פעיל`);
+    const startMs = tsToMs(latestRace.startedAt);
+    setText('live-round-time', startMs ? formatMMSS(Date.now() - startMs) : '00:00.00');
   }
 
   function renderIdleForNextRound(nextRound) {
@@ -1028,91 +1192,117 @@
       document.getElementById('idle-warn').textContent =
         '⚠️ אין משתתפים לצוות זה. פתח את פאנל המנהל והוסף לפני שמתחילים.';
       document.getElementById('start-btn').style.display = 'none';
-    } else {
+    } else if (canControlSession()) {
       document.getElementById('start-btn').style.display = '';
       document.getElementById('start-btn').textContent =
-        nextRound === 1 ? '▶ התחל תחנה' : ('▶ התחל סבב ' + nextRound);
+        '▶ התחל סבב ' + nextRound;
+    } else {
+      document.getElementById('start-btn').style.display = 'none';
     }
     setText('idle-hint',
       participants.length > 0
-        ? `${participants.length} משתתפים בצוות · תחנה ${selectedStation}: ${stationDisplayName(selectedStation, teamData)}`
+        ? (canControlSession()
+          ? `${participants.length} משתתפים בצוות · תחנה ${selectedStation}: ${stationDisplayName(selectedStation, teamData)}`
+          : `ממתין למפק״צ להתחלת סבב ${nextRound}`)
         : '');
   }
 
   // ═════════ Session actions ═════════
   window.startSession = async () => {
+    if (!canControlSession()) { showToast('רק מפק״צ יכול להתחיל סבב', 'error'); return; }
+    if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
     const teamData = teamsCache[selectedTeam];
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
     }
-    const nextRound = currentRace ? (Number(currentRace.round || 0) + 1) : 1;
+    if (latestRace?.status === 'running') { showToast('כבר קיים סבב פעיל', 'error'); return; }
+    const nextRound = latestRace ? (Number(latestRace.round || 0) + 1) : 1;
     const raceId = raceIdFor(selectedTeam, selectedStation, nextRound);
+    const raceRef = doc(db, 'races', raceId);
+    setControlActionBusy(true);
     try {
-      await setDoc(doc(db, 'races', raceId), {
-        team:      selectedTeam,
-        station:   selectedStation,
-        round:     nextRound,
-        status:    'running',
-        startedAt: serverTimestamp(),
-        startedBy: currentUser.uid,
-        tags:      []
+      await runTransaction(db, async (transaction) => {
+        const existing = await transaction.get(raceRef);
+        if (existing.exists()) throw new Error('הסבב כבר נוצר. המסך יתעדכן אוטומטית.');
+        transaction.set(raceRef, {
+          team:      selectedTeam,
+          station:   selectedStation,
+          round:     nextRound,
+          status:    'running',
+          startedAt: serverTimestamp(),
+          startedBy: currentUser.uid,
+          tags:      []
+        });
       });
-      detachRaceSubscription();
-      currentRaceId = raceId;
-      subscribeToRace(raceId);
       showToast('סבב ' + nextRound + ' התחיל', 'success');
     } catch (e) {
       showToast('שגיאה בהתחלת סבב: ' + e.message, 'error');
+    } finally {
+      setControlActionBusy(false);
     }
   };
 
   window.markFinished = async (participantId) => {
-    if (!currentRace || currentRace.status !== 'running') {
+    if (!canEvaluate() || !currentRace || currentRace.id !== latestRace?.id || currentRace.status !== 'running') {
       showToast('אין סבב פעיל', 'error'); return;
     }
-    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    // מקום = לפי מספר מי שכבר קיבל מקום (לא לפי סך ה-tags, שכן ייתכנו tags עם ציון בלבד)
-    const nextPlace = existing.filter(t => t.place != null).length + 1;
-    const idx = existing.findIndex(t => String(t.participantId) === String(participantId));
-
-    let updated;
-    if (idx >= 0) {
-      if (existing[idx].place != null) { showToast('משתתף כבר סומן כסיים', 'info'); return; }
-      // יש כבר tag (ציון/הערה) — רק מוסיפים לו מקום וזמן סיום
-      updated = existing.map((t, i) => i === idx
-        ? { ...t, place: nextPlace, finishedAt: Date.now() }
-        : t);
-    } else {
-      updated = [...existing, {
-        participantId: String(participantId),
-        place:         nextPlace,
-        finishedAt:    Date.now(),
-        comments:      []
-      }];
-    }
     try {
-      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
-      // onSnapshot will re-render
+      await mutateRaceTags(currentRaceId, (existing, race) => {
+        if (race.status !== 'running') throw new Error('הסבב כבר הסתיים');
+        const idx = existing.findIndex(t => String(t.participantId) === String(participantId));
+        if (idx >= 0 && existing[idx].place != null) throw new Error('משתתף כבר סומן כסיים');
+        const nextPlace = existing.filter(t => t.place != null).length + 1;
+        if (idx >= 0) {
+          return existing.map((tag, i) => i === idx
+            ? { ...tag, place: nextPlace, finishedAt: Date.now() }
+            : tag);
+        }
+        return [...existing, {
+          participantId: String(participantId),
+          place: nextPlace,
+          finishedAt: Date.now(),
+          comments: []
+        }];
+      });
     } catch (e) {
       showToast('שגיאה בסימון: ' + e.message, 'error');
     }
   };
 
   window.endSession = async () => {
-    if (!currentRaceId) return;
+    if (!canControlSession()) { showToast('רק מפק״צ יכול לסיים סבב', 'error'); return; }
+    if (controlActionInProgress) return;
+    if (!latestRace || latestRace.status !== 'running') return;
     if (!confirm('לסיים את הסבב הנוכחי?')) return;
+    const raceRef = doc(db, 'races', latestRace.id);
+    setControlActionBusy(true);
     try {
-      await commitPendingReps(); // לשמור ספירות חזרות ממתינות לפני סיום
-      await updateDoc(doc(db, 'races', currentRaceId), {
-        status:  'stopped',
-        endedAt: serverTimestamp()
+      await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(raceRef);
+        if (!snap.exists()) throw new Error('הסבב לא נמצא');
+        if (snap.data().status !== 'running') return;
+        transaction.update(raceRef, {
+          status:  'stopped',
+          endedAt: serverTimestamp(),
+          endedBy: currentUser.uid
+        });
       });
       showToast('הסבב הסתיים', 'info');
     } catch (e) {
       showToast('שגיאה בסיום סבב: ' + e.message, 'error');
+    } finally {
+      setControlActionBusy(false);
     }
   };
+
+  function setControlActionBusy(busy) {
+    controlActionInProgress = busy;
+    ['start-btn', 'end-btn', 'new-round-btn'].forEach(id => {
+      const button = document.getElementById(id);
+      if (button) button.disabled = busy;
+    });
+  }
 
   // ═════════ Station notes (per-race, resets per session) ═════════
   // Comment shape: { text, authorName, authorUid, at }.
@@ -1225,17 +1415,37 @@
     return arr;
   }
 
+  // Every evaluator mutation reads the newest array inside a transaction, so two
+  // evaluators cannot silently replace one another's recent score/comment update.
+  async function mutateRaceTags(raceId, mutate) {
+    const raceRef = doc(db, 'races', raceId);
+    return runTransaction(db, async (transaction) => {
+      const snap = await transaction.get(raceRef);
+      if (!snap.exists()) throw new Error('הסבב לא נמצא');
+      const race = snap.data();
+      const existing = Array.isArray(race.tags) ? race.tags.map(tag => ({ ...tag })) : [];
+      const updated = mutate(existing, race);
+      transaction.update(raceRef, { tags: updated });
+      return updated;
+    });
+  }
+
   // ═════════ ספירת חזרות (תחנות reps) ═════════
   // הקשה מוסיפה 1 למונה המקומי (פידבק מיידי), והשמירה ל-Firestore מקובצת
   // כדי לא לאבד הקשות מהירות (read-modify-write אחד לכל הצבירה).
   window.incrementReps = (pid) => {
-    if (!currentRace || currentRace.status !== 'running') { showToast('אין סבב פעיל', 'error'); return; }
+    if (!canEvaluate() || !currentRace || currentRace.id !== latestRace?.id || currentRace.status !== 'running') {
+      showToast('אין סבב פעיל', 'error'); return;
+    }
     pid = String(pid);
     if (localReps[pid] == null) {
       const tag = (currentRace.tags || []).find(t => String(t.participantId) === pid);
       localReps[pid] = Number(tag && tag.reps) || 0;
     }
     localReps[pid] += 1;
+    const racePending = pendingRepsByRace[currentRaceId] || {};
+    racePending[pid] = Number(racePending[pid] || 0) + 1;
+    pendingRepsByRace[currentRaceId] = racePending;
     const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
     if (el) el.textContent = String(localReps[pid]);
     scheduleRepsSave();
@@ -1248,26 +1458,62 @@
 
   async function flushRepsSave() {
     repsSaveTimer = null;
-    if (repsSaving) { scheduleRepsSave(); return; }
-    if (!currentRaceId || !currentRace) return;
-    const pids = Object.keys(localReps);
-    if (pids.length === 0) return;
-    repsSaving = true;
-    try {
-      let updated = Array.isArray(currentRace.tags) ? currentRace.tags.map(t => ({ ...t })) : [];
-      pids.forEach(pid => { updated = upsertTags(updated, pid, (tag) => { tag.reps = localReps[pid]; }); });
-      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
-    } catch (e) {
-      showToast('שגיאה בשמירת ספירה: ' + e.message, 'error');
-    } finally {
-      repsSaving = false;
-    }
+    if (repsSavePromise) return repsSavePromise;
+    const raceId = Object.keys(pendingRepsByRace).find(id =>
+      Object.keys(pendingRepsByRace[id] || {}).length > 0);
+    if (!raceId) return true;
+
+    const pendingDeltas = { ...pendingRepsByRace[raceId] };
+    delete pendingRepsByRace[raceId];
+
+    repsSavePromise = (async () => {
+      try {
+        const updatedTags = await mutateRaceTags(raceId, (existing) => {
+          let updated = existing;
+          Object.entries(pendingDeltas).forEach(([pid, delta]) => {
+            updated = upsertTags(updated, pid, (tag) => {
+              tag.reps = Number(tag.reps || 0) + Number(delta || 0);
+            });
+          });
+          return updated;
+        });
+
+        if (currentRaceId === raceId) {
+          Object.keys(pendingDeltas).forEach(pid => {
+            const savedTag = updatedTags.find(tag => String(tag.participantId) === String(pid));
+            const stillPending = Number(pendingRepsByRace[raceId]?.[pid] || 0);
+            localReps[pid] = Number(savedTag?.reps || 0) + stillPending;
+            const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
+            if (el) el.textContent = String(localReps[pid]);
+          });
+        }
+        return true;
+      } catch (e) {
+        const retry = pendingRepsByRace[raceId] || {};
+        Object.entries(pendingDeltas).forEach(([pid, delta]) => {
+          retry[pid] = Number(retry[pid] || 0) + Number(delta || 0);
+        });
+        pendingRepsByRace[raceId] = retry;
+        showToast('שגיאה בשמירת ספירה: ' + e.message, 'error');
+        return false;
+      } finally {
+        repsSavePromise = null;
+      }
+    })();
+
+    const saved = await repsSavePromise;
+    if (saved && Object.keys(pendingRepsByRace).length > 0) scheduleRepsSave();
+    return saved;
   }
 
   // שמירה מיידית של ספירות ממתינות (לפני סנכרון / סיום סשן)
   async function commitPendingReps() {
     if (repsSaveTimer) { clearTimeout(repsSaveTimer); repsSaveTimer = null; }
-    await flushRepsSave();
+    while (repsSavePromise || Object.keys(pendingRepsByRace).length > 0) {
+      const saved = repsSavePromise ? await repsSavePromise : await flushRepsSave();
+      if (saved === false) return false;
+    }
+    return true;
   }
 
   // שדה מדידה כמותית (רק כאשר measure === "reps")
@@ -1278,13 +1524,15 @@
     const tag = selectedTag();
     const val = (tag && tag.reps != null) ? tag.reps : '';
     const label = st.measureLabel || 'מספר חזרות';
+    const canEditMeasure = currentRace?.id === latestRace?.id && currentRace?.status === 'running';
     box.style.display = '';
     box.innerHTML = `
       <label style="font-size:15px; font-weight:700; display:flex; align-items:center; gap:10px; flex-wrap:wrap">
         ${escHtml(label)}:
         <input id="sn-reps-input" type="number" inputmode="numeric" min="0" value="${escHtml(String(val))}"
                onchange="setStationReps(this.value)"
-               class="form-input" style="width:100px; padding:8px 10px; direction:ltr; text-align:center">
+               class="form-input" style="width:100px; padding:8px 10px; direction:ltr; text-align:center"
+               ${canEditMeasure ? '' : 'disabled'}>
       </label>`;
   }
 
@@ -1317,30 +1565,44 @@
 
   // קובע/מנקה ציון פרמטר עבור המעריך הנוכחי (לחיצה חוזרת על אותו ערך = ניקוי)
   window.setStationScore = async (pi, val) => {
+    if (!canEvaluate()) return;
     const st = currentStationType();
     const p = st?.params?.[pi];
     if (!p || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
     const uid = currentUser?.uid || '_';
-    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
-      const scores = { ...(tag.scores || {}) };
-      const mine = { ...(scores[uid] || {}) };
-      if (Number(mine[p.name]) === Number(val)) delete mine[p.name];
-      else mine[p.name] = Number(val);
-      scores[uid] = mine;
-      tag.scores = scores;
-    });
-    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    const raceId = currentRaceId;
+    const pid = stationNoteSelectedPid;
+    try {
+      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
+        const scores = { ...(tag.scores || {}) };
+        const mine = { ...(scores[uid] || {}) };
+        if (Number(mine[p.name]) === Number(val)) delete mine[p.name];
+        else mine[p.name] = Number(val);
+        scores[uid] = mine;
+        tag.scores = scores;
+      }));
+    }
     catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
   };
 
   // קובע/מנקה ערך מדידה כמותית (מספר חזרות/ברגים/שלב) — ערך יחיד אובייקטיבי
   window.setStationReps = async (val) => {
-    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid ||
+        currentRace.id !== latestRace?.id || currentRace.status !== 'running') {
+      showToast('אפשר לעדכן מדידה רק בסבב הפעיל', 'error'); return;
+    }
     const num = (val === '' || val == null) ? null : Number(val);
-    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
-      if (num == null || isNaN(num)) delete tag.reps; else tag.reps = num;
-    });
-    try { await updateDoc(doc(db, 'races', currentRaceId), { tags: updated }); }
+    const raceId = currentRaceId;
+    const pid = stationNoteSelectedPid;
+    try {
+      if (!await commitPendingReps()) return;
+      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
+        if (num == null || isNaN(num)) delete tag.reps; else tag.reps = num;
+      }));
+      if (currentRaceId === raceId) {
+        if (num == null || isNaN(num)) delete localReps[pid]; else localReps[pid] = num;
+      }
+    }
     catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
   };
 
@@ -1399,21 +1661,22 @@
   };
 
   async function appendStationNote(text) {
-    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) {
+    if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) {
       showToast('בחר משתתף בסקציית "הערות לתחנה"', 'error'); return;
     }
+    const raceId = currentRaceId;
+    const pid = stationNoteSelectedPid;
     const noteObj = {
       text,
       authorName: currentUser?.name || '',
       authorUid:  currentUser?.uid || '',
       at:         Date.now()
     };
-    const updated = upsertTags(currentRace.tags, stationNoteSelectedPid, (tag) => {
-      tag.comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
-      tag.comments.push(noteObj);
-    });
     try {
-      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
+      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
+        tag.comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
+        tag.comments.push(noteObj);
+      }));
       showToast('הערה נוספה', 'success');
     } catch (e) {
       showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
@@ -1421,7 +1684,7 @@
   }
 
   window.deleteStationNote = async (indexInRawArr) => {
-    if (!currentRaceId || !currentRace || !stationNoteSelectedPid) return;
+    if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
     const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
     const target = existing.find(t => String(t.participantId) === stationNoteSelectedPid);
     if (!target) return;
@@ -1431,14 +1694,20 @@
       showToast('אפשר למחוק רק הערות שכתבת בעצמך', 'error'); return;
     }
     if (!confirm('למחוק את ההערה?')) return;
-    const updated = existing.map(t => {
-      if (String(t.participantId) !== stationNoteSelectedPid) return t;
-      const cs = raw.slice();
-      cs.splice(indexInRawArr, 1);
-      return { ...t, comments: cs };
-    });
+    const raceId = currentRaceId;
+    const pid = stationNoteSelectedPid;
+    const identity = { text: c.text, authorUid: c.authorUid, at: c.at };
     try {
-      await updateDoc(doc(db, 'races', currentRaceId), { tags: updated });
+      await mutateRaceTags(raceId, (fresh) => fresh.map(tag => {
+        if (String(tag.participantId) !== pid) return tag;
+        const comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
+        const index = comments.findIndex(comment => {
+          const normalized = normalizeComment(comment);
+          return normalized.text === identity.text && normalized.authorUid === identity.authorUid && normalized.at === identity.at;
+        });
+        if (index >= 0) comments.splice(index, 1);
+        return { ...tag, comments };
+      }));
       showToast('הערה נמחקה', 'info');
     } catch (e) {
       showToast('שגיאה במחיקה: ' + e.message, 'error');
@@ -1528,6 +1797,7 @@
   }
 
   window.doSyncSheets = async () => {
+    if (!canEvaluate()) { showToast('סנכרון הערכות זמין למעריכים בלבד', 'error'); return; }
     if (sheetsSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
       showToast('כתובת Google Sheets לא הוגדרה ב-firebase-config.js', 'error');
@@ -1544,7 +1814,7 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ מסנכרן…'; }
 
     try {
-      await commitPendingReps(); // לשמור ספירות חזרות ממתינות לפני הסנכרון
+      if (!await commitPendingReps()) return; // לא מסנכרנים צילום חלקי
 
       // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
       const races = await gatherRacesForCurrentContext();
