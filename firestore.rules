@@ -44,6 +44,7 @@ service cloud.firestore {
 
     // Race lifecycle is controlled by the team's commander (internal role:
     // operator). Evaluators may change only the shared evaluation payload (`tags`).
+    // Arrival order is intentionally stored in a per-evaluator child document below.
     match /races/{raceId} {
       allow read: if isAdmin() ||
         (signedIn() && caller().approved == true && isOwnTeam(resource.data.team));
@@ -51,12 +52,14 @@ service cloud.firestore {
       allow create: if isAdmin() ||
         (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
          request.resource.data.keys()
-           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'tags']) &&
+           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags']) &&
          request.resource.data.team is string && request.resource.data.station is string &&
          request.resource.data.status == 'running' &&
          request.resource.data.startedBy == request.auth.uid &&
          request.resource.data.startedAt == request.time &&
          request.resource.data.round is int && request.resource.data.round > 0 &&
+         (!request.resource.data.keys().hasAny(['participantIds']) ||
+           request.resource.data.participantIds is list) &&
          request.resource.data.tags is list && request.resource.data.tags.size() == 0);
 
       allow update: if isAdmin();
@@ -77,6 +80,52 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags']);
 
       allow delete: if isAdmin();
+
+      // Each evaluator owns one independent arrival-order document per round.
+      // Keeping these documents separate prevents two evaluators from overwriting
+      // one another and lets the rules enforce ownership directly.
+      match /evaluatorArrivals/{evaluatorUid} {
+        function parentRace() {
+          return get(/databases/$(database)/documents/races/$(raceId)).data;
+        }
+
+        function ownsArrivalDocument() {
+          return isApprovedRole('evaluator') &&
+            request.auth.uid == evaluatorUid &&
+            isOwnTeam(parentRace().team);
+        }
+
+        function validArrivalShape() {
+          return request.resource.data.keys().hasAll([
+              'evaluatorUid', 'participantIds', 'order', 'slotTimes',
+              'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'evaluatorUid', 'participantIds', 'order', 'slotTimes',
+              'schemaVersion', 'createdAt', 'updatedAt', 'completedAt'
+            ]) &&
+            request.resource.data.evaluatorUid == evaluatorUid &&
+            request.resource.data.participantIds is list &&
+            request.resource.data.order is list &&
+            request.resource.data.slotTimes is map &&
+            request.resource.data.order.size() <= request.resource.data.participantIds.size() &&
+            request.resource.data.slotTimes.size() <= request.resource.data.participantIds.size() &&
+            request.resource.data.schemaVersion == 1 &&
+            request.resource.data.updatedAt == request.time &&
+            (!request.resource.data.keys().hasAny(['completedAt']) ||
+              request.resource.data.completedAt is timestamp);
+        }
+
+        allow read: if isAdmin() || ownsArrivalDocument();
+        allow create: if isAdmin() ||
+          (ownsArrivalDocument() && validArrivalShape() &&
+           request.resource.data.createdAt == request.time);
+        allow update: if isAdmin() ||
+          (ownsArrivalDocument() && validArrivalShape() &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['order', 'slotTimes', 'completedAt', 'updatedAt']));
+        allow delete: if isAdmin();
+      }
     }
 
     // Teams (participants + station mapping): team members read, admins write.
