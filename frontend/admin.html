@@ -233,6 +233,19 @@
 
   <!-- היסטוריית מרוצים -->
   <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap">
+      <h2>🔒 הסבת פרטיות הערכות</h2>
+      <button id="privacy-migration-btn" class="btn btn-warning" onclick="migrateEvaluationPrivacy()"
+              style="padding:8px 14px">הפעל הסבה</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
+      פעולה חד־פעמית שמעבירה ציונים, מדידות והערות ישנים למסמכים פרטיים לכל משתמש.
+      מקור הנתונים נשמר בארכיון מנהל, והאכיפה המחמירה מופעלת רק לאחר שכל הרשומות הוסבו בהצלחה.
+    </p>
+    <div id="privacy-migration-status" class="section" style="font-size:13px" aria-live="polite">בודק סטטוס…</div>
+  </div>
+
+  <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
       <h2>🏁 היסטוריית מרוצים</h2>
       <button class="btn btn-ghost" onclick="loadRaces()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
@@ -274,13 +287,17 @@
 
 <script type="module">
   import {
-    isSessionExpired, isSessionEffectivelyRunning, effectiveSessionElapsedMs
+    isSessionExpired, isSessionEffectivelyRunning
   } from "./js/session-policy.js";
+  import {
+    EVALUATION_SCHEMA_VERSION, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
+    normalizeAssessment, normalizeNotes
+  } from "./js/evaluation-model.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     getFirestore, collection, getDocs, doc, getDoc,
-    updateDoc, deleteDoc, setDoc, serverTimestamp, query, orderBy, limit
+    updateDoc, deleteDoc, setDoc, serverTimestamp, query, orderBy, limit, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -304,6 +321,7 @@
     loadIssueReports();
     initTeamManagement();
     loadQuickTags();
+    loadPrivacyMigrationStatus();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -649,6 +667,228 @@
     }
   };
 
+  // ═══════════════════════════════════════════════════════════
+  //  הסבת פרטיות — idempotent, resumable and archive-first
+  // ═══════════════════════════════════════════════════════════
+  const privacyStatusRef = () => doc(db, 'settings', 'evaluationPrivacy');
+
+  function setPrivacyMigrationStatus(message, type = 'info') {
+    const element = document.getElementById('privacy-migration-status');
+    if (!element) return;
+    element.textContent = message;
+    element.style.color = type === 'error' ? 'var(--danger)'
+      : type === 'success' ? 'var(--success)' : 'var(--text-muted)';
+  }
+
+  async function loadPrivacyMigrationStatus() {
+    try {
+      const snapshot = await getDoc(privacyStatusRef());
+      const complete = snapshot.exists() && snapshot.data().schemaVersion === EVALUATION_SCHEMA_VERSION &&
+        snapshot.data().status === 'complete';
+      document.getElementById('privacy-migration-btn').disabled = complete;
+      setPrivacyMigrationStatus(complete
+        ? `ההסבה הושלמה. ${snapshot.data().racesMigrated || 0} סבבים ו־${snapshot.data().notesMigrated || 0} מסמכי הערות הועברו.`
+        : 'ההסבה טרם הושלמה. ניתן להפעיל אותה בבטחה שוב אם ריצה קודמת נעצרה.',
+        complete ? 'success' : 'info');
+    } catch (error) {
+      setPrivacyMigrationStatus('לא ניתן לקרוא את סטטוס ההסבה: ' + error.message, 'error');
+    }
+  }
+
+  function traitAliasesForRace(race, teamsById) {
+    const team = String(race.team || '').padStart(2, '0');
+    const station = String(race.station || '').padStart(2, '0');
+    const stationTypeId = teamsById.get(team)?.stationMap?.[station] ||
+      STATION_ORDER[Number.parseInt(station, 10) - 1];
+    const params = stationTypesData[stationTypeId]?.params || [];
+    return Object.fromEntries(params
+      .filter(param => param?.name && param?.id)
+      .map(param => [param.name, param.id]));
+  }
+
+  async function migrateLegacyRace(raceId, teamEvaluatorUids, traitAliases) {
+    const raceRef = doc(db, 'races', raceId);
+    return runTransaction(db, async transaction => {
+      const raceSnapshot = await transaction.get(raceRef);
+      if (!raceSnapshot.exists()) return false;
+      const race = raceSnapshot.data();
+      if (race.evaluationSchemaVersion === EVALUATION_SCHEMA_VERSION &&
+          (!Array.isArray(race.tags) || race.tags.length === 0)) return false;
+
+      const buckets = buildLegacyAssessmentBuckets(race, teamEvaluatorUids, traitAliases);
+      const evaluatorUids = Array.from(new Set([...teamEvaluatorUids, ...buckets.keys()]));
+      const assessmentRefs = evaluatorUids.map(uid =>
+        doc(db, 'races', raceId, 'evaluatorAssessments', uid));
+      const legacyOrder = (Array.isArray(race.tags) ? race.tags : [])
+        .filter(tag => tag?.place != null && tag?.participantId != null)
+        .slice().sort((a, b) => Number(a.place) - Number(b.place));
+      const arrivalRefs = legacyOrder.length ? teamEvaluatorUids.map(uid =>
+        doc(db, 'races', raceId, 'evaluatorArrivals', uid)) : [];
+      const assessmentSnapshots = await Promise.all(assessmentRefs.map(ref => transaction.get(ref)));
+      const arrivalSnapshots = await Promise.all(arrivalRefs.map(ref => transaction.get(ref)));
+
+      assessmentRefs.forEach((reference, index) => {
+        const uid = evaluatorUids[index];
+        const existingSnapshot = assessmentSnapshots[index];
+        const existing = normalizeAssessment(existingSnapshot.exists() ? existingSnapshot.data() : null, uid);
+        const legacyEntries = buckets.get(uid) || {};
+        const participantIds = new Set([...Object.keys(legacyEntries), ...Object.keys(existing.entries)]);
+        const entries = {};
+        participantIds.forEach(pid => {
+          entries[pid] = mergeAssessmentEntries(legacyEntries[pid], existing.entries[pid]);
+        });
+        const payload = {
+          evaluatorUid: uid, entries, schemaVersion: EVALUATION_SCHEMA_VERSION,
+          createdAt: existingSnapshot.exists() ? existingSnapshot.data().createdAt : serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        transaction.set(reference, payload);
+      });
+
+      arrivalRefs.forEach((reference, index) => {
+        if (arrivalSnapshots[index].exists()) return;
+        const participantIds = Array.from(new Set((race.participantIds || [])
+          .concat((race.tags || []).map(tag => String(tag?.participantId || '')).filter(Boolean))));
+        const order = legacyOrder.map(tag => String(tag.participantId));
+        const slotTimes = {};
+        legacyOrder.forEach((tag, placeIndex) => {
+          if (tag.finishedAt != null) slotTimes[String(placeIndex + 1)] = tag.finishedAt;
+        });
+        transaction.set(reference, {
+          evaluatorUid: teamEvaluatorUids[index], participantIds, order, slotTimes,
+          schemaVersion: 1, createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          ...(order.length === participantIds.length ? { completedAt: serverTimestamp() } : {})
+        });
+      });
+
+      transaction.set(doc(db, 'privacy_migration_archive', `race_${raceId}`), {
+        source: 'race', sourceId: raceId, team: String(race.team || ''),
+        legacyTags: Array.isArray(race.tags) ? race.tags : [], archivedAt: serverTimestamp(),
+        schemaVersion: EVALUATION_SCHEMA_VERSION
+      }, { merge: true });
+      transaction.update(raceRef, { tags: [], evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION });
+      return true;
+    });
+  }
+
+  async function migrateLegacyGeneralNotes(noteId) {
+    const sourceRef = doc(db, 'general_notes', noteId);
+    return runTransaction(db, async transaction => {
+      const sourceSnapshot = await transaction.get(sourceRef);
+      if (!sourceSnapshot.exists()) return false;
+      const source = sourceSnapshot.data();
+      if (source.privacySchemaVersion === EVALUATION_SCHEMA_VERSION) return false;
+      const notes = normalizeNotes(source.notes);
+      const byAuthor = new Map();
+      notes.forEach(note => {
+        if (!note.authorUid) return;
+        if (!byAuthor.has(note.authorUid)) byAuthor.set(note.authorUid, []);
+        byAuthor.get(note.authorUid).push(note);
+      });
+      const authorUids = Array.from(byAuthor.keys());
+      const authorRefs = authorUids.map(uid => doc(db, 'general_notes', noteId, 'authors', uid));
+      const authorSnapshots = await Promise.all(authorRefs.map(ref => transaction.get(ref)));
+      authorRefs.forEach((reference, index) => {
+        const existing = authorSnapshots[index].exists()
+          ? normalizeNotes(authorSnapshots[index].data().notes) : [];
+        const payload = {
+          authorUid: authorUids[index], team: String(source.team || noteId.split('_')[0]).padStart(2, '0'),
+          participantId: String(source.participantId || noteId.split('_')[1] || ''),
+          notes: normalizeNotes([...byAuthor.get(authorUids[index]), ...existing]),
+          schemaVersion: EVALUATION_SCHEMA_VERSION,
+          createdAt: authorSnapshots[index].exists()
+            ? authorSnapshots[index].data().createdAt : serverTimestamp(),
+          updatedAt: serverTimestamp()
+        };
+        transaction.set(reference, payload);
+      });
+      transaction.set(doc(db, 'privacy_migration_archive', `general_${noteId}`), {
+        source: 'general_note', sourceId: noteId, team: String(source.team || ''),
+        participantId: String(source.participantId || ''), legacyNotes: source.notes || [],
+        archivedAt: serverTimestamp(), schemaVersion: EVALUATION_SCHEMA_VERSION
+      }, { merge: true });
+      transaction.update(sourceRef, {
+        notes: [], privacySchemaVersion: EVALUATION_SCHEMA_VERSION, migratedAt: serverTimestamp()
+      });
+      return true;
+    });
+  }
+
+  window.migrateEvaluationPrivacy = async () => {
+    if (!confirm('להתחיל הסבה? מומלץ לבצע כשאין פעילות בתחנות. ניתן להפעיל שוב בבטחה במקרה של עצירה.')) return;
+    const button = document.getElementById('privacy-migration-btn');
+    button.disabled = true;
+    try {
+      const [usersSnapshot, racesSnapshot, notesSnapshot, teamsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'races')),
+        getDocs(collection(db, 'general_notes')),
+        getDocs(collection(db, 'teams'))
+      ]);
+      const teamsById = new Map(teamsSnapshot.docs.map(teamDocument => [
+        String(teamDocument.id).padStart(2, '0'), teamDocument.data()
+      ]));
+      const evaluatorsByTeam = new Map();
+      usersSnapshot.forEach(userDocument => {
+        const user = userDocument.data();
+        if (user.role !== 'evaluator' || user.approved !== true || !user.team) return;
+        const team = String(user.team).padStart(2, '0');
+        if (!evaluatorsByTeam.has(team)) evaluatorsByTeam.set(team, []);
+        evaluatorsByTeam.get(team).push(userDocument.id);
+      });
+
+      let racesMigrated = 0;
+      const races = racesSnapshot.docs;
+      for (let index = 0; index < races.length; index += 1) {
+        setPrivacyMigrationStatus(`מסב סבבים ${index + 1}/${races.length}…`);
+        const race = races[index].data();
+        if (await migrateLegacyRace(
+          races[index].id,
+          evaluatorsByTeam.get(String(race.team || '').padStart(2, '0')) || [],
+          traitAliasesForRace(race, teamsById)
+        )) racesMigrated += 1;
+      }
+
+      let notesMigrated = 0;
+      const notes = notesSnapshot.docs;
+      for (let index = 0; index < notes.length; index += 1) {
+        setPrivacyMigrationStatus(`מסב הערות כלליות ${index + 1}/${notes.length}…`);
+        if (await migrateLegacyGeneralNotes(notes[index].id)) notesMigrated += 1;
+      }
+
+      // A legacy client could create a document while the resumable pass is running.
+      // Never activate the strict marker until a fresh read proves every source clean.
+      const [verifiedRaces, verifiedNotes] = await Promise.all([
+        getDocs(collection(db, 'races')), getDocs(collection(db, 'general_notes'))
+      ]);
+      const unsafeRace = verifiedRaces.docs.find(document => {
+        const data = document.data();
+        return data.evaluationSchemaVersion !== EVALUATION_SCHEMA_VERSION ||
+          (Array.isArray(data.tags) && data.tags.length > 0);
+      });
+      const unsafeNotes = verifiedNotes.docs.find(document => {
+        const data = document.data();
+        return data.privacySchemaVersion !== EVALUATION_SCHEMA_VERSION ||
+          (Array.isArray(data.notes) && data.notes.length > 0);
+      });
+      if (unsafeRace || unsafeNotes) {
+        throw new Error('נוצר מידע ישן בזמן ההסבה. הפעל את ההסבה שוב; שום אכיפה עדיין לא הופעלה.');
+      }
+
+      await setDoc(privacyStatusRef(), {
+        schemaVersion: EVALUATION_SCHEMA_VERSION, status: 'complete',
+        racesMigrated, notesMigrated, completedAt: serverTimestamp(),
+        completedBy: currentAdmin.uid
+      });
+      setPrivacyMigrationStatus(`ההסבה הושלמה: ${racesMigrated} סבבים ו־${notesMigrated} מסמכי הערות.`, 'success');
+      showToast('הסבת הפרטיות הושלמה ✓', 'success');
+    } catch (error) {
+      button.disabled = false;
+      setPrivacyMigrationStatus('ההסבה נעצרה: ' + error.message + '. אפשר להפעיל שוב לאחר תיקון הבעיה.', 'error');
+      showToast('הסבת הפרטיות נעצרה', 'error');
+    }
+  };
+
   window.loadRaces = async () => {
     try {
       const snap = await getDocs(collection(db, 'races'));
@@ -663,14 +903,12 @@
         const nowMs = Date.now();
         const status = isSessionExpired(r, nowMs) ? 'תקרת 40 דק׳' :
           isSessionEffectivelyRunning(r, nowMs) ? 'פעיל' : 'עצור';
-        const elapsedMs = effectiveSessionElapsedMs(r, nowMs);
         return `
         <div class="user-row">
           <div class="user-info">
             <div class="user-name">סבב #${r.round} — ${r.mode==='laps'?'הקפות':'הגעה'}</div>
             <div class="user-email">
-              ${r.tags?.length||0} תגיות · סטטוס: ${status}
-              ${elapsedMs != null ? ' · ' + Math.round(elapsedMs/1000) + ' שניות' : ''}
+              ${r.participantIds?.length || 0} משתתפים · סטטוס: ${status}
             </div>
           </div>
           <div class="user-actions">
@@ -686,11 +924,8 @@
     const snap = await getDoc(doc(db,'races',raceId));
     if (!snap.exists()) return;
     const data = snap.data();
-    const tags = data.tags || [];
-    const info = tags.map((t,i) =>
-      `${i+1}. קבוצה:${t.teamId} משתתף:${t.participantId} | ${t.firstMs}ms | ${t.rssi}dBm | ${(t.comments||[]).join(', ')}`
-    ).join('\n');
-    alert(`מירוץ ${raceId}\nמצב: ${data.mode==='laps'?'הקפות':'הגעה'}\nתגיות:\n${info}`);
+    const participants = Array.isArray(data.participantIds) ? data.participantIds.join(', ') : '—';
+    alert(`סבב ${raceId}\nצוות: ${data.team || '—'}\nתחנה: ${data.station || '—'}\nסבב: ${data.round || '—'}\nסטטוס: ${data.status || '—'}\nמשתתפים: ${participants}`);
   };
 
   // ═══════════════════════════════════════════════════════════
@@ -779,6 +1014,18 @@
   const deepClone = (o) => JSON.parse(JSON.stringify(o || {}));
   let stationTypesData = deepClone(window.DEFAULT_STATION_TYPES);
 
+  function ensureStationParameterIds() {
+    const known = window.TRAIT_IDS_BY_NAME || {};
+    Object.entries(stationTypesData).forEach(([stationTypeId, type]) => {
+      type.params = (Array.isArray(type.params) ? type.params : []).map((param, index) => ({
+        ...param,
+        id: param.id || known[param.name] ||
+          window.DEFAULT_STATION_TYPES?.[stationTypeId]?.params?.[index]?.id ||
+          `custom_${stationTypeId}_${index + 1}`
+      }));
+    });
+  }
+
   async function loadStationTypesData() {
     try {
       const snap = await getDoc(doc(db, 'settings', 'stationTypes'));
@@ -791,6 +1038,7 @@
         });
       }
     } catch (e) { /* נשארים עם ברירת המחדל */ }
+    ensureStationParameterIds();
   }
 
   function pad2(n) { return String(n).padStart(2, '0'); }
@@ -878,7 +1126,10 @@
     if (!d) return;
     d.params = d.params || [];
     if (d.params.length >= 2) { showToast('עד 2 פרמטרים לתחנה', 'error'); return; }
-    d.params.push({ name: 'פרמטר חדש', quickNotes: [] });
+    d.params.push({
+      id: `custom_${currentStType}_${Date.now().toString(36)}`,
+      name: 'פרמטר חדש', quickNotes: []
+    });
     renderStParams(); setStTypeStatus('שינויים לא שמורים');
   };
   window.addStQuick = (pi, val) => {
