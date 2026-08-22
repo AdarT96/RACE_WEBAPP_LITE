@@ -1,6 +1,6 @@
 // =====================================================
-//  Firebase Configuration — LOCAL (gitignored)
-//  Copied from firebase-config.example.js with real Firebase project values.
+//  Firebase Configuration — deployed client configuration
+//  Firebase web keys are public identifiers; authorization lives in Firestore rules.
 // =====================================================
 
 const FIREBASE_CONFIG = {
@@ -16,7 +16,7 @@ const FIREBASE_CONFIG = {
 //  App Settings
 // =====================================================
 const APP_CONFIG = {
-  appVersion: "lite-v0.8",
+  appVersion: "lite-v1.0",
 
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
   sheetsApiUrl: "https://script.google.com/macros/s/AKfycbybWGa13xWEoDp4S7NBkLdxPQT2llPmM74jkfREJ8dUJrSa-QOmYKrO8t9oPmPLtQ5TDg/exec",
