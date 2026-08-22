@@ -10,3 +10,9 @@ Thumbs.db
 # Editor local settings
 .vscode/
 .idea/
+
+# Local test tooling and Firebase Emulator output
+node_modules/
+firestore-debug.log
+firebase-debug.log
+ui-debug.log

@@ -52,7 +52,7 @@ service cloud.firestore {
       allow create: if isAdmin() ||
         (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
          request.resource.data.keys()
-           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags']) &&
+           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds']) &&
          request.resource.data.team is string && request.resource.data.station is string &&
          request.resource.data.status == 'running' &&
          request.resource.data.startedBy == request.auth.uid &&
@@ -60,6 +60,9 @@ service cloud.firestore {
          request.resource.data.round is int && request.resource.data.round > 0 &&
          (!request.resource.data.keys().hasAny(['participantIds']) ||
            request.resource.data.participantIds is list) &&
+         (!request.resource.data.keys().hasAny(['timeLimitSeconds']) ||
+           (request.resource.data.timeLimitSeconds is int &&
+            request.resource.data.timeLimitSeconds == 2400)) &&
          request.resource.data.tags is list && request.resource.data.tags.size() == 0);
 
       allow update: if isAdmin();
@@ -67,12 +70,14 @@ service cloud.firestore {
       // Commander: forward-only running -> stopped transition, without touching tags.
       allow update: if isApprovedRole('operator') && isOwnTeam(resource.data.team) &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'endedAt', 'endedBy']) &&
+          .hasOnly(['status', 'endedAt', 'endedBy', 'endedReason']) &&
         resource.data.status == 'running' &&
         request.resource.data.status == 'stopped' &&
         request.resource.data.endedAt == request.time &&
         request.resource.data.endedAt >= resource.data.startedAt &&
-        request.resource.data.endedBy == request.auth.uid;
+        request.resource.data.endedBy == request.auth.uid &&
+        (!request.resource.data.keys().hasAny(['endedReason']) ||
+          request.resource.data.endedReason in ['manual', 'time_limit']);
 
       // Evaluator: may work on current or historical evaluations, but cannot alter
       // team/station/round or any timing/lifecycle field.
@@ -150,6 +155,104 @@ service cloud.firestore {
       allow write: if signedIn() && caller().approved == true &&
         caller().role in ['operator', 'evaluator'] &&
         int(noteId.split('_')[0]) == int(caller().team);
+    }
+
+    // Operational issue reports contain only an allow-listed diagnostic context.
+    // Reporters may create a report but cannot read or alter reports afterward;
+    // administrators own triage and status updates.
+    match /issue_reports/{reportId} {
+      function validIssueContext() {
+        return request.resource.data.context is map &&
+          request.resource.data.context.keys().hasAll([
+            'team', 'station', 'stationType', 'stationName', 'viewedRaceId',
+            'latestRaceId', 'round', 'raceStatus', 'effectiveElapsedMs', 'historicalView'
+          ]) &&
+          request.resource.data.context.keys().hasOnly([
+            'team', 'station', 'stationType', 'stationName', 'viewedRaceId',
+            'latestRaceId', 'round', 'raceStatus', 'effectiveElapsedMs', 'historicalView'
+          ]) &&
+          request.resource.data.context.team is string &&
+          request.resource.data.context.team.size() <= 200 &&
+          request.resource.data.context.station is string &&
+          request.resource.data.context.station.size() <= 200 &&
+          request.resource.data.context.stationType is string &&
+          request.resource.data.context.stationType.size() <= 200 &&
+          request.resource.data.context.stationName is string &&
+          request.resource.data.context.stationName.size() <= 200 &&
+          request.resource.data.context.viewedRaceId is string &&
+          request.resource.data.context.viewedRaceId.size() <= 200 &&
+          request.resource.data.context.latestRaceId is string &&
+          request.resource.data.context.latestRaceId.size() <= 200 &&
+          request.resource.data.context.round is int &&
+          request.resource.data.context.round >= 0 &&
+          request.resource.data.context.raceStatus in ['not_started', 'running', 'stopped', 'time_limit'] &&
+          request.resource.data.context.effectiveElapsedMs is int &&
+          request.resource.data.context.effectiveElapsedMs >= 0 &&
+          request.resource.data.context.effectiveElapsedMs <= 2400000 &&
+          request.resource.data.context.historicalView is bool;
+      }
+
+      function validIssueEnvironment() {
+        return request.resource.data.environment is map &&
+          request.resource.data.environment.keys()
+            .hasAll(['appVersion', 'online', 'viewport', 'userAgent']) &&
+          request.resource.data.environment.keys()
+            .hasOnly(['appVersion', 'online', 'viewport', 'userAgent']) &&
+          request.resource.data.environment.appVersion is string &&
+          request.resource.data.environment.appVersion.size() <= 100 &&
+          request.resource.data.environment.online is bool &&
+          request.resource.data.environment.viewport is string &&
+          request.resource.data.environment.viewport.size() <= 50 &&
+          request.resource.data.environment.userAgent is string &&
+          request.resource.data.environment.userAgent.size() <= 500;
+      }
+
+      function validNewIssueReport() {
+        return request.resource.data.keys().hasAll([
+            'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
+            'category', 'description', 'steps', 'status', 'adminNote',
+            'context', 'environment', 'schemaVersion', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
+            'category', 'description', 'steps', 'status', 'adminNote',
+            'context', 'environment', 'schemaVersion', 'createdAt', 'updatedAt'
+          ]) &&
+          request.resource.data.reporterUid == request.auth.uid &&
+          request.resource.data.reporterName is string &&
+          request.resource.data.reporterName.size() <= 200 &&
+          request.resource.data.reporterRole == caller().role &&
+          request.resource.data.reporterRole in ['operator', 'evaluator', 'admin'] &&
+          request.resource.data.reporterTeam is int &&
+          request.resource.data.reporterTeam >= 1 && request.resource.data.reporterTeam <= 15 &&
+          (isAdmin() || request.resource.data.reporterTeam == int(caller().team)) &&
+          request.resource.data.category in ['timing', 'arrival_order', 'saving', 'display', 'other'] &&
+          request.resource.data.description is string &&
+          request.resource.data.description.size() > 0 &&
+          request.resource.data.description.size() <= 2000 &&
+          request.resource.data.steps is string && request.resource.data.steps.size() <= 2000 &&
+          request.resource.data.status == 'open' &&
+          request.resource.data.adminNote == '' &&
+          request.resource.data.schemaVersion == 1 &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.updatedAt == request.time &&
+          validIssueContext() && validIssueEnvironment();
+      }
+
+      allow create: if signedIn() &&
+        (isAdmin() || (caller().approved == true && caller().role in ['operator', 'evaluator'])) &&
+        validNewIssueReport();
+      allow read: if isAdmin();
+      allow update: if isAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'adminNote', 'updatedAt', 'handledAt', 'handledBy']) &&
+        request.resource.data.status in ['open', 'in_progress', 'resolved'] &&
+        request.resource.data.adminNote is string &&
+        request.resource.data.adminNote.size() <= 2000 &&
+        request.resource.data.updatedAt == request.time &&
+        request.resource.data.handledAt == request.time &&
+        request.resource.data.handledBy == request.auth.uid;
+      allow delete: if isAdmin();
     }
   }
 }
