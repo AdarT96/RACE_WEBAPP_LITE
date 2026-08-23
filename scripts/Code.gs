@@ -86,12 +86,17 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-b";
+var CODE_VERSION = "2026-08-23-c";
+
+// FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
+// להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
+// היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
+var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries"];
 
 function doGet(e) {
   return buildDataResponse_(true, "Gibush sync alive", {
     version: CODE_VERSION,
-    features: ["ensure_team_sheet", "audit_files"],
+    features: FEATURES,
     driveAccess: driveProbe_()
   });
 }
