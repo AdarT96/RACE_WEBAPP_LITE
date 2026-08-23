@@ -81,8 +81,29 @@ function doPost(e) {
   }
 }
 
+// פתיחת כתובת ה-exec בדפדפן מחזירה את הגרסה הפרוסה בפועל.
+// בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
+// שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
+// לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
+var CODE_VERSION = "2026-08-23-b";
+
 function doGet(e) {
-  return buildResponse(true, "Gibush sync alive — קובץ לצוות · טאב למועמד");
+  return buildDataResponse_(true, "Gibush sync alive", {
+    version: CODE_VERSION,
+    features: ["ensure_team_sheet", "audit_files"],
+    driveAccess: driveProbe_()
+  });
+}
+
+// בודקת אם לסקריפט באמת יש הרשאת Drive פעילה. זו החשודה המרכזית
+// בכפילויות: כשהיא חסרה, כל בדיקת קיום קובץ נכשלת.
+function driveProbe_() {
+  try {
+    DriveApp.getRootFolder().getName();
+    return "ok";
+  } catch (err) {
+    return "FAILED: " + err.message;
+  }
 }
 
 // ---------- זיהוי סוג התחנה ----------
