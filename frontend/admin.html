@@ -35,6 +35,25 @@
     .station-name-row .default-hint {
       font-size: 11px; color: var(--text-dim); min-width: 120px;
     }
+    .issue-report-card {
+      padding: 14px; margin-bottom: 12px; border: 1px solid var(--border);
+      border-inline-start: 4px solid var(--warning); border-radius: 10px; background: var(--surface);
+    }
+    .issue-report-card[data-status="resolved"] { border-inline-start-color: var(--success); opacity: .88; }
+    .issue-report-card[data-status="in_progress"] { border-inline-start-color: var(--info); }
+    .issue-report-head, .issue-report-actions {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    }
+    .issue-report-meta { margin-top: 4px; color: var(--text-muted); font-size: 12px; }
+    .issue-report-body { margin: 12px 0; white-space: pre-wrap; line-height: 1.5; }
+    .issue-report-context {
+      padding: 8px 10px; margin-bottom: 10px; border-radius: 8px;
+      background: var(--card); color: var(--text-muted); font-size: 12px;
+    }
+    .issue-report-technical { margin: 0 0 10px; color: var(--text-muted); font-size: 12px; }
+    .issue-report-technical summary { cursor: pointer; font-weight: 700; }
+    .issue-report-technical div { margin-top: 7px; line-height: 1.55; overflow-wrap: anywhere; }
+    .issue-report-actions textarea { flex: 1; min-width: 210px; min-height: 42px; resize: vertical; }
   </style>
 </head>
 <body>
@@ -60,6 +79,7 @@
     <div class="stat-card"><div class="stat-val" id="count-approved">—</div><div class="stat-lbl">מאושרים</div></div>
     <div class="stat-card"><div class="stat-val" id="count-total">—</div><div class="stat-lbl">סה"כ משתמשים</div></div>
     <div class="stat-card"><div class="stat-val" id="count-races">—</div><div class="stat-lbl">מרוצים</div></div>
+    <div class="stat-card"><div class="stat-val" id="count-issues-open">—</div><div class="stat-lbl">פתוחות ברשימה</div></div>
   </div>
 
   <!-- אישורים ממתינים -->
@@ -197,6 +217,20 @@
     </div>
   </div>
 
+  <!-- דיווחי תקלות -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>⚠️ דיווחי תקלות</h2>
+      <button class="btn btn-ghost" onclick="loadIssueReports()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+      מוצגים עד 100 הדיווחים האחרונים. ההקשר נאסף אוטומטית, ללא ציונים, הערות או מספרי משתתפים.
+    </p>
+    <div id="issue-reports-list">
+      <div class="empty-state"><div class="spinner"></div></div>
+    </div>
+  </div>
+
   <!-- היסטוריית מרוצים -->
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
@@ -239,11 +273,14 @@
 <script src="js/station-types.js"></script>
 
 <script type="module">
+  import {
+    isSessionExpired, isSessionEffectivelyRunning, effectiveSessionElapsedMs
+  } from "./js/session-policy.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     getFirestore, collection, getDocs, doc, getDoc,
-    updateDoc, deleteDoc, setDoc, serverTimestamp
+    updateDoc, deleteDoc, setDoc, serverTimestamp, query, orderBy, limit
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -264,6 +301,7 @@
     initStTypeEditor();
     loadUsers();
     loadRaces();
+    loadIssueReports();
     initTeamManagement();
     loadQuickTags();
   });
@@ -498,6 +536,119 @@
     } catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
 
+  // ═════════ Issue report triage ═════════
+  const ISSUE_CATEGORY_LABELS = {
+    timing: 'זמנים או סבב', arrival_order: 'סדר הגעה', saving: 'שמירה או סנכרון',
+    display: 'תצוגה או כפתורים', other: 'אחר'
+  };
+  const ISSUE_STATUS_LABELS = {
+    open: 'פתוח', in_progress: 'בטיפול', resolved: 'טופל'
+  };
+  const ISSUE_RACE_STATUS_LABELS = {
+    not_started: 'טרם התחיל', running: 'פעיל', stopped: 'עצור', time_limit: 'תקרת 40 דק׳'
+  };
+
+  function issueReportTime(value) {
+    const ms = typeof value?.toMillis === 'function' ? value.toMillis() : null;
+    return ms == null ? 'ממתין לשמירה' : new Date(ms).toLocaleString('he-IL');
+  }
+
+  window.loadIssueReports = async () => {
+    const container = document.getElementById('issue-reports-list');
+    try {
+      const reportsQuery = query(collection(db, 'issue_reports'), orderBy('createdAt', 'desc'), limit(100));
+      const snap = await getDocs(reportsQuery);
+      const reports = [];
+      snap.forEach(item => reports.push({ id: item.id, ...item.data() }));
+      document.getElementById('count-issues-open').textContent =
+        reports.filter(report => report.status !== 'resolved').length;
+      if (reports.length === 0) {
+        container.innerHTML = '<div class="empty-state"><div class="icon">✅</div>אין דיווחי תקלות.</div>';
+        return;
+      }
+      container.innerHTML = reports.map(report => {
+        const context = report.context || {};
+        const environment = report.environment || {};
+        const status = ISSUE_STATUS_LABELS[report.status] ? report.status : 'open';
+        const steps = report.steps ? `
+          <div style="font-size:12px; color:var(--text-muted); margin-bottom:3px">מה נעשה לפני התקלה:</div>
+          <div class="issue-report-body">${escHtml(report.steps)}</div>` : '';
+        return `
+          <article class="issue-report-card" data-issue-id="${escHtml(report.id)}" data-status="${status}">
+            <div class="issue-report-head">
+              <div>
+                <strong>${escHtml(ISSUE_CATEGORY_LABELS[report.category] || report.category || 'אחר')}</strong>
+                <div class="issue-report-meta">
+                  ${escHtml(report.reporterName || 'ללא שם')} · ${escHtml(roleLabel(report.reporterRole))} ·
+                  צוות ${Number(report.reporterTeam) || '—'} · UID ${escHtml(String(report.reporterUid || '').slice(0, 8))} ·
+                  ${escHtml(issueReportTime(report.createdAt))}
+                </div>
+              </div>
+              <span class="badge ${status === 'resolved' ? 'badge-success' : status === 'in_progress' ? 'badge-info' : 'badge-warning'}">
+                ${ISSUE_STATUS_LABELS[status]}
+              </span>
+            </div>
+            <div class="issue-report-body">${escHtml(report.description || '')}</div>
+            ${steps}
+            <div class="issue-report-context">
+              צוות ${escHtml(context.team || '—')} · תחנה ${escHtml(context.station || '—')}
+              ${context.stationName ? `(${escHtml(context.stationName)})` : ''} ·
+              סבב ${Number(context.round) || '—'} · מצב ${escHtml(ISSUE_RACE_STATUS_LABELS[context.raceStatus] || context.raceStatus || '—')} ·
+              ${context.historicalView ? 'תצוגה היסטורית' : 'הסבב האחרון'} ·
+              גרסה ${escHtml(environment.appVersion || '—')} · מסך ${escHtml(environment.viewport || '—')}
+            </div>
+            <details class="issue-report-technical">
+              <summary>פרטים טכניים</summary>
+              <div>
+                סבב מוצג: ${escHtml(context.viewedRaceId || '—')}<br>
+                סבב אחרון: ${escHtml(context.latestRaceId || '—')}<br>
+                זמן אפקטיבי: ${Math.round(Number(context.effectiveElapsedMs) || 0) / 1000} שנ׳ ·
+                חיבור: ${environment.online ? 'מקוון' : 'לא מקוון'}<br>
+                דפדפן: ${escHtml(environment.userAgent || '—')}
+              </div>
+            </details>
+            <div class="issue-report-actions">
+              <select class="role-sel issue-status-select" aria-label="סטטוס דיווח">
+                ${Object.entries(ISSUE_STATUS_LABELS).map(([value, label]) =>
+                  `<option value="${value}" ${status === value ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+              <textarea class="form-input issue-admin-note" maxlength="2000"
+                        placeholder="הערת מנהל פנימית…">${escHtml(report.adminNote || '')}</textarea>
+              <button class="btn btn-success issue-save-button" onclick="saveIssueReport(this.closest('[data-issue-id]'))"
+                      style="padding:8px 14px">שמור טיפול</button>
+            </div>
+          </article>`;
+      }).join('');
+    } catch (error) {
+      document.getElementById('count-issues-open').textContent = '—';
+      container.innerHTML = `<div class="alert alert-danger">שגיאה בטעינת דיווחים: ${escHtml(error.message)}</div>`;
+    }
+  };
+
+  window.saveIssueReport = async card => {
+    const reportId = card?.dataset?.issueId;
+    const status = card?.querySelector('.issue-status-select')?.value;
+    const adminNote = String(card?.querySelector('.issue-admin-note')?.value || '').trim();
+    if (!reportId || !ISSUE_STATUS_LABELS[status]) return;
+    if (adminNote.length > 2000) { showToast('הערת המנהל ארוכה מדי', 'error'); return; }
+    const button = card.querySelector('.issue-save-button');
+    button.disabled = true;
+    try {
+      await updateDoc(doc(db, 'issue_reports', reportId), {
+        status,
+        adminNote,
+        updatedAt: serverTimestamp(),
+        handledAt: serverTimestamp(),
+        handledBy: currentAdmin.uid
+      });
+      showToast('הטיפול בדיווח נשמר ✓', 'success');
+      await loadIssueReports();
+    } catch (error) {
+      showToast('שגיאה בשמירת הטיפול: ' + error.message, 'error');
+      button.disabled = false;
+    }
+  };
+
   window.loadRaces = async () => {
     try {
       const snap = await getDocs(collection(db, 'races'));
@@ -508,20 +659,26 @@
       if (races.length === 0) {
         container.innerHTML = '<div class="empty-state"><div class="icon">🏁</div>לא נרשמו מרוצים עדיין.</div>'; return;
       }
-      container.innerHTML = races.sort((a,b)=>(b.round||0)-(a.round||0)).map(r => `
+      container.innerHTML = races.sort((a,b)=>(b.round||0)-(a.round||0)).map(r => {
+        const nowMs = Date.now();
+        const status = isSessionExpired(r, nowMs) ? 'תקרת 40 דק׳' :
+          isSessionEffectivelyRunning(r, nowMs) ? 'פעיל' : 'עצור';
+        const elapsedMs = effectiveSessionElapsedMs(r, nowMs);
+        return `
         <div class="user-row">
           <div class="user-info">
             <div class="user-name">סבב #${r.round} — ${r.mode==='laps'?'הקפות':'הגעה'}</div>
             <div class="user-email">
-              ${r.tags?.length||0} תגיות · סטטוס: ${r.status==='running'?'פעיל':'עצור'}
-              ${r.durationMs ? ' · ' + Math.round(r.durationMs/1000) + ' שניות' : ''}
+              ${r.tags?.length||0} תגיות · סטטוס: ${status}
+              ${elapsedMs != null ? ' · ' + Math.round(elapsedMs/1000) + ' שניות' : ''}
             </div>
           </div>
           <div class="user-actions">
             <button class="btn btn-info" onclick="viewRaceDetail('${r.id}')" style="padding:6px 12px; font-size:13px">פרטים</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
     } catch(e) { showToast('שגיאה בטעינת מרוצים: '+e.message,'error'); }
   };
 

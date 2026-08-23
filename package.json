@@ -1,0 +1,18 @@
+{
+  "name": "race-webapp-lite",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "test:unit": "node --test tests/*.unit.test.js",
+    "test:rules": "firebase emulators:exec --only firestore --project demo-race-webapp-lite \"node --test tests/firestore.rules.test.js\"",
+    "test": "npm run test:unit && npm run test:rules"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "3.0.4",
+    "firebase": "10.14.1",
+    "firebase-tools": "13.35.1"
+  }
+}

@@ -5,7 +5,7 @@
 //  2. Fill in the values from Firebase Console:
 //     https://console.firebase.google.com → Project Settings
 //     → Your apps → Web app → SDK setup and configuration
-//  3. `firebase-config.js` is gitignored — never commit real credentials.
+//  3. Firebase web keys may be committed; never put server secrets in this file.
 // =====================================================
 
 const FIREBASE_CONFIG = {
@@ -22,7 +22,7 @@ const FIREBASE_CONFIG = {
 // =====================================================
 const APP_CONFIG = {
   // גרסת לקוח לתצוגה במסך התחברות (לעדכן בכל שינוי משמעותי)
-  appVersion: "lite-v0.8",
+  appVersion: "lite-v1.0",
 
   // Google Apps Script endpoint (deploy as web app, paste URL here)
   // גרסת LITE משתמשת באותו Sheet וב-Apps Script — שדות שאינם רלוונטיים נשלחים ריקים.
@@ -34,7 +34,7 @@ const APP_CONFIG = {
 
   // תחנות המערכת — חייב להתאים ל-STATION_COUNT ו-STATION_NAMES ב-scripts/Code.gs.
   // הערכים כאן הם ברירת מחדל בלבד — המנהל יכול לדרוס אותם לכל צוות בפאנל המנהל.
-  stationCount: 8,
+  stationCount: 17,
   defaultStationNames: {
     "01": "מילוי שק",
     "02": "ספרינטים",

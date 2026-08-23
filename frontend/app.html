@@ -422,6 +422,42 @@
     #chart-canvas-wrap { position: relative; height: 320px; margin-top: 10px; }
     .chart-empty { text-align: center; color: var(--text-muted); padding: 40px; }
 
+    /* ── App menu + issue report ───────────────────────── */
+    .app-menu-wrap { position: relative; }
+    .app-menu-button {
+      width: 40px; height: 40px; padding: 0; border-radius: 10px;
+      font-size: 22px; line-height: 1;
+    }
+    .app-menu {
+      position: absolute; top: calc(100% + 8px); left: 0; z-index: 300;
+      min-width: 210px; padding: 7px; border: 1px solid var(--border);
+      border-radius: 12px; background: var(--card); box-shadow: var(--shadow);
+    }
+    .app-menu[hidden] { display: none; }
+    .app-menu-item {
+      display: flex; width: 100%; align-items: center; gap: 9px;
+      padding: 10px 11px; border: 0; border-radius: 8px;
+      background: transparent; color: var(--text); font: inherit;
+      text-align: right; text-decoration: none; cursor: pointer;
+    }
+    .app-menu-item:hover, .app-menu-item:focus-visible { background: var(--surface); outline: none; }
+    .issue-form { display: grid; gap: 14px; }
+    .issue-form label { display: grid; gap: 6px; font-size: 13px; font-weight: 700; }
+    .issue-form textarea { min-height: 92px; resize: vertical; font-family: inherit; }
+    .issue-context {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px;
+      background: var(--surface); color: var(--text-muted); font-size: 12px; line-height: 1.55;
+    }
+    .issue-actions { display: flex; align-items: center; justify-content: flex-end; gap: 9px; flex-wrap: wrap; }
+    #issue-report-status { flex: 1; min-width: 160px; color: var(--text-muted); font-size: 12px; }
+    @media (max-width: 600px) {
+      .navbar-brand span:not(.logo) { font-size: 14px; }
+      .navbar-actions { gap: 6px; }
+      .conn-indicator span { display: none; }
+      #issue-report-modal { padding: 10px; }
+      #issue-report-modal .modal-box { padding: 18px; }
+    }
+
     /* ── Comments popover ──────────────────────────────── */
     .modal-body-mid { padding: 16px 20px; }
     .modal-body-mid .tag-pill {
@@ -537,10 +573,16 @@
       <span id="conn-label">מתחבר…</span>
     </div>
     <div class="badge badge-info" id="user-role-badge"></div>
-    <button class="btn btn-ghost" id="outdoor-btn" onclick="toggleOutdoorMode()"
-            style="padding:6px 12px; font-size:13px" title="מצב חוץ — ניגודיות גבוהה">☀️</button>
-    <button class="btn btn-ghost" onclick="logout()"
-            style="padding:6px 12px; font-size:13px">התנתק</button>
+    <div class="app-menu-wrap" id="app-menu-wrap">
+      <button type="button" class="btn btn-ghost app-menu-button" id="app-menu-button"
+              onclick="toggleAppMenu()" aria-haspopup="menu" aria-expanded="false"
+              aria-controls="app-menu" aria-label="פתח תפריט">☰</button>
+      <div class="app-menu" id="app-menu" role="menu" hidden>
+        <button type="button" class="app-menu-item" role="menuitem" onclick="openIssueReport()">⚠️ דיווח תקלה</button>
+        <button type="button" class="app-menu-item" role="menuitem" id="outdoor-btn" onclick="toggleOutdoorMode(); closeAppMenu()">☀️ מצב חוץ</button>
+        <button type="button" class="app-menu-item" role="menuitem" onclick="logout()">↪ התנתק</button>
+      </div>
+    </div>
   </div>
 </nav>
 
@@ -612,7 +654,7 @@
   <!-- ══════════ IDLE panel ══════════ -->
   <div id="idle-panel" class="section idle-panel" style="display:none">
     <div id="idle-warn" class="warn" style="display:none; margin-bottom:20px"></div>
-    <button id="start-btn" class="btn btn-success btn-huge" onclick="startSession()">▶ התחל סבב 1</button>
+    <button id="start-btn" class="btn btn-success btn-huge session-control-only" onclick="startSession()" hidden>▶ התחל סבב 1</button>
     <div class="hint" id="idle-hint"></div>
   </div>
 
@@ -704,10 +746,10 @@
 
     <!-- Actions -->
     <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
-      <button id="end-btn" class="btn btn-danger btn-xl session-control-only" onclick="endSession()" style="display:none">
+      <button id="end-btn" class="btn btn-danger btn-xl session-control-only" onclick="endSession()" hidden>
         ⏹ עצור סבב
       </button>
-      <button id="new-round-btn" class="btn btn-success btn-xl session-control-only" onclick="startSession()" style="display:none">
+      <button id="new-round-btn" class="btn btn-success btn-xl session-control-only" onclick="startSession()" hidden>
         ▶ סבב חדש
       </button>
       <button class="btn btn-info evaluator-only" onclick="openCompareChart()" style="padding:12px 20px"
@@ -790,6 +832,51 @@
   </div>
 </div>
 
+<!-- ══════════ Issue report modal ══════════ -->
+<div class="modal-overlay" id="issue-report-modal" role="dialog" aria-modal="true"
+     aria-labelledby="issue-report-title" onclick="if(event.target===this) closeIssueReport()" hidden>
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 id="issue-report-title">⚠️ דיווח תקלה</h3>
+      <button type="button" class="modal-close" onclick="closeIssueReport()" aria-label="סגור">✕</button>
+    </div>
+    <form class="issue-form" id="issue-report-form" onsubmit="submitIssueReport(event)">
+      <label>
+        סוג התקלה
+        <select id="issue-category" class="form-input" onchange="saveIssueReportDraft()">
+          <option value="timing">זמנים או סבב</option>
+          <option value="arrival_order">סדר הגעה</option>
+          <option value="saving">שמירה או סנכרון</option>
+          <option value="display">תצוגה או כפתורים</option>
+          <option value="other">אחר</option>
+        </select>
+      </label>
+      <label>
+        מה קרה? <span style="color:var(--danger)">*</span>
+        <textarea id="issue-description" class="form-input" maxlength="2000" required
+                  placeholder="תאר בקצרה מה ציפית שיקרה ומה קרה בפועל"
+                  oninput="saveIssueReportDraft()"></textarea>
+      </label>
+      <label>
+        מה עשית לפני התקלה? <span style="color:var(--text-muted); font-weight:400">(לא חובה)</span>
+        <textarea id="issue-steps" class="form-input" maxlength="2000"
+                  placeholder="למשל: עברתי לסבב 2 ולחצתי על משתתף 108"
+                  oninput="saveIssueReportDraft()"></textarea>
+      </label>
+      <div class="issue-context">
+        <strong>יצורף אוטומטית:</strong>
+        <span id="issue-context-summary"></span><br>
+        לא מצורפים ציונים, הערות, מספרי משתתפים או תוכן אחר מהמסך.
+      </div>
+      <div class="issue-actions">
+        <span id="issue-report-status" aria-live="polite"></span>
+        <button type="button" class="btn btn-ghost" onclick="closeIssueReport()">ביטול</button>
+        <button type="submit" class="btn btn-primary" id="issue-submit-btn">שלח דיווח</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="toast-container"></div>
 
 <!-- Config first, then module -->
@@ -797,6 +884,17 @@
 <script src="js/station-types.js"></script>
 
 <script type="module">
+  import {
+    DEFAULT_SESSION_LIMIT_SECONDS,
+    timestampToMs as tsToMs,
+    sessionLimitMs,
+    isSessionExpired,
+    isSessionEffectivelyRunning,
+    effectiveSessionElapsedMs,
+    measuredElapsedMs,
+    canRoleControlSession
+  } from "./js/session-policy.js";
+  import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
@@ -827,16 +925,16 @@
   let evaluatorArrivalUnsubscribe = null;
   let controlActionInProgress = false;
   let timerInterval = null;
+  let observedLatestRaceId = null;
+  let observedLatestWasRunning = false;
+  let expiryFinalizationPromise = null;
+  let issueReportSubmitting = false;
+  let issueReportPreviousFocus = null;
   let quickTags = [];              // תיוגים משותפים מ-settings/commentTags
   let quickTagsUnsub = null;
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
   let arrivalDragState = null;     // גרירה פעילה ברשימת סדר ההגעה
   let arrivalOrderSaving = false;  // מונע שתי שמירות סדר מקבילות מאותו מסך
-
-  // Arrival timing is secondary to the order itself. Marks received during the
-  // first 30 minutes get a comparable time; later corrections keep their place
-  // but deliberately have no measured time.
-  const ARRIVAL_TIME_LIMIT_MS = 30 * 60 * 1000;
 
   // ספירת חזרות: תצוגה מקומית + תור הפרשים לכל סבב, כדי לא לדרוס מעריך אחר
   let localReps    = {};
@@ -871,16 +969,8 @@
 
   function isOperator() { return currentUser?.role === 'operator'; }
   function isEvaluator() { return currentUser?.role === 'evaluator'; }
-  function canControlSession() { return isOperator() || isAdmin(); }
+  function canControlSession() { return canRoleControlSession(currentUser?.role); }
   function canEvaluate() { return isEvaluator() || isAdmin(); }
-
-  function tsToMs(ts) {
-    // Firestore Timestamp → ms; fallback for plain numbers or nullish
-    if (!ts) return null;
-    if (typeof ts.toMillis === 'function') return ts.toMillis();
-    if (typeof ts === 'number') return ts;
-    return null;
-  }
 
   function formatMMSS(ms) {
     // MM:SS.cc (hundredths) — או H:MM:SS.cc אם עברה שעה
@@ -1056,11 +1146,7 @@
   }
 
   function arrivalElapsedMs(race, markedAt) {
-    const startMs = tsToMs(race?.startedAt);
-    const markedMs = tsToMs(markedAt);
-    if (startMs == null || markedMs == null) return null;
-    const elapsed = markedMs - startMs;
-    return elapsed >= 0 && elapsed <= ARRIVAL_TIME_LIMIT_MS ? elapsed : null;
+    return measuredElapsedMs(race, markedAt);
   }
 
   function arrivalTimeDisplay(race, markedAt) {
@@ -1124,6 +1210,174 @@
     localStorage.setItem('outdoorMode', on ? '1' : '0');
     showToast(on ? '☀️ מצב חוץ פעיל' : '🌙 מצב רגיל', 'info');
   };
+
+  // ═════════ App menu + issue reports ═════════
+  const ISSUE_REPORT_DRAFT_KEY = 'lite:issueReportDraft';
+
+  window.toggleAppMenu = () => {
+    const menu = document.getElementById('app-menu');
+    const button = document.getElementById('app-menu-button');
+    const open = menu.hidden;
+    menu.hidden = !open;
+    button.setAttribute('aria-expanded', String(open));
+    if (open) menu.querySelector('[role="menuitem"]')?.focus();
+  };
+
+  window.closeAppMenu = () => {
+    const menu = document.getElementById('app-menu');
+    const button = document.getElementById('app-menu-button');
+    if (!menu || menu.hidden) return;
+    menu.hidden = true;
+    button?.setAttribute('aria-expanded', 'false');
+  };
+
+  function readIssueReportDraft() {
+    try {
+      const draft = JSON.parse(localStorage.getItem(ISSUE_REPORT_DRAFT_KEY) || '{}');
+      return draft && typeof draft === 'object' ? draft : {};
+    } catch (error) {
+      return {};
+    }
+  }
+
+  function currentIssueContext(nowMs = Date.now()) {
+    const race = currentRace || latestRace;
+    const stationType = currentStationType();
+    const expired = isSessionExpired(race, nowMs);
+    const raceStatus = !race ? 'not_started' : expired ? 'time_limit' :
+      isSessionEffectivelyRunning(race, nowMs) ? 'running' : 'stopped';
+    return {
+      team: selectedTeam || '',
+      station: selectedStation || '',
+      stationType: stationType?.id || '',
+      stationName: selectedStation ? stationDisplayName(selectedStation, teamsCache[selectedTeam] || {}) : '',
+      viewedRaceId: currentRace?.id || '',
+      latestRaceId: latestRace?.id || '',
+      round: Number(race?.round || 0),
+      raceStatus,
+      effectiveElapsedMs: effectiveSessionElapsedMs(race, nowMs) || 0,
+      historicalView: Boolean(currentRace && latestRace && currentRace.id !== latestRace.id)
+    };
+  }
+
+  function issueContextSummary(context) {
+    return [
+      `צוות ${context.team ? Number(context.team) : '—'}`,
+      context.stationName ? `תחנה ${context.station}: ${context.stationName}` : 'תחנה —',
+      context.round ? `סבב ${context.round}` : 'ללא סבב',
+      `גרסה ${APP_CONFIG.appVersion || 'לא ידועה'}`
+    ].join(' · ');
+  }
+
+  function issueReportDraftFromForm() {
+    return {
+      category: document.getElementById('issue-category')?.value || 'other',
+      description: document.getElementById('issue-description')?.value || '',
+      steps: document.getElementById('issue-steps')?.value || ''
+    };
+  }
+
+  window.saveIssueReportDraft = () => {
+    try {
+      localStorage.setItem(ISSUE_REPORT_DRAFT_KEY, JSON.stringify(issueReportDraftFromForm()));
+      return true;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  window.openIssueReport = () => {
+    issueReportPreviousFocus = document.getElementById('app-menu-button');
+    closeAppMenu();
+    const draft = readIssueReportDraft();
+    const modal = document.getElementById('issue-report-modal');
+    const category = document.getElementById('issue-category');
+    category.value = ISSUE_REPORT_CATEGORIES.includes(draft.category)
+      ? draft.category : 'other';
+    document.getElementById('issue-description').value = String(draft.description || '').slice(0, 2000);
+    document.getElementById('issue-steps').value = String(draft.steps || '').slice(0, 2000);
+    setText('issue-context-summary', issueContextSummary(currentIssueContext()));
+    setText('issue-report-status', navigator.onLine ? '' : 'אין חיבור כרגע. הטיוטה תישמר במכשיר.');
+    modal.hidden = false;
+    modal.classList.add('open');
+    setTimeout(() => document.getElementById('issue-description')?.focus(), 0);
+  };
+
+  window.closeIssueReport = () => {
+    if (issueReportSubmitting) return;
+    const modal = document.getElementById('issue-report-modal');
+    if (!modal.classList.contains('open')) return;
+    saveIssueReportDraft();
+    modal.classList.remove('open');
+    modal.hidden = true;
+    issueReportPreviousFocus?.focus?.();
+    issueReportPreviousFocus = null;
+  };
+
+  window.submitIssueReport = async (event) => {
+    event.preventDefault();
+    if (issueReportSubmitting) return;
+    const draft = issueReportDraftFromForm();
+    const draftSaved = saveIssueReportDraft();
+    if (!navigator.onLine) {
+      setText('issue-report-status', draftSaved
+        ? 'אין חיבור. הטיוטה נשמרה ותוכל לשלוח אותה כשהחיבור יחזור.'
+        : 'אין חיבור ולא ניתן לשמור טיוטה במכשיר הזה. אל תסגור את החלון.');
+      return;
+    }
+
+    const team = Number(currentUser?.team || selectedTeam);
+    const submitButton = document.getElementById('issue-submit-btn');
+    try {
+      const data = buildIssueReportData({
+        draft,
+        reporter: { ...currentUser, team },
+        context: currentIssueContext(),
+        environment: {
+          appVersion: APP_CONFIG.appVersion || '',
+          online: navigator.onLine,
+          viewport: `${window.innerWidth}x${window.innerHeight}`,
+          userAgent: navigator.userAgent || ''
+        }
+      });
+      issueReportSubmitting = true;
+      submitButton.disabled = true;
+      setText('issue-report-status', 'שולח…');
+      const reportRef = doc(collection(db, 'issue_reports'));
+      await setDoc(reportRef, {
+        ...data,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      try { localStorage.removeItem(ISSUE_REPORT_DRAFT_KEY); } catch (error) {}
+      document.getElementById('issue-report-form').reset();
+      const modal = document.getElementById('issue-report-modal');
+      modal.classList.remove('open');
+      modal.hidden = true;
+      showToast('הדיווח נשלח למנהל ✓', 'success');
+      issueReportPreviousFocus?.focus?.();
+      issueReportPreviousFocus = null;
+    } catch (error) {
+      setText('issue-report-status', error.message || 'שליחת הדיווח נכשלה');
+    } finally {
+      issueReportSubmitting = false;
+      submitButton.disabled = false;
+    }
+  };
+
+  document.addEventListener('click', event => {
+    const wrap = document.getElementById('app-menu-wrap');
+    if (wrap && !wrap.contains(event.target)) closeAppMenu();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    if (document.getElementById('issue-report-modal')?.classList.contains('open')) {
+      closeIssueReport();
+    } else if (!document.getElementById('app-menu')?.hidden) {
+      closeAppMenu();
+      document.getElementById('app-menu-button')?.focus();
+    }
+  });
 
   // ═════════ Auth ═════════
   onAuthStateChanged(auth, async (user) => {
@@ -1223,7 +1477,25 @@
 
   function applyRoleVisibility() {
     document.querySelectorAll('.evaluator-only').forEach(el => { el.hidden = !canEvaluate(); });
-    document.querySelectorAll('.session-control-only').forEach(el => { el.hidden = !canControlSession(); });
+  }
+
+  function hideAllSessionControls() {
+    document.querySelectorAll('.session-control-only').forEach(button => { button.hidden = true; });
+  }
+
+  function renderRaceSessionControls(nowMs = Date.now()) {
+    hideAllSessionControls();
+    if (!canControlSession() || !currentRace || currentRace.id !== latestRace?.id) return;
+
+    const running = isSessionEffectivelyRunning(currentRace, nowMs);
+    const endBtn = document.getElementById('end-btn');
+    const newRoundBtn = document.getElementById('new-round-btn');
+    if (running) {
+      endBtn.hidden = false;
+      return;
+    }
+    newRoundBtn.hidden = false;
+    newRoundBtn.textContent = '▶ התחל סבב ' + ((Number(currentRace.round) || 1) + 1);
   }
 
   function collapsibleStorageKey(id) { return `lite:section:${id}`; }
@@ -1281,7 +1553,7 @@
     document.getElementById('idle-panel').style.display = '';
     document.getElementById('idle-warn').style.display = '';
     document.getElementById('idle-warn').textContent = '⚠️ ' + msg;
-    document.getElementById('start-btn').style.display = 'none';
+    hideAllSessionControls();
     document.getElementById('race-panel').style.display = 'none';
     document.getElementById('sticky-status').classList.remove('visible');
   }
@@ -1289,7 +1561,7 @@
   function renderIdlePlaceholder(hint) {
     document.getElementById('idle-panel').style.display = '';
     document.getElementById('idle-warn').style.display = 'none';
-    document.getElementById('start-btn').style.display = 'none';
+    hideAllSessionControls();
     document.getElementById('race-panel').style.display = 'none';
     setText('idle-hint', hint || '');
     document.getElementById('sticky-status').classList.toggle('visible', Boolean(selectedTeam && selectedStation));
@@ -1513,12 +1785,15 @@
       return;
     }
 
+    const nowMs = Date.now();
     tabs.innerHTML = racesForContext.map(race => {
       const selected = race.id === currentRaceId;
-      const running = race.status === 'running';
-      const duration = tsToMs(race.endedAt) && tsToMs(race.startedAt)
-        ? formatMMSS(tsToMs(race.endedAt) - tsToMs(race.startedAt)) : '';
-      const state = running ? '● פעיל' : (duration || 'הסתיים');
+      const running = isSessionEffectivelyRunning(race, nowMs);
+      const elapsedMs = effectiveSessionElapsedMs(race, nowMs);
+      const duration = elapsedMs == null ? '' : formatMMSS(elapsedMs);
+      const state = running
+        ? '● פעיל'
+        : (isSessionExpired(race, nowMs) ? `⏱ תקרת ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דק׳` : (duration || 'הסתיים'));
       return `<button class="round-tab ${selected ? 'selected' : ''} ${running ? 'running' : ''}"
                       role="tab" aria-selected="${selected}" tabindex="${selected ? '0' : '-1'}"
                       data-race-id="${escHtml(race.id)}"
@@ -1617,6 +1892,7 @@
 
   function renderRace() {
     if (!currentRace) return;
+    const nowMs = Date.now();
     applyRoleVisibility();
     renderRoundNavigation();
     const teamData = teamsCache[selectedTeam] || {};
@@ -1636,7 +1912,11 @@
     // Station overview + status
     renderStationOverview(st, teamData);
     setText('hdr-round', '#' + (currentRace.round || 1));
-    const statusLabel = currentRace.status === 'running' ? '🟢 פעיל' : '🔴 עצור';
+    const effectivelyRunning = isSessionEffectivelyRunning(currentRace, nowMs);
+    const expiredByLimit = isSessionExpired(currentRace, nowMs);
+    const statusLabel = effectivelyRunning
+      ? '🟢 פעיל'
+      : (expiredByLimit ? `⏱ תקרת ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דק׳` : '🔴 עצור');
     setText('hdr-status', statusLabel);
     renderStickyRound(currentRace.round || 1, statusLabel);
     setText('hdr-progress',
@@ -1654,7 +1934,7 @@
     const gridEmpty = document.getElementById('grid-empty');
     const gridTitle = document.getElementById('grid-title');
     sizeParticipantGrid(grid, participants.length);
-    const isLiveViewedRound = currentRace.id === latestRace?.id && currentRace.status === 'running';
+    const isLiveViewedRound = currentRace.id === latestRace?.id && effectivelyRunning;
     if (canEvaluate() && isLiveViewedRound && usesTapCounter(st)) {
       // ספירת חזרות: הקשה על משתתף מוסיפה 1, והמונה מוצג על הכפתור
       setText('grid-kicker', 'פעולה בזמן אמת');
@@ -1673,20 +1953,18 @@
       gridEmpty.style.display = allSorted.length === 0 ? '' : 'none';
       document.getElementById('grid-section').style.display = '';
     } else if (canEvaluate() && supportsRoundTabs() && measure === 'place') {
-      setText('grid-kicker', currentRace.status === 'running' ? 'סימון בזמן אמת' : 'השלמה ותיקון');
-      gridTitle.textContent = currentRace.status === 'running'
+      setText('grid-kicker', effectivelyRunning ? 'סימון בזמן אמת' : 'השלמה ותיקון');
+      gridTitle.textContent = effectivelyRunning
         ? '👥 משתתפים למירוץ'
         : '👥 השלמת סדר ההגעה';
-      const withinTimedWindow = (() => {
-        const startMs = tsToMs(currentRace.startedAt);
-        return startMs != null && Date.now() - startMs <= ARRIVAL_TIME_LIMIT_MS;
-      })();
-      setText('grid-instruction', currentRace.status === 'running'
+      const startMs = tsToMs(currentRace.startedAt);
+      const withinTimedWindow = startMs != null && nowMs - startMs <= sessionLimitMs(currentRace);
+      setText('grid-instruction', effectivelyRunning
         ? (withinTimedWindow
           ? 'לחץ על מספר המשתתף ברגע ההגעה. הסדר נשמר מיד ברשימה האישית שלך.'
-          : 'חלפו 30 דקות. ניתן להמשיך לסמן סדר הגעה, אך סימונים חדשים יישמרו ללא זמן.')
+          : `חלפו ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דקות. ניתן להמשיך לסמן סדר הגעה, אך סימונים חדשים יישמרו ללא זמן.`)
         : (withinTimedWindow
-          ? 'הסבב נעצר, אך ניתן להמשיך לסמן. זמן נשמר עד 30 דקות מתחילת הסבב.'
+          ? `הסבב נעצר, אך ניתן להמשיך לסמן. זמן נשמר עד ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דקות מתחילת הסבב.`
           : 'ניתן להשלים ולתקן את הסדר. סימונים חדשים יישמרו ללא זמן.'));
       // כל המספרים נשארים בגריד בסדר קבוע. משתתף שסומן מוסתר בתוך התא שלו,
       // כך שלחיצה לעולם אינה מזיזה את שאר הכפתורים.
@@ -1733,54 +2011,80 @@
     // Station notes picker (all team participants)
     if (canEvaluate()) renderStationNotesSection();
 
-    // Buttons
-    const endBtn = document.getElementById('end-btn');
-    const newRoundBtn = document.getElementById('new-round-btn');
-    if (currentRace.status === 'running') {
-      endBtn.style.display = canControlSession() ? '' : 'none';
-      newRoundBtn.style.display = 'none';
-    } else {
-      endBtn.style.display = 'none';
-      newRoundBtn.style.display = canControlSession() && currentRace.id === latestRace?.id ? '' : 'none';
-      newRoundBtn.textContent = '▶ התחל סבב ' + ((currentRace.round || 1) + 1);
-    }
+    renderRaceSessionControls(nowMs);
 
-    const liveRoundNeedsTimer = latestRace?.status === 'running' && latestRace.id !== currentRace.id;
-    if (currentRace.status === 'running' || liveRoundNeedsTimer) startSessionTimer();
+    const liveRoundNeedsTimer = isSessionEffectivelyRunning(latestRace, nowMs) && latestRace.id !== currentRace.id;
+    if (effectivelyRunning || liveRoundNeedsTimer) startSessionTimer();
     else { stopSessionTimer(); updateSessionTimerDisplay(); }
   }
 
   function startSessionTimer() {
     stopSessionTimer();
+    observedLatestRaceId = latestRace?.id || null;
+    observedLatestWasRunning = isSessionEffectivelyRunning(latestRace);
     updateSessionTimerDisplay();
-    // ~50ms כדי שיהיה חלק ומאיות מתעדכנות בעין
-    timerInterval = setInterval(updateSessionTimerDisplay, 50);
+    if (isSessionEffectivelyRunning(currentRace) || isSessionEffectivelyRunning(latestRace)) {
+      // ~50ms כדי שיהיה חלק ומאיות מתעדכנות בעין
+      timerInterval = setInterval(updateSessionTimerDisplay, 50);
+    }
   }
   function stopSessionTimer() {
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
   }
   function updateSessionTimerDisplay() {
     if (!currentRace) { setText('hdr-time', '00:00.00'); setText('sticky-time', '00:00.00'); return; }
-    const startMs = tsToMs(currentRace.startedAt);
-    if (!startMs) { setText('hdr-time', '00:00.00'); setText('sticky-time', '00:00.00'); return; }
-    const nowMs = currentRace.status === 'running'
-      ? Date.now()
-      : (tsToMs(currentRace.endedAt) || Date.now());
-    const elapsed = formatMMSS(nowMs - startMs);
+    const nowMs = Date.now();
+    const elapsedMs = effectiveSessionElapsedMs(currentRace, nowMs);
+    const elapsed = elapsedMs == null ? '00:00.00' : formatMMSS(elapsedMs);
     setText('hdr-time', elapsed);
     setText('sticky-time', elapsed);
-    renderLiveRoundBanner();
+    renderLiveRoundBanner(nowMs);
+
+    const latestRunning = isSessionEffectivelyRunning(latestRace, nowMs);
+    const crossedLimit = observedLatestRaceId === latestRace?.id &&
+      observedLatestWasRunning && !latestRunning && isSessionExpired(latestRace, nowMs);
+    observedLatestRaceId = latestRace?.id || null;
+    observedLatestWasRunning = latestRunning;
+
+    if (isSessionExpired(latestRace, nowMs)) {
+      stopSessionTimer();
+      queueExpiredSessionFinalization(latestRace);
+      if (crossedLimit) renderRace();
+    }
   }
 
-  function renderLiveRoundBanner() {
+  function renderLiveRoundBanner(nowMs = Date.now()) {
     const banner = document.getElementById('live-round-banner');
-    const show = canEvaluate() && supportsRoundTabs() && latestRace?.status === 'running' &&
+    const show = canEvaluate() && supportsRoundTabs() && isSessionEffectivelyRunning(latestRace, nowMs) &&
       currentRaceId && currentRaceId !== latestRace.id;
     banner.style.display = show ? '' : 'none';
     if (!show) return;
     setText('live-round-label', `סבב ${latestRace.round} פעיל`);
-    const startMs = tsToMs(latestRace.startedAt);
-    setText('live-round-time', startMs ? formatMMSS(Date.now() - startMs) : '00:00.00');
+    const elapsedMs = effectiveSessionElapsedMs(latestRace, nowMs);
+    setText('live-round-time', elapsedMs == null ? '00:00.00' : formatMMSS(elapsedMs));
+  }
+
+  function queueExpiredSessionFinalization(race) {
+    if (!canControlSession() || !race?.id || race.status !== 'running' || expiryFinalizationPromise) return;
+    expiryFinalizationPromise = finalizeExpiredSession(race)
+      .catch(error => showToast('לא ניתן היה לסגור את הסבב שפג: ' + error.message, 'error'))
+      .finally(() => { expiryFinalizationPromise = null; });
+  }
+
+  async function finalizeExpiredSession(race) {
+    if (!canControlSession() || !race?.id || !isSessionExpired(race)) return false;
+    const raceRef = doc(db, 'races', race.id);
+    return runTransaction(db, async transaction => {
+      const snap = await transaction.get(raceRef);
+      if (!snap.exists() || !isSessionExpired({ id: snap.id, ...snap.data() })) return false;
+      transaction.update(raceRef, {
+        status: 'stopped',
+        endedAt: serverTimestamp(),
+        endedBy: currentUser.uid,
+        endedReason: 'time_limit'
+      });
+      return true;
+    });
   }
 
   function renderIdleForNextRound(nextRound) {
@@ -1805,13 +2109,14 @@
       document.getElementById('idle-warn').style.display = '';
       document.getElementById('idle-warn').textContent =
         '⚠️ אין משתתפים לצוות זה. פתח את פאנל המנהל והוסף לפני שמתחילים.';
-      document.getElementById('start-btn').style.display = 'none';
+      hideAllSessionControls();
     } else if (canControlSession()) {
-      document.getElementById('start-btn').style.display = '';
-      document.getElementById('start-btn').textContent =
-        '▶ התחל סבב ' + nextRound;
+      hideAllSessionControls();
+      const startBtn = document.getElementById('start-btn');
+      startBtn.hidden = false;
+      startBtn.textContent = '▶ התחל סבב ' + nextRound;
     } else {
-      document.getElementById('start-btn').style.display = 'none';
+      hideAllSessionControls();
     }
     setText('idle-hint',
       participants.length > 0
@@ -1830,15 +2135,29 @@
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
     }
-    if (latestRace?.status === 'running') { showToast('כבר קיים סבב פעיל', 'error'); return; }
+    if (isSessionEffectivelyRunning(latestRace)) { showToast('כבר קיים סבב פעיל', 'error'); return; }
+    const expiredPreviousRace = latestRace?.status === 'running' && isSessionExpired(latestRace)
+      ? latestRace
+      : null;
     const nextRound = latestRace ? (Number(latestRace.round || 0) + 1) : 1;
     const raceId = raceIdFor(selectedTeam, selectedStation, nextRound);
     const raceRef = doc(db, 'races', raceId);
+    const previousRaceRef = expiredPreviousRace ? doc(db, 'races', expiredPreviousRace.id) : null;
     setControlActionBusy(true);
     try {
       await runTransaction(db, async (transaction) => {
         const existing = await transaction.get(raceRef);
+        const previous = previousRaceRef ? await transaction.get(previousRaceRef) : null;
         if (existing.exists()) throw new Error('הסבב כבר נוצר. המסך יתעדכן אוטומטית.');
+        if (previous?.exists() && previous.data().status === 'running') {
+          if (!isSessionExpired(previous.data())) throw new Error('הסבב הקודם עדיין פעיל');
+          transaction.update(previousRaceRef, {
+            status: 'stopped',
+            endedAt: serverTimestamp(),
+            endedBy: currentUser.uid,
+            endedReason: 'time_limit'
+          });
+        }
         transaction.set(raceRef, {
           team:      selectedTeam,
           station:   selectedStation,
@@ -1846,6 +2165,7 @@
           status:    'running',
           startedAt: serverTimestamp(),
           startedBy: currentUser.uid,
+          timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
           participantIds: uniqueParticipantIds(teamData.participants),
           tags:      []
         });
@@ -2086,6 +2406,10 @@
     if (!canControlSession()) { showToast('רק מפק״צ יכול לסיים סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!latestRace || latestRace.status !== 'running') return;
+    if (!isSessionEffectivelyRunning(latestRace)) {
+      queueExpiredSessionFinalization(latestRace);
+      return;
+    }
     if (!confirm('לסיים את הסבב הנוכחי?')) return;
     const raceRef = doc(db, 'races', latestRace.id);
     setControlActionBusy(true);
@@ -2097,7 +2421,8 @@
         transaction.update(raceRef, {
           status:  'stopped',
           endedAt: serverTimestamp(),
-          endedBy: currentUser.uid
+          endedBy: currentUser.uid,
+          endedReason: 'manual'
         });
       });
       showToast('הסבב הסתיים', 'info');
@@ -2255,7 +2580,8 @@
   // הקשה מוסיפה 1 למונה המקומי (פידבק מיידי), והשמירה ל-Firestore מקובצת
   // כדי לא לאבד הקשות מהירות (read-modify-write אחד לכל הצבירה).
   window.incrementReps = (pid) => {
-    if (!canEvaluate() || !currentRace || currentRace.id !== latestRace?.id || currentRace.status !== 'running') {
+    if (!canEvaluate() || !currentRace || currentRace.id !== latestRace?.id ||
+        !isSessionEffectivelyRunning(currentRace)) {
       showToast('אין סבב פעיל', 'error'); return;
     }
     pid = String(pid);
@@ -2347,7 +2673,7 @@
     const label = st.measureLabel || 'מספר חזרות';
     const manual = usesManualMeasure(st);
     const canEditMeasure = canEvaluate() && (manual ||
-      (currentRace?.id === latestRace?.id && currentRace?.status === 'running'));
+      (currentRace?.id === latestRace?.id && isSessionEffectivelyRunning(currentRace)));
     box.style.display = '';
     box.innerHTML = `
       <div class="measure-entry ${manual ? 'manual' : ''}">
@@ -2413,7 +2739,7 @@
   window.setStationReps = async (val) => {
     const st = currentStationType();
     const manual = usesManualMeasure(st);
-    const activeTapRound = currentRace?.id === latestRace?.id && currentRace?.status === 'running';
+    const activeTapRound = currentRace?.id === latestRace?.id && isSessionEffectivelyRunning(currentRace);
     if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) {
       showToast('לא נבחר משתתף לעדכון', 'error'); return;
     }
