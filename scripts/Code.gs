@@ -69,6 +69,7 @@ function doPost(e) {
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
     if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
     if (type === "audit_files")            return handleAuditFiles_(ss);
+    if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -537,6 +538,40 @@ function inspectFile_(row) {
   } catch (err2) {
     row.state = "open-failed: " + err2.message;
   }
+}
+
+// ---------- איפוס הרישום ----------
+// מנקה את טבלאות הרישום כדי שהקצאה מחדש תתחיל מדף חלק.
+// אינו נוגע בקבצים עצמם — רק מנתק את ההפניות אליהם ומחזיר את
+// רשימת המזהים כדי שאפשר יהיה למחוק אותם ידנית מ-Drive.
+//
+// בטוח כי הגיליונות הם תוצר נגזר: כל שורה נבנית מ-Firestore בזמן
+// הסנכרון, ולכן סנכרון אחד אחרי ההקצאה מחזיר את כל התוכן.
+// שימוש: POST { type: "reset_registries", confirm: "RESET" }
+function handleResetRegistries_(ss, payload) {
+  if (String(payload.confirm || "") !== "RESET") {
+    return buildResponse(false,
+      'הפעולה מוחקת את טבלאות הרישום — נדרש confirm:"RESET" כדי לאשר');
+  }
+  return buildDataResponse_(true, "Registries cleared", {
+    teams:      clearRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1),
+    evaluators: clearRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3)
+  });
+}
+
+function clearRegistry_(ss, tabName, width, fileCol) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet || sheet.getLastRow() < 2) return { removed: 0, fileIds: [] };
+
+  var count = sheet.getLastRow() - 1;
+  var vals  = sheet.getRange(2, 1, count, width).getValues();
+  var ids   = [];
+  for (var i = 0; i < vals.length; i++) {
+    var id = String(vals[i][fileCol] || "").trim();
+    if (id) ids.push(id);
+  }
+  sheet.deleteRows(2, count); // הכותרות נשארות
+  return { removed: count, fileIds: ids };
 }
 
 // ---------- Generic helpers ----------

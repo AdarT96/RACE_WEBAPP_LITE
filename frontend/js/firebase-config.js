@@ -21,7 +21,7 @@ const APP_CONFIG = {
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
   // פריסת 23.08.2026. הפריסה הקודמת (AKfycbyb…) עדיין קיימת ומריצה קוד ישן —
   // כל עוד הכתובת כאן לא מצביעה על הפריסה הפעילה, הקוד החדש לא מגיע לאפליקציה.
-  sheetsApiUrl: "https://script.google.com/macros/s/AKfycbzid73hvn9PMvS-cIZglr2QFegsdpaeGKABfXun_T1aQGy6nyppfX3vUmxVH1ekCV6N/exec",
+  sheetsApiUrl: "https://script.google.com/macros/s/AKfycbzhSxkcjp3Vxb7HlvMWdEgbPsvAMDWL7KOI6H5TDannOuLA8cx2DK7-GAzQcNSYEk4tWQ/exec",
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
 
   // Team count for registration.
