@@ -524,7 +524,9 @@ function inspectFile_(row) {
     row.state = "error: " + err.message;
     return;
   }
-  if (row.state !== "alive") return;
+  // גם קובץ בסל המחזור נמדד: הוא עדיין נפתח לפי ID, ו"בסל" אינו ראיה
+  // לכך שהוא ריק. בלי המדידה הזו ניקוי עלול למחוק נתונים שלא ראינו.
+  if (row.state !== "alive" && row.state !== "trashed") return;
   try {
     var sheets = SpreadsheetApp.openById(row.fileId).getSheets();
     for (var i = 0; i < sheets.length; i++) {
