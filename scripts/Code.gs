@@ -1,6 +1,6 @@
 // ============================================================
 //  Google Apps Script — סנכרון גיבוש (גרסת LITE)
-//  קובץ לכל צוות · טאב לכל מועמד · קובץ אישי לכל מעריך.
+//  קובץ צוות (טאב לכל תחנה) · קובץ מעריך אישי (טאב לכל מועמד).
 //  שורה לכל (תחנה × סבב × מעריך) — כל ההערכות, בלי ממוצע.
 // ============================================================
 
@@ -24,8 +24,15 @@ var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר"];
 var EVENT_FOLDER_NAME = "";
 
 // כותרות טאב מועמד (מבנה קבוע)
+// קובץ המעריך — טאב לכל מועמד, שורה לכל (תחנה × סבב × מעריך).
 var PARTICIPANT_HEADERS = ["תחנה", "סבב", "מקום", "מספר", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
 var GENERAL_STATION_LABEL = "(הערה כללית)";
+
+// קובץ הצוות — טאב לכל תחנה, כמו בקובץ "תוצאות": כל הצוות בתחנה אחת,
+// ממוין לפי סבב ואז מקום, כך שסדר ההגעה נקרא ישירות מלמעלה למטה.
+var STATION_HEADERS = ["סבב", "מקום", "מועמד", "זמן", "מדידה", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
+var GENERAL_NOTES_TAB     = "הערות כלליות";
+var GENERAL_NOTES_HEADERS = ["מועמד", "מעריך", "הערה"];
 
 // ---------- סוגי תחנות (מסונכרן עם frontend/js/station-types.js) ----------
 var STATION_TYPES = {
@@ -60,11 +67,16 @@ function doPost(e) {
       if (payload.key !== API_SECRET_KEY) return buildResponse(false, "Unauthorized");
     }
 
-    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var ss = openSpreadsheet_(SHEET_ID,
+      "הקובץ הראשי (SHEET_ID) לא נגיש — נמחק, הועבר לסל, או שאין לסקריפט הרשאה אליו. " +
+      "בדוק את SHEET_ID ב-Code.gs ואת הרשאות הפריסה");
     var type = String(payload.type || "").trim();
 
     if (type === "general_note")           return handleGeneralNote_(ss, payload);
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
+    if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
+    if (type === "audit_files")            return handleAuditFiles_(ss);
+    if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -77,8 +89,50 @@ function doPost(e) {
   }
 }
 
+// פתיחת כתובת ה-exec בדפדפן מחזירה את הגרסה הפרוסה בפועל.
+// בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
+// שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
+// לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
+var CODE_VERSION = "2026-08-23-d";
+
+// FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
+// להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
+// היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
+var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries"];
+
 function doGet(e) {
-  return buildResponse(true, "Gibush sync alive — קובץ לצוות · טאב למועמד");
+  return buildDataResponse_(true, "Gibush sync alive", {
+    version: CODE_VERSION,
+    features: FEATURES,
+    driveAccess: driveProbe_()
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  להריץ מהעורך פעם אחת: Run ▶ authorizeDrive
+// ════════════════════════════════════════════════════════════
+// הרצת doGet או פונקציה אחרת לא תבקש הרשאת Drive, כי הן לא נוגעות
+// ב-DriveApp — האישור נדרש רק כשקריאה אמיתית מתבצעת. הפונקציה הזו
+// קיימת בשביל לגרום למסך ההרשאות להופיע.
+//
+// אחרי האישור חובה לפרוס מחדש (Deploy → Manage deployments → ✏️ →
+// New version): אפליקציית ה-web רצה עם ההרשאות שהיו בזמן הפריסה.
+function authorizeDrive() {
+  var root = DriveApp.getRootFolder().getName();
+  var main = DriveApp.getFileById(SHEET_ID).getName();
+  Logger.log("Drive OK — root: %s | main sheet: %s", root, main);
+  return "Drive OK — " + main;
+}
+
+// בודקת אם לסקריפט באמת יש הרשאת Drive פעילה. זו החשודה המרכזית
+// בכפילויות: כשהיא חסרה, כל בדיקת קיום קובץ נכשלת.
+function driveProbe_() {
+  try {
+    DriveApp.getRootFolder().getName();
+    return "ok";
+  } catch (err) {
+    return "FAILED: " + err.message;
+  }
 }
 
 // ---------- זיהוי סוג התחנה ----------
@@ -106,13 +160,100 @@ function handleRaceRow_(ss, payload) {
   var def = effectiveDef_(payload, t.def);
 
   var team = teamId_(payload);
-  if (team) {
-    var teamSs = getTeamFile_(ss, team);
-    if (teamSs) writeParticipantRow_(teamSs, payload, def);
-  }
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeParticipantRow_(evalSs, payload, def); });
+  if (!team) return buildResponse(false, "Missing team");
 
-  return buildResponse(true, "OK: " + def.name + " / מועמד " + pid);
+  // נתיב חם — כתיבה בלבד. קובץ חסר הוא שגיאה, לא טריגר ליצירה.
+  var teamSs = findTeamFile_(ss, team);
+  if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
+  writeStationRow_(teamSs, payload, def);   // קובץ צוות — טאב לפי תחנה
+
+  var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
+    writeParticipantRow_(evalSs, payload, def);  // קובץ מעריך — טאב לפי מועמד
+  });
+
+  return buildDataResponse_(true, "OK: " + def.name + " / מועמד " + pid, { warning: warning });
+}
+
+// ---------- קובץ צוות: טאב לכל תחנה ----------
+// מבנה מקביל לקובץ "תוצאות": כל הצוות בטאב אחד לכל תחנה, ממוין לפי
+// סבב ואז מקום. אותם נתונים כמו בקובץ המעריך, מקובצים אחרת.
+function writeStationRow_(ss, payload, def) {
+  var pid = participantId_(payload);
+  if (!pid) return;
+
+  var sheet = getOrCreateSheet_(ss, String(def.name));
+  ensureHeaders_(sheet, STATION_HEADERS, "#0f766e");
+
+  var round    = Number(payload.round || 0);
+  var evalName = String(payload.evaluator_name || "");
+  var vals     = buildStationRow_(payload, def, round, evalName, pid);
+
+  var rowIndex = findStationRow_(sheet, pid, round, evalName);
+  if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, STATION_HEADERS.length).setValues([vals]);
+  else sheet.appendRow(vals);
+
+  sortStationTab_(sheet);
+}
+
+// עמודות: סבב·מקום·מועמד·זמן·מדידה·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
+function buildStationRow_(payload, def, round, evalName, pid) {
+  var vals = [];
+  for (var i = 0; i < STATION_HEADERS.length; i++) vals.push("");
+
+  vals[0] = round;
+  if (def.measure === "place" && payload.place !== undefined &&
+      payload.place !== "" && payload.place !== null) {
+    vals[1] = Number(payload.place) || "";
+  }
+  vals[2] = pid;
+  vals[3] = msToClock_(payload.first_ms);
+  if (def.measure === "reps" && payload.reps !== undefined &&
+      payload.reps !== "" && payload.reps !== null) {
+    vals[4] = Number(payload.reps);
+  }
+
+  var scores = payload.scores || {};
+  var params = def.params || [];
+  if (params[0]) { vals[5] = params[0]; vals[6] = scoreVal_(scores[params[0]]); }
+  if (params[1]) { vals[7] = params[1]; vals[8] = scoreVal_(scores[params[1]]); }
+
+  vals[9]  = evalName;
+  vals[10] = notesToCell_(payload.comments);
+  return vals;
+}
+
+// זהות שורה בטאב תחנה: מועמד + סבב + מעריך (בטאב מועמד המפתח הוא תחנה+סבב+מעריך)
+function findStationRow_(sheet, pid, round, evalName) {
+  var last = sheet.getLastRow();
+  if (last < 2) return -1;
+  var vals = sheet.getRange(2, 1, last - 1, STATION_HEADERS.length).getValues();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (Number(vals[i][0]) === Number(round) &&
+        String(vals[i][2]) === String(pid) &&
+        String(vals[i][9] || "") === String(evalName)) {
+      return 2 + i;
+    }
+  }
+  return -1;
+}
+
+// סבב עולה, ובתוכו מקום עולה — כך סדר ההגעה נקרא מלמעלה למטה.
+function sortStationTab_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return; // אין מה למיין
+  sheet.getRange(2, 1, last - 1, STATION_HEADERS.length)
+       .sort([{ column: 1, ascending: true }, { column: 2, ascending: true }]);
+}
+
+function msToClock_(ms) {
+  var n = Number(ms || 0);
+  if (!n) return "";
+  var total = Math.floor(n / 1000);
+  return Math.floor(total / 60) + ":" + ("0" + (total % 60)).slice(-2);
+}
+
+function missingTeamFileMsg_(team) {
+  return "אין קובץ לצוות " + team + " — צור אותו בפאנל המנהל (\"קבצי צוותים\") לפני הסנכרון";
 }
 
 // שמות פרמטרים/מדידה/שם תחנה — מה-payload אם הגיע, אחרת מברירת המחדל
@@ -181,6 +322,30 @@ function findParticipantRow_(sheet, stationName, round, evalName) {
   return -1;
 }
 
+// בקובץ הצוות אין טאב מועמד, והערה כללית אינה שייכת לאף תחנה —
+// ולכן היא מקבלת טאב משלה. בקובץ המעריך היא נשארת בטאב המועמד.
+function writeTeamGeneralNoteRow_(ss, payload) {
+  var pid  = parseInt(payload.participant_id, 10);
+  var note = String(payload.note || "");
+  if (!pid || !note) return;
+  var evalName = String(payload.evaluator_name || "");
+
+  var sheet = getOrCreateSheet_(ss, GENERAL_NOTES_TAB);
+  ensureHeaders_(sheet, GENERAL_NOTES_HEADERS, "#9333ea");
+
+  // dedup: אותה הערה מאותו מעריך לאותו מועמד לא נוספת פעמיים
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var vals = sheet.getRange(2, 1, last - 1, GENERAL_NOTES_HEADERS.length).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(pid) &&
+          String(vals[i][1] || "") === evalName &&
+          String(vals[i][2] || "") === note) return;
+    }
+  }
+  sheet.appendRow([pid, evalName, note]);
+}
+
 // ---------- General note handler ----------
 function handleGeneralNote_(ss, payload) {
   var pid  = parseInt(payload.participant_id, 10);
@@ -188,13 +353,17 @@ function handleGeneralNote_(ss, payload) {
   if (!pid || !note) return buildResponse(false, "Missing pid/note");
 
   var team = parseInt(String(payload.team_id || "").replace(/\D+/g, ""), 10);
-  if (team) {
-    var teamSs = getTeamFile_(ss, team);
-    if (teamSs) writeGeneralNoteRow_(teamSs, payload);
-  }
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeGeneralNoteRow_(evalSs, payload); });
+  if (!team) return buildResponse(false, "Missing team");
 
-  return buildResponse(true, "Note recorded for pid " + pid);
+  var teamSs = findTeamFile_(ss, team);
+  if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
+  writeTeamGeneralNoteRow_(teamSs, payload);  // טאב ייעודי — הערה כללית אינה שייכת לתחנה
+
+  var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
+    writeGeneralNoteRow_(evalSs, payload);
+  });
+
+  return buildDataResponse_(true, "Note recorded for pid " + pid, { warning: warning });
 }
 
 function writeGeneralNoteRow_(ss, payload) {
@@ -225,24 +394,47 @@ function writeGeneralNoteRow_(ss, payload) {
 }
 
 // ---------- קבצי צוותים ----------
-function getTeamFile_(ss, team) {
+// חיפוש בלבד — ללא יצירה וללא DriveApp. זהו הנתיב שרץ בכל שורת סנכרון.
+// אם הקובץ הרשום נמחק או שאין אליו גישה, openById נכשל ברעש — וזה רצוי:
+// הגרסה הקודמת בלעה את הכשל וייצרה קובץ חדש בכל בקשה.
+function findTeamFile_(ss, team) {
   var entry = findTeamEntry_(ss, team);
-  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
-    return SpreadsheetApp.openById(entry.fileId);
-  }
+  if (!entry || !entry.fileId) return null;
+  return openSpreadsheet_(entry.fileId,
+    "קובץ הצוות " + team + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+    "פאנל מנהל → קבצי Google Sheets → \"צור קבצי צוותים\" ייצור קובץ חדש במקומו");
+}
+
+// יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהפאנל),
+// לעולם לא מנתיב הסנכרון.
+function createTeamFile_(ss, team) {
   var newSs = SpreadsheetApp.create("צוות " + team + " — גיבוש");
   try { DriveApp.getFileById(newSs.getId()).moveTo(teamFolder_()); } catch (moveErr) {}
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
-  first.getRange(1, 1).setValue("קובץ צוות " + team + " — טאב לכל מועמד");
-  first.getRange(2, 1).setValue("הטאבים נוצרים אוטומטית עם הסנכרון (טאב לכל מספר מועמד).");
+  first.getRange(1, 1).setValue("קובץ צוות " + team + " — טאב לכל תחנה");
+  first.getRange(2, 1).setValue("טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"" + GENERAL_NOTES_TAB + "\".");
   first.getRange(1, 1, 2, 1).setFontWeight("bold");
 
   var reg = getTeamRegistrySheet_(ss);
   reg.appendRow([String(team), newSs.getId(), newSs.getUrl(),
                  Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
   return newSs;
+}
+
+// הקצאה יזומה מהפאנל. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
+function handleEnsureTeamSheet_(ss, payload) {
+  var team = parseInt(String(payload.team || "").replace(/\D+/g, ""), 10);
+  if (!team) return buildResponse(false, "Missing team");
+
+  var entry = findTeamEntry_(ss, team);
+  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
+    return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
+  }
+
+  var newSs = createTeamFile_(ss, team);
+  return buildDataResponse_(true, "Team sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
 }
 
 function findTeamEntry_(ss, team) {
@@ -303,7 +495,7 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   if (!uid && !name) return buildResponse(false, "Missing uid/name");
 
   var entry = findEvaluatorEntry_(ss, uid, name);
-  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
+  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
@@ -349,21 +541,151 @@ function findEvaluatorEntry_(ss, uid, name) {
   return found;
 }
 
+// מחזירה "" בהצלחה, או תיאור תקלה קריא. שורת הצוות כבר נכתבה בשלב זה,
+// ולכן כשל כאן אינו מפיל את הבקשה — אבל הוא כן מדווח חזרה ל-app.
+// הגרסה הקודמת בלעה כל שגיאה בשקט, וזו הסיבה שקבצי המעריכים נשארו ריקים.
 function mirrorToEvaluatorFile_(ss, payload, fn) {
+  var uid  = String(payload.evaluator_uid || "").trim();
+  var name = String(payload.evaluator_name || "").trim();
+  if (!uid && !name) return "השורה נשלחה בלי זיהוי מעריך";
+
+  var entry = findEvaluatorEntry_(ss, uid, name);
+  if (!entry || !entry.fileId) {
+    return "אין קובץ רשום למעריך " + (name || uid) + " — צור אותו בפאנל המנהל";
+  }
+  var evalSs;
   try {
-    var uid  = String(payload.evaluator_uid || "").trim();
-    var name = String(payload.evaluator_name || "").trim();
-    if (!uid && !name) return;
-    var entry = findEvaluatorEntry_(ss, uid, name);
-    if (!entry || !entry.fileId || !fileAlive_(entry.fileId)) return;
-    fn(SpreadsheetApp.openById(entry.fileId));
-  } catch (err) { /* best-effort */ }
+    evalSs = openSpreadsheet_(entry.fileId,
+      "קובץ המעריך " + (name || uid) + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+      "פאנל מנהל → כפתור \"צור מחדש\" ליד שם המעריך");
+  } catch (err) {
+    return err.message;
+  }
+  try {
+    fn(evalSs);
+    return "";
+  } catch (err2) {
+    return "כתיבה לקובץ המעריך " + (name || uid) + " נכשלה: " + err2.message;
+  }
 }
 
-// האם הקובץ קיים ולא בסל המחזור?
-function fileAlive_(id) {
-  try { return !DriveApp.getFileById(id).isTrashed(); }
-  catch (e) { return false; }
+// פותח גיליון עם הודעת שגיאה שאומרת מה לעשות, במקום חריגה גולמית באנגלית.
+// חשוב במיוחד עכשיו: מאז שהיצירה יצאה מהנתיב החם, קובץ חסר כבר לא "מתקן"
+// את עצמו בשקט — ולכן ההודעה היא כל מה שמכוון את המשתמש.
+function openSpreadsheet_(id, hint) {
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    throw new Error(hint + " [" + err.message + "]");
+  }
+}
+
+// "alive" | "trashed" | "missing" — ורק אלה. שגיאת הרשאה/מכסה/תקלה זמנית
+// נזרקת הלאה במקום להתחזות ל"לא קיים": ההתחזות הזו היא שגרמה ליצירת
+// קובץ צוות חדש בכל בקשת סנכרון. נקראת רק בהקצאה יזומה, לא בנתיב החם.
+function fileState_(id) {
+  try {
+    return DriveApp.getFileById(id).isTrashed() ? "trashed" : "alive";
+  } catch (err) {
+    var msg = String((err && err.message) || err);
+    if (/not found|no item with the given id|נמצא/i.test(msg)) return "missing";
+    throw err;
+  }
+}
+
+// ---------- ביקורת קבצים (קריאה בלבד) ----------
+// מדווח מה באמת קיים: כמה רשומות יש לכל צוות/מעריך, מה מצב כל קובץ,
+// וכמה נתונים יש בו. לא יוצר, לא מוחק, לא משנה — רק מדווח.
+// שימוש: POST { type: "audit_files" }
+function handleAuditFiles_(ss) {
+  return buildDataResponse_(true, "Audit complete", {
+    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1, 0),
+    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3, 1)
+  });
+}
+
+// keyCol/fileCol הם אינדקסים מבוססי-0 בתוך שורת הרישום
+function auditRegistry_(ss, tabName, width, fileCol, keyCol) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+  var byKey = {};
+  var order = [];
+
+  for (var i = 0; i < vals.length; i++) {
+    var key    = String(vals[i][keyCol] || "").trim();
+    var fileId = String(vals[i][fileCol] || "").trim();
+    if (!key && !fileId) continue;
+    if (!byKey[key]) { byKey[key] = { key: key, rows: [] }; order.push(key); }
+    byKey[key].rows.push({ registryRow: i + 2, fileId: fileId, state: "", tabs: 0, dataRows: 0 });
+  }
+
+  for (var k = 0; k < order.length; k++) {
+    var group = byKey[order[k]];
+    for (var r = 0; r < group.rows.length; r++) inspectFile_(group.rows[r]);
+    group.duplicateRows = group.rows.length;
+    group.withData = group.rows.filter(function (x) { return x.dataRows > 0; }).length;
+  }
+
+  return order.map(function (key) { return byKey[key]; });
+}
+
+function inspectFile_(row) {
+  if (!row.fileId) { row.state = "no-id"; return; }
+  try {
+    row.state = fileState_(row.fileId);
+  } catch (err) {
+    row.state = "error: " + err.message;
+    return;
+  }
+  // גם קובץ בסל המחזור נמדד: הוא עדיין נפתח לפי ID, ו"בסל" אינו ראיה
+  // לכך שהוא ריק. בלי המדידה הזו ניקוי עלול למחוק נתונים שלא ראינו.
+  if (row.state !== "alive" && row.state !== "trashed") return;
+  try {
+    var sheets = SpreadsheetApp.openById(row.fileId).getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getName() === "אודות") continue;
+      row.tabs++;
+      row.dataRows += Math.max(0, sheets[i].getLastRow() - 1);
+    }
+  } catch (err2) {
+    row.state = "open-failed: " + err2.message;
+  }
+}
+
+// ---------- איפוס הרישום ----------
+// מנקה את טבלאות הרישום כדי שהקצאה מחדש תתחיל מדף חלק.
+// אינו נוגע בקבצים עצמם — רק מנתק את ההפניות אליהם ומחזיר את
+// רשימת המזהים כדי שאפשר יהיה למחוק אותם ידנית מ-Drive.
+//
+// בטוח כי הגיליונות הם תוצר נגזר: כל שורה נבנית מ-Firestore בזמן
+// הסנכרון, ולכן סנכרון אחד אחרי ההקצאה מחזיר את כל התוכן.
+// שימוש: POST { type: "reset_registries", confirm: "RESET" }
+function handleResetRegistries_(ss, payload) {
+  if (String(payload.confirm || "") !== "RESET") {
+    return buildResponse(false,
+      'הפעולה מוחקת את טבלאות הרישום — נדרש confirm:"RESET" כדי לאשר');
+  }
+  return buildDataResponse_(true, "Registries cleared", {
+    teams:      clearRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1),
+    evaluators: clearRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3)
+  });
+}
+
+function clearRegistry_(ss, tabName, width, fileCol) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet || sheet.getLastRow() < 2) return { removed: 0, fileIds: [] };
+
+  var count = sheet.getLastRow() - 1;
+  var vals  = sheet.getRange(2, 1, count, width).getValues();
+  var ids   = [];
+  for (var i = 0; i < vals.length; i++) {
+    var id = String(vals[i][fileCol] || "").trim();
+    if (id) ids.push(id);
+  }
+  sheet.deleteRows(2, count); // הכותרות נשארות
+  return { removed: count, fileIds: ids };
 }
 
 // ---------- Generic helpers ----------
