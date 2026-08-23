@@ -2885,6 +2885,61 @@
   // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
+  // ── שלב 1: ודא שהקבצים קיימים ─────────────────────────────
+  // רשימת הקבצים נגזרת מהשורות שנבנו, לא מהקשר המסך — כך שכל שינוי
+  // בהיקף הסנכרון מזין את השלב הזה אוטומטית.
+  function filesNeededFor(rows) {
+    const teams = new Set();
+    const evaluators = new Map();
+    for (const row of rows) {
+      const team = String(row.team || row.team_id || '').replace(/\D+/g, '');
+      if (team) teams.add(String(Number(team)));
+      const uid = row.evaluator_uid || '';
+      const name = row.evaluator_name || '';
+      if (uid || name) {
+        evaluators.set(uid || name, { uid, name, team: String(row.evaluator_team || team || '') });
+      }
+    }
+    return { teams: [...teams], evaluators: [...evaluators.values()] };
+  }
+
+  async function ensureFilesExist(rows, onProgress) {
+    const { teams, evaluators } = filesNeededFor(rows);
+    const total = teams.length + evaluators.length;
+    const problems = [];
+    let done = 0;
+
+    const step = async (body, label) => {
+      onProgress?.(++done, total);
+      try {
+        await postToSheets(body);
+      } catch (e) {
+        problems.push(`${label}: ${e.message}`);
+      }
+    };
+
+    for (const team of teams) {
+      await step({ type: 'ensure_team_sheet', team }, `קובץ צוות ${team}`);
+    }
+    for (const ev of evaluators) {
+      await step({ type: 'ensure_evaluator_sheet', uid: ev.uid, name: ev.name, team: ev.team },
+                 `קובץ מעריך ${ev.name || ev.uid}`);
+    }
+    return { checked: total, problems };
+  }
+
+  async function postToSheets(body) {
+    if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+      body.key = APP_CONFIG.sheetsApiKey;
+    }
+    const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'הפעולה נכשלה');
+    return data;
+  }
+
+  // ── שלב 2: כתיבת הנתונים ──────────────────────────────────
   // ה-Apps Script מחזיר 200 גם כשהפעולה נכשלה, עם { success:false, message }.
   // לכן חובה לקרוא את הגוף — בדיקת res.ok בלבד ספרה כשלונות כהצלחות.
   async function sendRow(row) {
@@ -3036,6 +3091,20 @@
       const allRows = stationRows.concat(noteRows);
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
 
+      // ── שלב 1: ודא שכל הקבצים הדרושים קיימים ──
+      if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const prep = await ensureFilesExist(allRows, (done, total) => {
+        if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
+      });
+      // קובץ חסר פירושו שכל השורות אליו ייכשלו — עוצרים לפני שכותבים חלקית
+      if (prep.problems.length) {
+        showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
+        console.warn('[sync] stage 1 failed:', prep.problems);
+        return;
+      }
+
+      // ── שלב 2: כתיבת הנתונים ──
+      if (btn) btn.innerHTML = '⏳ מסנכרן…';
       const { ok, problems } = await sendRowsFirstThenRest(allRows);
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
