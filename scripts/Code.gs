@@ -95,6 +95,22 @@ function doGet(e) {
   });
 }
 
+// ════════════════════════════════════════════════════════════
+//  להריץ מהעורך פעם אחת: Run ▶ authorizeDrive
+// ════════════════════════════════════════════════════════════
+// הרצת doGet או פונקציה אחרת לא תבקש הרשאת Drive, כי הן לא נוגעות
+// ב-DriveApp — האישור נדרש רק כשקריאה אמיתית מתבצעת. הפונקציה הזו
+// קיימת בשביל לגרום למסך ההרשאות להופיע.
+//
+// אחרי האישור חובה לפרוס מחדש (Deploy → Manage deployments → ✏️ →
+// New version): אפליקציית ה-web רצה עם ההרשאות שהיו בזמן הפריסה.
+function authorizeDrive() {
+  var root = DriveApp.getRootFolder().getName();
+  var main = DriveApp.getFileById(SHEET_ID).getName();
+  Logger.log("Drive OK — root: %s | main sheet: %s", root, main);
+  return "Drive OK — " + main;
+}
+
 // בודקת אם לסקריפט באמת יש הרשאת Drive פעילה. זו החשודה המרכזית
 // בכפילויות: כשהיא חסרה, כל בדיקת קיום קובץ נכשלת.
 function driveProbe_() {
