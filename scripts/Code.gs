@@ -1,6 +1,6 @@
 // ============================================================
 //  Google Apps Script — סנכרון גיבוש (גרסת LITE)
-//  קובץ לכל צוות · טאב לכל מועמד · קובץ אישי לכל מעריך.
+//  קובץ צוות (טאב לכל תחנה) · קובץ מעריך אישי (טאב לכל מועמד).
 //  שורה לכל (תחנה × סבב × מעריך) — כל ההערכות, בלי ממוצע.
 // ============================================================
 
@@ -24,8 +24,15 @@ var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר"];
 var EVENT_FOLDER_NAME = "";
 
 // כותרות טאב מועמד (מבנה קבוע)
+// קובץ המעריך — טאב לכל מועמד, שורה לכל (תחנה × סבב × מעריך).
 var PARTICIPANT_HEADERS = ["תחנה", "סבב", "מקום", "מספר", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
 var GENERAL_STATION_LABEL = "(הערה כללית)";
+
+// קובץ הצוות — טאב לכל תחנה, כמו בקובץ "תוצאות": כל הצוות בתחנה אחת,
+// ממוין לפי סבב ואז מקום, כך שסדר ההגעה נקרא ישירות מלמעלה למטה.
+var STATION_HEADERS = ["סבב", "מקום", "מועמד", "זמן", "מדידה", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
+var GENERAL_NOTES_TAB     = "הערות כלליות";
+var GENERAL_NOTES_HEADERS = ["מועמד", "מעריך", "הערה"];
 
 // ---------- סוגי תחנות (מסונכרן עם frontend/js/station-types.js) ----------
 var STATION_TYPES = {
@@ -86,7 +93,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-c";
+var CODE_VERSION = "2026-08-23-d";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -158,13 +165,91 @@ function handleRaceRow_(ss, payload) {
   // נתיב חם — כתיבה בלבד. קובץ חסר הוא שגיאה, לא טריגר ליצירה.
   var teamSs = findTeamFile_(ss, team);
   if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
-  writeParticipantRow_(teamSs, payload, def);
+  writeStationRow_(teamSs, payload, def);   // קובץ צוות — טאב לפי תחנה
 
   var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
-    writeParticipantRow_(evalSs, payload, def);
+    writeParticipantRow_(evalSs, payload, def);  // קובץ מעריך — טאב לפי מועמד
   });
 
   return buildDataResponse_(true, "OK: " + def.name + " / מועמד " + pid, { warning: warning });
+}
+
+// ---------- קובץ צוות: טאב לכל תחנה ----------
+// מבנה מקביל לקובץ "תוצאות": כל הצוות בטאב אחד לכל תחנה, ממוין לפי
+// סבב ואז מקום. אותם נתונים כמו בקובץ המעריך, מקובצים אחרת.
+function writeStationRow_(ss, payload, def) {
+  var pid = participantId_(payload);
+  if (!pid) return;
+
+  var sheet = getOrCreateSheet_(ss, String(def.name));
+  ensureHeaders_(sheet, STATION_HEADERS, "#0f766e");
+
+  var round    = Number(payload.round || 0);
+  var evalName = String(payload.evaluator_name || "");
+  var vals     = buildStationRow_(payload, def, round, evalName, pid);
+
+  var rowIndex = findStationRow_(sheet, pid, round, evalName);
+  if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, STATION_HEADERS.length).setValues([vals]);
+  else sheet.appendRow(vals);
+
+  sortStationTab_(sheet);
+}
+
+// עמודות: סבב·מקום·מועמד·זמן·מדידה·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
+function buildStationRow_(payload, def, round, evalName, pid) {
+  var vals = [];
+  for (var i = 0; i < STATION_HEADERS.length; i++) vals.push("");
+
+  vals[0] = round;
+  if (def.measure === "place" && payload.place !== undefined &&
+      payload.place !== "" && payload.place !== null) {
+    vals[1] = Number(payload.place) || "";
+  }
+  vals[2] = pid;
+  vals[3] = msToClock_(payload.first_ms);
+  if (def.measure === "reps" && payload.reps !== undefined &&
+      payload.reps !== "" && payload.reps !== null) {
+    vals[4] = Number(payload.reps);
+  }
+
+  var scores = payload.scores || {};
+  var params = def.params || [];
+  if (params[0]) { vals[5] = params[0]; vals[6] = scoreVal_(scores[params[0]]); }
+  if (params[1]) { vals[7] = params[1]; vals[8] = scoreVal_(scores[params[1]]); }
+
+  vals[9]  = evalName;
+  vals[10] = notesToCell_(payload.comments);
+  return vals;
+}
+
+// זהות שורה בטאב תחנה: מועמד + סבב + מעריך (בטאב מועמד המפתח הוא תחנה+סבב+מעריך)
+function findStationRow_(sheet, pid, round, evalName) {
+  var last = sheet.getLastRow();
+  if (last < 2) return -1;
+  var vals = sheet.getRange(2, 1, last - 1, STATION_HEADERS.length).getValues();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (Number(vals[i][0]) === Number(round) &&
+        String(vals[i][2]) === String(pid) &&
+        String(vals[i][9] || "") === String(evalName)) {
+      return 2 + i;
+    }
+  }
+  return -1;
+}
+
+// סבב עולה, ובתוכו מקום עולה — כך סדר ההגעה נקרא מלמעלה למטה.
+function sortStationTab_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 3) return; // אין מה למיין
+  sheet.getRange(2, 1, last - 1, STATION_HEADERS.length)
+       .sort([{ column: 1, ascending: true }, { column: 2, ascending: true }]);
+}
+
+function msToClock_(ms) {
+  var n = Number(ms || 0);
+  if (!n) return "";
+  var total = Math.floor(n / 1000);
+  return Math.floor(total / 60) + ":" + ("0" + (total % 60)).slice(-2);
 }
 
 function missingTeamFileMsg_(team) {
@@ -237,6 +322,30 @@ function findParticipantRow_(sheet, stationName, round, evalName) {
   return -1;
 }
 
+// בקובץ הצוות אין טאב מועמד, והערה כללית אינה שייכת לאף תחנה —
+// ולכן היא מקבלת טאב משלה. בקובץ המעריך היא נשארת בטאב המועמד.
+function writeTeamGeneralNoteRow_(ss, payload) {
+  var pid  = parseInt(payload.participant_id, 10);
+  var note = String(payload.note || "");
+  if (!pid || !note) return;
+  var evalName = String(payload.evaluator_name || "");
+
+  var sheet = getOrCreateSheet_(ss, GENERAL_NOTES_TAB);
+  ensureHeaders_(sheet, GENERAL_NOTES_HEADERS, "#9333ea");
+
+  // dedup: אותה הערה מאותו מעריך לאותו מועמד לא נוספת פעמיים
+  var last = sheet.getLastRow();
+  if (last >= 2) {
+    var vals = sheet.getRange(2, 1, last - 1, GENERAL_NOTES_HEADERS.length).getValues();
+    for (var i = 0; i < vals.length; i++) {
+      if (String(vals[i][0]) === String(pid) &&
+          String(vals[i][1] || "") === evalName &&
+          String(vals[i][2] || "") === note) return;
+    }
+  }
+  sheet.appendRow([pid, evalName, note]);
+}
+
 // ---------- General note handler ----------
 function handleGeneralNote_(ss, payload) {
   var pid  = parseInt(payload.participant_id, 10);
@@ -248,7 +357,7 @@ function handleGeneralNote_(ss, payload) {
 
   var teamSs = findTeamFile_(ss, team);
   if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
-  writeGeneralNoteRow_(teamSs, payload);
+  writeTeamGeneralNoteRow_(teamSs, payload);  // טאב ייעודי — הערה כללית אינה שייכת לתחנה
 
   var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
     writeGeneralNoteRow_(evalSs, payload);
@@ -304,8 +413,8 @@ function createTeamFile_(ss, team) {
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
-  first.getRange(1, 1).setValue("קובץ צוות " + team + " — טאב לכל מועמד");
-  first.getRange(2, 1).setValue("הטאבים נוצרים אוטומטית עם הסנכרון (טאב לכל מספר מועמד).");
+  first.getRange(1, 1).setValue("קובץ צוות " + team + " — טאב לכל תחנה");
+  first.getRange(2, 1).setValue("טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"" + GENERAL_NOTES_TAB + "\".");
   first.getRange(1, 1, 2, 1).setFontWeight("bold");
 
   var reg = getTeamRegistrySheet_(ss);
