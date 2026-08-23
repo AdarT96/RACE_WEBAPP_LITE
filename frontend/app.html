@@ -2974,9 +2974,36 @@
     };
   }
 
-  function buildSyncRowsForRace(race, personalArrival = null) {
+  // מי הוערך בסבב הזה, לפי כל המקורות: ציונים, הערות וסדר הגעה.
+  function evaluatorUidsForRace(race, arrivalsByUid) {
+    const uids = new Set();
+    for (const tag of (Array.isArray(race.tags) ? race.tags : [])) {
+      Object.keys(tag.scores || {}).forEach(u => { if (u) uids.add(u); });
+      (Array.isArray(tag.comments) ? tag.comments : [])
+        .map(normalizeComment)
+        .forEach(c => { if (c.authorUid) uids.add(c.authorUid); });
+    }
+    for (const uid of arrivalsByUid.keys()) if (uid) uids.add(uid);
+    return [...uids];
+  }
+
+  // מנהל מסנכרן את ההערכות של כל המעריכים; מעריך מסנכרן את שלו בלבד.
+  // בלי זה, סנכרון שמורשה למנהל בלבד היה כותב רק את ההערכות של המנהל עצמו
+  // ומשאיר את כל שאר המעריכים מחוץ לקבצים.
+  function buildSyncRowsForRace(race, arrivalsByUid = new Map()) {
+    const uids = isAdmin()
+      ? evaluatorUidsForRace(race, arrivalsByUid)
+      : [currentUser?.uid || ''].filter(Boolean);
+
     const rows = [];
-    const uid = currentUser?.uid || '';
+    for (const evaluatorUid of uids) {
+      rows.push(...buildRowsForEvaluator(race, evaluatorUid, arrivalsByUid.get(evaluatorUid) || null));
+    }
+    return rows;
+  }
+
+  function buildRowsForEvaluator(race, uid, personalArrival) {
+    const rows = [];
     const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
     const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
     const tags = Array.isArray(race.tags) ? race.tags : [];
@@ -2996,7 +3023,7 @@
       const markedAt = place != null ? arrival?.slotTimes?.[String(place)] : null;
       const elapsedMs = arrivalElapsedMs(race, markedAt);
 
-      // הציונים וההערות של המעריך הנוכחי בלבד
+      // הציונים וההערות של המעריך שהשורה הזו מתארת
       const myScores = (tag.scores && tag.scores[uid]) || {};
       const myComments = (Array.isArray(tag.comments) ? tag.comments : [])
         .map(normalizeComment)
@@ -3023,8 +3050,8 @@
         first_ms:       elapsedMs == null ? '' : elapsedMs,
         scores:         myScores,
         comments:       myComments,
-        evaluator_name: currentUser?.name || '',
-        evaluator_uid:  currentUser?.uid || '',
+        evaluator_name: evaluatorNameFor(uid),
+        evaluator_uid:  uid,
         evaluator_team: String(race.team || '')
       };
       if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
@@ -3046,15 +3073,56 @@
     return list;
   }
 
+  // מחזירה Map<raceId, Map<evaluatorUid, arrival>>.
+  // מנהל קורא את כל מסמכי סדר ההגעה של הסבב (החוקים מתירים לו),
+  // מעריך קורא את שלו בלבד.
   async function gatherEvaluatorArrivalsForRaces(races) {
     const result = new Map();
+    const list = Array.isArray(races) ? races : [];
+
+    if (isAdmin()) {
+      const snapshots = await Promise.all(list.map(race =>
+        getDocs(collection(db, 'races', String(race.id), 'evaluatorArrivals'))));
+      snapshots.forEach((snap, index) => {
+        const byUid = new Map();
+        snap.forEach(d => byUid.set(d.id, d.data()));
+        result.set(list[index].id, byUid);
+      });
+      return result;
+    }
+
     if (!currentUser?.uid) return result;
-    const snapshots = await Promise.all((Array.isArray(races) ? races : [])
-      .map(race => getDoc(evaluatorArrivalRef(race.id))));
+    const snapshots = await Promise.all(list.map(race => getDoc(evaluatorArrivalRef(race.id))));
     snapshots.forEach((snap, index) => {
-      result.set(races[index].id, snap.exists() ? snap.data() : null);
+      const byUid = new Map();
+      if (snap.exists()) byUid.set(currentUser.uid, snap.data());
+      result.set(list[index].id, byUid);
     });
     return result;
+  }
+
+  // שם המעריך נכתב לגיליון ומשמש גם ל-dedup ב-Code.gs (תחנה+סבב+מעריך),
+  // ולכן חייב להיות ייחודי ולא ריק — ה-uid הוא נפילה אחרונה.
+  // גרף ההשוואה הוא תמיד המבט האישי, גם למנהל — שולף את המסמך שלי מהמפה.
+  function personalArrivalFrom(arrivalsByUid) {
+    return arrivalsByUid?.get(currentUser?.uid) || null;
+  }
+
+  let evaluatorDirectory = new Map();
+
+  function evaluatorNameFor(uid) {
+    if (uid && uid === currentUser?.uid) return currentUser?.name || uid;
+    return evaluatorDirectory.get(uid)?.name || uid || '';
+  }
+
+  async function loadEvaluatorDirectory() {
+    evaluatorDirectory = new Map();
+    if (!isAdmin()) return;
+    const snap = await getDocs(collection(db, 'users'));
+    snap.forEach(d => {
+      const u = d.data();
+      evaluatorDirectory.set(d.id, { name: u.name || '', team: String(u.team || '') });
+    });
   }
 
   window.doSyncSheets = async () => {
@@ -3078,11 +3146,12 @@
       if (!await commitPendingReps()) return; // לא מסנכרנים צילום חלקי
 
       // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
+      await loadEvaluatorDirectory();
       const races = await gatherRacesForCurrentContext();
       const arrivalsByRace = await gatherEvaluatorArrivalsForRaces(races);
       let stationRows = [];
       for (const r of races) {
-        stationRows = stationRows.concat(buildSyncRowsForRace(r, arrivalsByRace.get(r.id) || null));
+        stationRows = stationRows.concat(buildSyncRowsForRace(r, arrivalsByRace.get(r.id) || new Map()));
       }
 
       // הערות כלליות של הצוות הנוכחי בלבד
@@ -3431,7 +3500,7 @@
     const pset = new Set();
     for (const race of compareChartAllRaces) {
       const arrival = evaluatorArrivalStateForRace(
-        race, compareChartArrivalByRace.get(race.id) || null);
+        race, personalArrivalFrom(compareChartArrivalByRace.get(race.id)));
       arrival.order.forEach(participantId => pset.add(String(participantId)));
     }
     const participants = Array.from(pset).sort((a, b) => Number(a) - Number(b));
@@ -3494,7 +3563,7 @@
         const race = compareChartAllRaces.find(r => Number(r.round || 0) === rnd);
         if (!race) return null;
         const arrival = evaluatorArrivalStateForRace(
-          race, compareChartArrivalByRace.get(race.id) || null);
+          race, personalArrivalFrom(compareChartArrivalByRace.get(race.id)));
         const place = arrival.order.indexOf(String(pid));
         return place >= 0 ? place + 1 : null;
       });
