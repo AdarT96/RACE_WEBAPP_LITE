@@ -217,6 +217,24 @@
     </div>
   </div>
 
+  <!-- קבצי Google Sheets -->
+  <div class="card mb-16">
+    <div class="flex flex-center flex-between mb-12">
+      <h2>📊 קבצי Google Sheets</h2>
+      <button class="btn btn-ghost" onclick="auditSheetFiles()" style="font-size:13px; padding:6px 12px">🔍 בדיקת קבצים</button>
+    </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
+      קבצי הצוותים נוצרים כאן <strong>מראש</strong>, לפני האירוע. הסנכרון עצמו רק כותב לקבצים
+      קיימים ולעולם לא יוצר חדשים — כך נמנעת יצירת קובץ כפול בכל שורה.
+    </p>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <button id="btn-create-team-sheets" class="btn btn-primary" onclick="createAllTeamSheets()">
+        📁 צור קבצי צוותים
+      </button>
+    </div>
+    <div id="sheets-audit" style="margin-top:12px; font-size:13px"></div>
+  </div>
+
   <!-- דיווחי תקלות -->
   <div class="card mb-16">
     <div class="flex flex-center flex-between mb-12">
@@ -481,6 +499,87 @@
       showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
     }
   };
+
+  // ═══════════════════════════════════════════════════════════
+  //  קבצי צוותים — הקצאה מראש
+  // ═══════════════════════════════════════════════════════════
+  // הסנכרון כבר לא יוצר קבצים, ולכן חייבים ליצור אותם כאן לפני האירוע.
+  // idempotent: קובץ צוות שכבר קיים מוחזר כמו שהוא.
+  async function postToSheets(body) {
+    if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+      body.key = APP_CONFIG.sheetsApiKey;
+    }
+    const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'הפעולה נכשלה');
+    return data;
+  }
+
+  window.createAllTeamSheets = async () => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    const max = APP_CONFIG.maxTeamNumber || 15;
+    if (!confirm(`ליצור קבצי גיליון לצוותים 1–${max}? (צוות שכבר יש לו קובץ יידלג)`)) return;
+
+    const btn = document.getElementById('btn-create-team-sheets');
+    const orig = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
+    try {
+      let created = 0, existed = 0, failed = 0;
+      // רציף בכוונה — כל יצירה תופסת את נעילת הסקריפט
+      for (let t = 1; t <= max; t++) {
+        if (btn) btn.innerHTML = `⏳ צוות ${t}/${max}…`;
+        try {
+          const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t) });
+          if (/created/i.test(data.message || '')) created++; else existed++;
+        } catch (e) { failed++; console.warn(`[team sheet ${t}]`, e.message); }
+      }
+      let msg = `נוצרו ${created} · קיימים ${existed}`;
+      if (failed) msg += ` · נכשלו ${failed}`;
+      showToast(msg, failed ? 'error' : 'success');
+    } catch (e) {
+      showToast('שגיאה: ' + e.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; if (orig) btn.innerHTML = orig; }
+    }
+  };
+
+  // ביקורת קריאה-בלבד: מה קיים באמת, ואיפה יש כפילויות.
+  window.auditSheetFiles = async () => {
+    const box = document.getElementById('sheets-audit');
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    box.innerHTML = '<span style="color:var(--text-muted)">בודק… (עשוי לקחת עד דקה)</span>';
+    try {
+      const data = await postToSheets({ type: 'audit_files' });
+      box.innerHTML = renderAudit('צוותים', data.teams) + renderAudit('מעריכים', data.evaluators);
+    } catch (e) {
+      box.innerHTML = `<span style="color:var(--danger)">הבדיקה נכשלה: ${e.message}</span>`;
+    }
+  };
+
+  function renderAudit(title, groups) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+      return `<div style="margin-bottom:10px"><strong>${title}:</strong> אין רשומות</div>`;
+    }
+    const rows = groups.map(g => {
+      const dup = g.duplicateRows > 1;
+      const files = g.rows.map(r =>
+        `<div style="padding-right:12px; color:var(--text-muted)">
+           ${r.state} · ${r.tabs} טאבים · ${r.dataRows} שורות נתונים
+         </div>`).join('');
+      return `<div style="margin:6px 0; padding:6px 8px; border-radius:6px;
+                   background:${dup ? 'rgba(220,80,80,.12)' : 'transparent'}">
+                <strong>${g.key || '(ריק)'}</strong>
+                ${dup ? `<span style="color:var(--danger)"> — ${g.duplicateRows} קבצים כפולים, ${g.withData} עם נתונים</span>` : ''}
+                ${files}
+              </div>`;
+    }).join('');
+    return `<div style="margin-bottom:14px"><strong>${title}</strong>${rows}</div>`;
+  }
 
   // יצירה לכל המעריכים הקיימים בבת אחת. מדלג על מי שכבר יש לו קובץ.
   window.createAllEvaluatorSheets = async () => {

@@ -60,11 +60,15 @@ function doPost(e) {
       if (payload.key !== API_SECRET_KEY) return buildResponse(false, "Unauthorized");
     }
 
-    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var ss = openSpreadsheet_(SHEET_ID,
+      "הקובץ הראשי (SHEET_ID) לא נגיש — נמחק, הועבר לסל, או שאין לסקריפט הרשאה אליו. " +
+      "בדוק את SHEET_ID ב-Code.gs ואת הרשאות הפריסה");
     var type = String(payload.type || "").trim();
 
     if (type === "general_note")           return handleGeneralNote_(ss, payload);
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
+    if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
+    if (type === "audit_files")            return handleAuditFiles_(ss);
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -106,13 +110,22 @@ function handleRaceRow_(ss, payload) {
   var def = effectiveDef_(payload, t.def);
 
   var team = teamId_(payload);
-  if (team) {
-    var teamSs = getTeamFile_(ss, team);
-    if (teamSs) writeParticipantRow_(teamSs, payload, def);
-  }
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeParticipantRow_(evalSs, payload, def); });
+  if (!team) return buildResponse(false, "Missing team");
 
-  return buildResponse(true, "OK: " + def.name + " / מועמד " + pid);
+  // נתיב חם — כתיבה בלבד. קובץ חסר הוא שגיאה, לא טריגר ליצירה.
+  var teamSs = findTeamFile_(ss, team);
+  if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
+  writeParticipantRow_(teamSs, payload, def);
+
+  var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
+    writeParticipantRow_(evalSs, payload, def);
+  });
+
+  return buildDataResponse_(true, "OK: " + def.name + " / מועמד " + pid, { warning: warning });
+}
+
+function missingTeamFileMsg_(team) {
+  return "אין קובץ לצוות " + team + " — צור אותו בפאנל המנהל (\"קבצי צוותים\") לפני הסנכרון";
 }
 
 // שמות פרמטרים/מדידה/שם תחנה — מה-payload אם הגיע, אחרת מברירת המחדל
@@ -188,13 +201,17 @@ function handleGeneralNote_(ss, payload) {
   if (!pid || !note) return buildResponse(false, "Missing pid/note");
 
   var team = parseInt(String(payload.team_id || "").replace(/\D+/g, ""), 10);
-  if (team) {
-    var teamSs = getTeamFile_(ss, team);
-    if (teamSs) writeGeneralNoteRow_(teamSs, payload);
-  }
-  mirrorToEvaluatorFile_(ss, payload, function (evalSs) { writeGeneralNoteRow_(evalSs, payload); });
+  if (!team) return buildResponse(false, "Missing team");
 
-  return buildResponse(true, "Note recorded for pid " + pid);
+  var teamSs = findTeamFile_(ss, team);
+  if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
+  writeGeneralNoteRow_(teamSs, payload);
+
+  var warning = mirrorToEvaluatorFile_(ss, payload, function (evalSs) {
+    writeGeneralNoteRow_(evalSs, payload);
+  });
+
+  return buildDataResponse_(true, "Note recorded for pid " + pid, { warning: warning });
 }
 
 function writeGeneralNoteRow_(ss, payload) {
@@ -225,11 +242,20 @@ function writeGeneralNoteRow_(ss, payload) {
 }
 
 // ---------- קבצי צוותים ----------
-function getTeamFile_(ss, team) {
+// חיפוש בלבד — ללא יצירה וללא DriveApp. זהו הנתיב שרץ בכל שורת סנכרון.
+// אם הקובץ הרשום נמחק או שאין אליו גישה, openById נכשל ברעש — וזה רצוי:
+// הגרסה הקודמת בלעה את הכשל וייצרה קובץ חדש בכל בקשה.
+function findTeamFile_(ss, team) {
   var entry = findTeamEntry_(ss, team);
-  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
-    return SpreadsheetApp.openById(entry.fileId);
-  }
+  if (!entry || !entry.fileId) return null;
+  return openSpreadsheet_(entry.fileId,
+    "קובץ הצוות " + team + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+    "פאנל מנהל → קבצי Google Sheets → \"צור קבצי צוותים\" ייצור קובץ חדש במקומו");
+}
+
+// יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהפאנל),
+// לעולם לא מנתיב הסנכרון.
+function createTeamFile_(ss, team) {
   var newSs = SpreadsheetApp.create("צוות " + team + " — גיבוש");
   try { DriveApp.getFileById(newSs.getId()).moveTo(teamFolder_()); } catch (moveErr) {}
 
@@ -243,6 +269,20 @@ function getTeamFile_(ss, team) {
   reg.appendRow([String(team), newSs.getId(), newSs.getUrl(),
                  Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
   return newSs;
+}
+
+// הקצאה יזומה מהפאנל. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
+function handleEnsureTeamSheet_(ss, payload) {
+  var team = parseInt(String(payload.team || "").replace(/\D+/g, ""), 10);
+  if (!team) return buildResponse(false, "Missing team");
+
+  var entry = findTeamEntry_(ss, team);
+  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
+    return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
+  }
+
+  var newSs = createTeamFile_(ss, team);
+  return buildDataResponse_(true, "Team sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
 }
 
 function findTeamEntry_(ss, team) {
@@ -303,7 +343,7 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   if (!uid && !name) return buildResponse(false, "Missing uid/name");
 
   var entry = findEvaluatorEntry_(ss, uid, name);
-  if (entry && entry.fileId && fileAlive_(entry.fileId)) {
+  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
@@ -349,21 +389,115 @@ function findEvaluatorEntry_(ss, uid, name) {
   return found;
 }
 
+// מחזירה "" בהצלחה, או תיאור תקלה קריא. שורת הצוות כבר נכתבה בשלב זה,
+// ולכן כשל כאן אינו מפיל את הבקשה — אבל הוא כן מדווח חזרה ל-app.
+// הגרסה הקודמת בלעה כל שגיאה בשקט, וזו הסיבה שקבצי המעריכים נשארו ריקים.
 function mirrorToEvaluatorFile_(ss, payload, fn) {
+  var uid  = String(payload.evaluator_uid || "").trim();
+  var name = String(payload.evaluator_name || "").trim();
+  if (!uid && !name) return "השורה נשלחה בלי זיהוי מעריך";
+
+  var entry = findEvaluatorEntry_(ss, uid, name);
+  if (!entry || !entry.fileId) {
+    return "אין קובץ רשום למעריך " + (name || uid) + " — צור אותו בפאנל המנהל";
+  }
+  var evalSs;
   try {
-    var uid  = String(payload.evaluator_uid || "").trim();
-    var name = String(payload.evaluator_name || "").trim();
-    if (!uid && !name) return;
-    var entry = findEvaluatorEntry_(ss, uid, name);
-    if (!entry || !entry.fileId || !fileAlive_(entry.fileId)) return;
-    fn(SpreadsheetApp.openById(entry.fileId));
-  } catch (err) { /* best-effort */ }
+    evalSs = openSpreadsheet_(entry.fileId,
+      "קובץ המעריך " + (name || uid) + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+      "פאנל מנהל → כפתור \"צור מחדש\" ליד שם המעריך");
+  } catch (err) {
+    return err.message;
+  }
+  try {
+    fn(evalSs);
+    return "";
+  } catch (err2) {
+    return "כתיבה לקובץ המעריך " + (name || uid) + " נכשלה: " + err2.message;
+  }
 }
 
-// האם הקובץ קיים ולא בסל המחזור?
-function fileAlive_(id) {
-  try { return !DriveApp.getFileById(id).isTrashed(); }
-  catch (e) { return false; }
+// פותח גיליון עם הודעת שגיאה שאומרת מה לעשות, במקום חריגה גולמית באנגלית.
+// חשוב במיוחד עכשיו: מאז שהיצירה יצאה מהנתיב החם, קובץ חסר כבר לא "מתקן"
+// את עצמו בשקט — ולכן ההודעה היא כל מה שמכוון את המשתמש.
+function openSpreadsheet_(id, hint) {
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    throw new Error(hint + " [" + err.message + "]");
+  }
+}
+
+// "alive" | "trashed" | "missing" — ורק אלה. שגיאת הרשאה/מכסה/תקלה זמנית
+// נזרקת הלאה במקום להתחזות ל"לא קיים": ההתחזות הזו היא שגרמה ליצירת
+// קובץ צוות חדש בכל בקשת סנכרון. נקראת רק בהקצאה יזומה, לא בנתיב החם.
+function fileState_(id) {
+  try {
+    return DriveApp.getFileById(id).isTrashed() ? "trashed" : "alive";
+  } catch (err) {
+    var msg = String((err && err.message) || err);
+    if (/not found|no item with the given id|נמצא/i.test(msg)) return "missing";
+    throw err;
+  }
+}
+
+// ---------- ביקורת קבצים (קריאה בלבד) ----------
+// מדווח מה באמת קיים: כמה רשומות יש לכל צוות/מעריך, מה מצב כל קובץ,
+// וכמה נתונים יש בו. לא יוצר, לא מוחק, לא משנה — רק מדווח.
+// שימוש: POST { type: "audit_files" }
+function handleAuditFiles_(ss) {
+  return buildDataResponse_(true, "Audit complete", {
+    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1, 0),
+    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3, 1)
+  });
+}
+
+// keyCol/fileCol הם אינדקסים מבוססי-0 בתוך שורת הרישום
+function auditRegistry_(ss, tabName, width, fileCol, keyCol) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+
+  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, width).getValues();
+  var byKey = {};
+  var order = [];
+
+  for (var i = 0; i < vals.length; i++) {
+    var key    = String(vals[i][keyCol] || "").trim();
+    var fileId = String(vals[i][fileCol] || "").trim();
+    if (!key && !fileId) continue;
+    if (!byKey[key]) { byKey[key] = { key: key, rows: [] }; order.push(key); }
+    byKey[key].rows.push({ registryRow: i + 2, fileId: fileId, state: "", tabs: 0, dataRows: 0 });
+  }
+
+  for (var k = 0; k < order.length; k++) {
+    var group = byKey[order[k]];
+    for (var r = 0; r < group.rows.length; r++) inspectFile_(group.rows[r]);
+    group.duplicateRows = group.rows.length;
+    group.withData = group.rows.filter(function (x) { return x.dataRows > 0; }).length;
+  }
+
+  return order.map(function (key) { return byKey[key]; });
+}
+
+function inspectFile_(row) {
+  if (!row.fileId) { row.state = "no-id"; return; }
+  try {
+    row.state = fileState_(row.fileId);
+  } catch (err) {
+    row.state = "error: " + err.message;
+    return;
+  }
+  if (row.state !== "alive") return;
+  try {
+    var sheets = SpreadsheetApp.openById(row.fileId).getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getName() === "אודות") continue;
+      row.tabs++;
+      row.dataRows += Math.max(0, sheets[i].getLastRow() - 1);
+    }
+  } catch (err2) {
+    row.state = "open-failed: " + err2.message;
+  }
 }
 
 // ---------- Generic helpers ----------

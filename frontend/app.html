@@ -72,7 +72,7 @@
       border: 1px solid var(--success); background: rgba(34,197,94,.10); font-size: 13px;
     }
     .live-round-banner strong { color: var(--success); }
-    .evaluator-only[hidden], .session-control-only[hidden] { display: none !important; }
+    .evaluator-only[hidden], .session-control-only[hidden], .admin-only[hidden] { display: none !important; }
 
     /* ── Page hierarchy ─────────────────────────────────── */
     .app-section {
@@ -756,7 +756,7 @@
               title="השווה את המקום שהמשתתפים הגיעו בכל סבב בתחנה הזאת">
         📈 גרף השוואה
       </button>
-      <button class="btn btn-info evaluator-only" onclick="doSyncSheets()" style="padding:12px 20px"
+      <button class="btn btn-info evaluator-only admin-only" onclick="doSyncSheets()" style="padding:12px 20px"
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
@@ -1477,6 +1477,9 @@
 
   function applyRoleVisibility() {
     document.querySelectorAll('.evaluator-only').forEach(el => { el.hidden = !canEvaluate(); });
+    // הסנכרון ל-Sheets שמור למנהל בלבד — פריסת ה-Apps Script מרשה רק לו לכתוב,
+    // ולחיצה של מעריך הייתה מחזירה שגיאה בלבד.
+    document.querySelectorAll('.admin-only').forEach(el => { el.hidden = !isAdmin(); });
   }
 
   function hideAllSessionControls() {
@@ -2882,23 +2885,125 @@
   // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
-  // שולח את הבקשה הראשונה לבד (היא יוצרת את קובץ הצוות) וממתין לסיומה,
-  // ורק אז שולח את השאר במקביל — כך בקשות מקבילות מוצאות קובץ קיים ולא מכפילות.
-  async function sendRowsFirstThenRest(rows) {
-    const send = (row) => fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
-    if (rows.length === 0) return 0;
-    let ok = 0;
-    try { const r0 = await send(rows[0]); if (r0.ok) ok++; } catch (e) {}
-    if (rows.length > 1) {
-      const rest = await Promise.allSettled(rows.slice(1).map(send));
-      ok += rest.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+  // ── שלב 1: ודא שהקבצים קיימים ─────────────────────────────
+  // רשימת הקבצים נגזרת מהשורות שנבנו, לא מהקשר המסך — כך שכל שינוי
+  // בהיקף הסנכרון מזין את השלב הזה אוטומטית.
+  function filesNeededFor(rows) {
+    const teams = new Set();
+    const evaluators = new Map();
+    for (const row of rows) {
+      const team = String(row.team || row.team_id || '').replace(/\D+/g, '');
+      if (team) teams.add(String(Number(team)));
+      const uid = row.evaluator_uid || '';
+      const name = row.evaluator_name || '';
+      if (uid || name) {
+        evaluators.set(uid || name, { uid, name, team: String(row.evaluator_team || team || '') });
+      }
     }
-    return ok;
+    return { teams: [...teams], evaluators: [...evaluators.values()] };
   }
 
-  function buildSyncRowsForRace(race, personalArrival = null) {
+  async function ensureFilesExist(rows, onProgress) {
+    const { teams, evaluators } = filesNeededFor(rows);
+    const total = teams.length + evaluators.length;
+    const problems = [];
+    let done = 0;
+
+    const step = async (body, label) => {
+      onProgress?.(++done, total);
+      try {
+        await postToSheets(body);
+      } catch (e) {
+        problems.push(`${label}: ${e.message}`);
+      }
+    };
+
+    for (const team of teams) {
+      await step({ type: 'ensure_team_sheet', team }, `קובץ צוות ${team}`);
+    }
+    for (const ev of evaluators) {
+      await step({ type: 'ensure_evaluator_sheet', uid: ev.uid, name: ev.name, team: ev.team },
+                 `קובץ מעריך ${ev.name || ev.uid}`);
+    }
+    return { checked: total, problems };
+  }
+
+  async function postToSheets(body) {
+    if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
+      body.key = APP_CONFIG.sheetsApiKey;
+    }
+    const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'הפעולה נכשלה');
+    return data;
+  }
+
+  // ── שלב 2: כתיבת הנתונים ──────────────────────────────────
+  // ה-Apps Script מחזיר 200 גם כשהפעולה נכשלה, עם { success:false, message }.
+  // לכן חובה לקרוא את הגוף — בדיקת res.ok בלבד ספרה כשלונות כהצלחות.
+  async function sendRow(row) {
+    try {
+      const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json();
+      return { ok: data.success === true, message: data.message || '', warning: data.warning || '' };
+    } catch (e) {
+      return { ok: false, message: e.message };
+    }
+  }
+
+  // הראשונה לבדה ואז השאר במקביל: כשהראשונה נכשלת (למשל אין קובץ לצוות),
+  // רואים את הסיבה מיד במקום להציף את הסקריפט ב-90 בקשות שכולן ייכשלו.
+  async function sendRowsFirstThenRest(rows) {
+    if (rows.length === 0) return { ok: 0, problems: [] };
+    const results = [await sendRow(rows[0])];
+    if (rows.length > 1) {
+      const rest = await Promise.all(rows.slice(1).map(sendRow));
+      results.push(...rest);
+    }
+    // הודעות זהות מתקבצות — 90 שורות עם אותה תקלה הן תקלה אחת
+    const problems = new Map();
+    for (const r of results) {
+      const msg = !r.ok ? (r.message || 'שגיאה לא ידועה') : (r.warning || '');
+      if (msg) problems.set(msg, (problems.get(msg) || 0) + 1);
+    }
+    return {
+      ok: results.filter(r => r.ok).length,
+      problems: [...problems].map(([message, count]) => ({ message, count }))
+    };
+  }
+
+  // מי הוערך בסבב הזה, לפי כל המקורות: ציונים, הערות וסדר הגעה.
+  function evaluatorUidsForRace(race, arrivalsByUid) {
+    const uids = new Set();
+    for (const tag of (Array.isArray(race.tags) ? race.tags : [])) {
+      Object.keys(tag.scores || {}).forEach(u => { if (u) uids.add(u); });
+      (Array.isArray(tag.comments) ? tag.comments : [])
+        .map(normalizeComment)
+        .forEach(c => { if (c.authorUid) uids.add(c.authorUid); });
+    }
+    for (const uid of arrivalsByUid.keys()) if (uid) uids.add(uid);
+    return [...uids];
+  }
+
+  // מנהל מסנכרן את ההערכות של כל המעריכים; מעריך מסנכרן את שלו בלבד.
+  // בלי זה, סנכרון שמורשה למנהל בלבד היה כותב רק את ההערכות של המנהל עצמו
+  // ומשאיר את כל שאר המעריכים מחוץ לקבצים.
+  function buildSyncRowsForRace(race, arrivalsByUid = new Map()) {
+    const uids = isAdmin()
+      ? evaluatorUidsForRace(race, arrivalsByUid)
+      : [currentUser?.uid || ''].filter(Boolean);
+
     const rows = [];
-    const uid = currentUser?.uid || '';
+    for (const evaluatorUid of uids) {
+      rows.push(...buildRowsForEvaluator(race, evaluatorUid, arrivalsByUid.get(evaluatorUid) || null));
+    }
+    return rows;
+  }
+
+  function buildRowsForEvaluator(race, uid, personalArrival) {
+    const rows = [];
     const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
     const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
     const tags = Array.isArray(race.tags) ? race.tags : [];
@@ -2918,7 +3023,7 @@
       const markedAt = place != null ? arrival?.slotTimes?.[String(place)] : null;
       const elapsedMs = arrivalElapsedMs(race, markedAt);
 
-      // הציונים וההערות של המעריך הנוכחי בלבד
+      // הציונים וההערות של המעריך שהשורה הזו מתארת
       const myScores = (tag.scores && tag.scores[uid]) || {};
       const myComments = (Array.isArray(tag.comments) ? tag.comments : [])
         .map(normalizeComment)
@@ -2945,8 +3050,8 @@
         first_ms:       elapsedMs == null ? '' : elapsedMs,
         scores:         myScores,
         comments:       myComments,
-        evaluator_name: currentUser?.name || '',
-        evaluator_uid:  currentUser?.uid || '',
+        evaluator_name: evaluatorNameFor(uid),
+        evaluator_uid:  uid,
         evaluator_team: String(race.team || '')
       };
       if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
@@ -2968,15 +3073,56 @@
     return list;
   }
 
+  // מחזירה Map<raceId, Map<evaluatorUid, arrival>>.
+  // מנהל קורא את כל מסמכי סדר ההגעה של הסבב (החוקים מתירים לו),
+  // מעריך קורא את שלו בלבד.
   async function gatherEvaluatorArrivalsForRaces(races) {
     const result = new Map();
+    const list = Array.isArray(races) ? races : [];
+
+    if (isAdmin()) {
+      const snapshots = await Promise.all(list.map(race =>
+        getDocs(collection(db, 'races', String(race.id), 'evaluatorArrivals'))));
+      snapshots.forEach((snap, index) => {
+        const byUid = new Map();
+        snap.forEach(d => byUid.set(d.id, d.data()));
+        result.set(list[index].id, byUid);
+      });
+      return result;
+    }
+
     if (!currentUser?.uid) return result;
-    const snapshots = await Promise.all((Array.isArray(races) ? races : [])
-      .map(race => getDoc(evaluatorArrivalRef(race.id))));
+    const snapshots = await Promise.all(list.map(race => getDoc(evaluatorArrivalRef(race.id))));
     snapshots.forEach((snap, index) => {
-      result.set(races[index].id, snap.exists() ? snap.data() : null);
+      const byUid = new Map();
+      if (snap.exists()) byUid.set(currentUser.uid, snap.data());
+      result.set(list[index].id, byUid);
     });
     return result;
+  }
+
+  // שם המעריך נכתב לגיליון ומשמש גם ל-dedup ב-Code.gs (תחנה+סבב+מעריך),
+  // ולכן חייב להיות ייחודי ולא ריק — ה-uid הוא נפילה אחרונה.
+  // גרף ההשוואה הוא תמיד המבט האישי, גם למנהל — שולף את המסמך שלי מהמפה.
+  function personalArrivalFrom(arrivalsByUid) {
+    return arrivalsByUid?.get(currentUser?.uid) || null;
+  }
+
+  let evaluatorDirectory = new Map();
+
+  function evaluatorNameFor(uid) {
+    if (uid && uid === currentUser?.uid) return currentUser?.name || uid;
+    return evaluatorDirectory.get(uid)?.name || uid || '';
+  }
+
+  async function loadEvaluatorDirectory() {
+    evaluatorDirectory = new Map();
+    if (!isAdmin()) return;
+    const snap = await getDocs(collection(db, 'users'));
+    snap.forEach(d => {
+      const u = d.data();
+      evaluatorDirectory.set(d.id, { name: u.name || '', team: String(u.team || '') });
+    });
   }
 
   window.doSyncSheets = async () => {
@@ -3000,11 +3146,12 @@
       if (!await commitPendingReps()) return; // לא מסנכרנים צילום חלקי
 
       // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
+      await loadEvaluatorDirectory();
       const races = await gatherRacesForCurrentContext();
       const arrivalsByRace = await gatherEvaluatorArrivalsForRaces(races);
       let stationRows = [];
       for (const r of races) {
-        stationRows = stationRows.concat(buildSyncRowsForRace(r, arrivalsByRace.get(r.id) || null));
+        stationRows = stationRows.concat(buildSyncRowsForRace(r, arrivalsByRace.get(r.id) || new Map()));
       }
 
       // הערות כלליות של הצוות הנוכחי בלבד
@@ -3013,13 +3160,33 @@
       const allRows = stationRows.concat(noteRows);
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
 
-      // שולח קודם שורה אחת (יוצרת את קובץ הצוות) ואז את השאר — מונע כפילות.
-      const ok = await sendRowsFirstThenRest(allRows);
+      // ── שלב 1: ודא שכל הקבצים הדרושים קיימים ──
+      if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const prep = await ensureFilesExist(allRows, (done, total) => {
+        if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
+      });
+      // קובץ חסר פירושו שכל השורות אליו ייכשלו — עוצרים לפני שכותבים חלקית
+      if (prep.problems.length) {
+        showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
+        console.warn('[sync] stage 1 failed:', prep.problems);
+        return;
+      }
+
+      // ── שלב 2: כתיבת הנתונים ──
+      if (btn) btn.innerHTML = '⏳ מסנכרן…';
+      const { ok, problems } = await sendRowsFirstThenRest(allRows);
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
-      if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
-      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} רשומות)`, 'error');
-      else showToast(`סונכרנו ${ok}/${allRows.length} (${fail} נכשלו)`, 'error');
+
+      if (fail === 0 && problems.length === 0) {
+        showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
+      } else {
+        // מציג את הסיבה עצמה, לא רק מונה. תקלה חוזרת = שורה אחת עם מונה.
+        const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
+        const head = ok === 0 ? `הסנכרון נכשל (${fail})` : `סונכרנו ${ok}/${allRows.length}`;
+        showToast(`${head} — ${detail}`, ok === 0 ? 'error' : 'info');
+        console.warn('[sync] problems:', problems);
+      }
     } catch (e) {
       showToast('שגיאה בסנכרון: ' + e.message, 'error');
     } finally {
@@ -3333,7 +3500,7 @@
     const pset = new Set();
     for (const race of compareChartAllRaces) {
       const arrival = evaluatorArrivalStateForRace(
-        race, compareChartArrivalByRace.get(race.id) || null);
+        race, personalArrivalFrom(compareChartArrivalByRace.get(race.id)));
       arrival.order.forEach(participantId => pset.add(String(participantId)));
     }
     const participants = Array.from(pset).sort((a, b) => Number(a) - Number(b));
@@ -3396,7 +3563,7 @@
         const race = compareChartAllRaces.find(r => Number(r.round || 0) === rnd);
         if (!race) return null;
         const arrival = evaluatorArrivalStateForRace(
-          race, compareChartArrivalByRace.get(race.id) || null);
+          race, personalArrivalFrom(compareChartArrivalByRace.get(race.id)));
         const place = arrival.order.indexOf(String(pid));
         return place >= 0 ? place + 1 : null;
       });
