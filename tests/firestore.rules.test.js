@@ -23,7 +23,8 @@ async function seedData() {
       admin1: { uid: 'admin1', name: 'מנהל', role: 'admin', team: 1, approved: true },
       operator1: { uid: 'operator1', name: 'מפקצ 1', role: 'operator', team: 1, approved: true },
       operator2: { uid: 'operator2', name: 'מפקצ 2', role: 'operator', team: 2, approved: true },
-      evaluator1: { uid: 'evaluator1', name: 'מעריך 1', role: 'evaluator', team: 1, approved: true }
+      evaluator1: { uid: 'evaluator1', name: 'מעריך 1', role: 'evaluator', team: 1, approved: true },
+      evaluator2: { uid: 'evaluator2', name: 'מעריך 2', role: 'evaluator', team: 1, approved: true }
     };
     for (const [uid, data] of Object.entries(users)) {
       await setDoc(doc(db, 'users', uid), data);
@@ -31,7 +32,11 @@ async function seedData() {
     await setDoc(doc(db, 'races', 'race_01_07_1'), {
       team: '01', station: '07', round: 1, status: 'running',
       startedAt: Timestamp.fromMillis(Date.now() - 10_000), startedBy: 'operator1',
-      timeLimitSeconds: 2400, participantIds: ['100'], tags: []
+      timeLimitSeconds: 2400, participantIds: ['100'], tags: [], evaluationSchemaVersion: 2
+    });
+    await setDoc(doc(db, 'races', 'legacy-race'), {
+      team: '01', station: '07', round: 8, status: 'stopped',
+      participantIds: ['100'], tags: []
     });
   });
 }
@@ -56,6 +61,28 @@ function issuePayload(overrides = {}) {
     environment: { appVersion: 'test', online: true, viewport: '390x844', userAgent: 'test' }
   });
   return { ...report, ...overrides, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+}
+
+function assessmentPayload(uid = 'evaluator1') {
+  return {
+    evaluatorUid: uid,
+    entries: {
+      '100': {
+        scores: { resilience: 6 }, measurement: 4,
+        comments: [{ id: 'note-1', text: 'יציב', authorUid: uid, authorName: 'מעריך', createdAt: 1, updatedAt: 1 }],
+        clearedScores: [], measurementCleared: false, hiddenCommentIds: []
+      }
+    },
+    schemaVersion: 2, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  };
+}
+
+function privateNotesPayload(uid = 'evaluator1') {
+  return {
+    authorUid: uid, team: '01', participantId: '100',
+    notes: [{ id: 'general-1', text: 'הערה אישית', authorUid: uid, authorName: 'מעריך', createdAt: 1, updatedAt: 1 }],
+    schemaVersion: 2, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  };
 }
 
 before(async () => {
@@ -99,11 +126,81 @@ test('legacy clients may omit the limit but cannot choose another limit', async 
 
 test('evaluators can still edit evaluation data but never lifecycle fields', async () => {
   const evaluator = userDb('evaluator1');
-  await assertSucceeds(updateDoc(doc(evaluator, 'races', 'race_01_07_1'), {
+  await assertSucceeds(updateDoc(doc(evaluator, 'races', 'legacy-race'), {
+    tags: [{ participantId: '100', reps: 4 }]
+  }));
+  await assertFails(updateDoc(doc(evaluator, 'races', 'race_01_07_1'), {
     tags: [{ participantId: '100', reps: 4 }]
   }));
   await assertFails(updateDoc(doc(evaluator, 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'evaluator1'
+  }));
+});
+
+test('private assessments are readable and writable only by their evaluator', async () => {
+  const ownRef = doc(userDb('evaluator1'), 'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1');
+  await assertSucceeds(setDoc(ownRef, assessmentPayload()));
+  await assertSucceeds(getDoc(ownRef));
+
+  await assertFails(getDoc(doc(userDb('evaluator2'),
+    'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1')));
+  await assertFails(getDoc(doc(userDb('operator1'),
+    'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1')));
+  await assertFails(setDoc(doc(userDb('evaluator1'),
+    'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator2'), assessmentPayload('evaluator2')));
+});
+
+test('private general notes are isolated by author, including from the commander', async () => {
+  const ownRef = doc(userDb('evaluator1'), 'general_notes', '01_100', 'authors', 'evaluator1');
+  await assertSucceeds(setDoc(ownRef, privateNotesPayload()));
+  await assertSucceeds(getDoc(ownRef));
+  await assertFails(getDoc(doc(userDb('evaluator2'), 'general_notes', '01_100', 'authors', 'evaluator1')));
+  await assertFails(getDoc(doc(userDb('operator1'), 'general_notes', '01_100', 'authors', 'evaluator1')));
+
+  const operatorRef = doc(userDb('operator1'), 'general_notes', '01_100', 'authors', 'operator1');
+  await assertSucceeds(setDoc(operatorRef, privateNotesPayload('operator1')));
+  await assertSucceeds(getDoc(operatorRef));
+});
+
+test('a migrated general-note parent rejects legacy member writes before the global marker', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'general_notes', '01_100'), {
+      team: '01', participantId: '100', notes: [], privacySchemaVersion: 2
+    });
+  });
+
+  await assertFails(updateDoc(doc(userDb('evaluator1'), 'general_notes', '01_100'), {
+    notes: [{ text: 'legacy write', authorUid: 'evaluator1' }]
+  }));
+  await assertFails(updateDoc(doc(userDb('operator1'), 'general_notes', '01_100'), {
+    notes: [{ text: 'legacy write', authorUid: 'operator1' }]
+  }));
+});
+
+test('the completion marker disables legacy shared evaluation access and writes', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'settings', 'evaluationPrivacy'), { schemaVersion: 2, status: 'complete' });
+    await setDoc(doc(db, 'races', 'legacy-race'), {
+      team: '01', station: '07', round: 9, status: 'stopped',
+      participantIds: ['100'], tags: [{ participantId: '100', scores: { evaluator1: { resilience: 7 } } }]
+    });
+    await setDoc(doc(db, 'general_notes', '01_100'), {
+      team: '01', participantId: '100', notes: [{ text: 'legacy', authorUid: 'evaluator1' }]
+    });
+  });
+
+  const evaluator = userDb('evaluator1');
+  await assertFails(getDoc(doc(evaluator, 'races', 'legacy-race')));
+  await assertSucceeds(getDoc(doc(evaluator, 'races', 'race_01_07_1')));
+  await assertFails(updateDoc(doc(evaluator, 'races', 'race_01_07_1'), {
+    tags: [{ participantId: '100', scores: { evaluator1: { resilience: 7 } } }]
+  }));
+  await assertFails(getDoc(doc(evaluator, 'general_notes', '01_100')));
+
+  await assertFails(setDoc(doc(userDb('operator1'), 'races', 'race_01_07_3'), racePayload({ withLimit: false })));
+  await assertSucceeds(setDoc(doc(userDb('operator1'), 'races', 'race_01_07_2'), {
+    ...racePayload(), evaluationSchemaVersion: 2
   }));
 });
 

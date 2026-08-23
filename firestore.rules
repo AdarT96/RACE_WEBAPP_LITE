@@ -24,6 +24,15 @@ service cloud.firestore {
       return int(team) == int(caller().team);
     }
 
+    // The administrator sets this marker only after every legacy shared document
+    // has been migrated. Until then the previous clients remain usable; from that
+    // instant onward, private data can only be read from owner-scoped documents.
+    function privacyMigrationComplete() {
+      return exists(/databases/$(database)/documents/settings/evaluationPrivacy) &&
+        get(/databases/$(database)/documents/settings/evaluationPrivacy).data.schemaVersion == 2 &&
+        get(/databases/$(database)/documents/settings/evaluationPrivacy).data.status == 'complete';
+    }
+
     // Users register themselves as unapproved operator/evaluator accounts. Only an
     // admin may later approve them or change role/team; self-promotion is forbidden.
     match /users/{uid} {
@@ -42,22 +51,25 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // Race lifecycle is controlled by the team's commander (internal role:
-    // operator). Evaluators may change only the shared evaluation payload (`tags`).
-    // Arrival order is intentionally stored in a per-evaluator child document below.
+    // Race documents contain lifecycle and roster data only in schema 2. Subjective
+    // results live in an owner-scoped evaluatorAssessments child document.
     match /races/{raceId} {
       allow read: if isAdmin() ||
-        (signedIn() && caller().approved == true && isOwnTeam(resource.data.team));
+        (signedIn() && caller().approved == true && isOwnTeam(resource.data.team) &&
+         (!privacyMigrationComplete() || resource.data.evaluationSchemaVersion == 2));
 
       allow create: if isAdmin() ||
         (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
          request.resource.data.keys()
-           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds']) &&
+           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds', 'evaluationSchemaVersion']) &&
          request.resource.data.team is string && request.resource.data.station is string &&
          request.resource.data.status == 'running' &&
          request.resource.data.startedBy == request.auth.uid &&
          request.resource.data.startedAt == request.time &&
          request.resource.data.round is int && request.resource.data.round > 0 &&
+         (!privacyMigrationComplete() || request.resource.data.evaluationSchemaVersion == 2) &&
+         (!request.resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
+           request.resource.data.evaluationSchemaVersion == 2) &&
          (!request.resource.data.keys().hasAny(['participantIds']) ||
            request.resource.data.participantIds is list) &&
          (!request.resource.data.keys().hasAny(['timeLimitSeconds']) ||
@@ -79,9 +91,12 @@ service cloud.firestore {
         (!request.resource.data.keys().hasAny(['endedReason']) ||
           request.resource.data.endedReason in ['manual', 'time_limit']);
 
-      // Evaluator: may work on current or historical evaluations, but cannot alter
-      // team/station/round or any timing/lifecycle field.
+      // Compatibility is automatically disabled when the migration marker is set.
+      // New clients never write evaluator data into the shared race document.
       allow update: if isApprovedRole('evaluator') && isOwnTeam(resource.data.team) &&
+        !privacyMigrationComplete() &&
+        (!resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
+          resource.data.evaluationSchemaVersion != 2) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags']);
 
       allow delete: if isAdmin();
@@ -131,6 +146,44 @@ service cloud.firestore {
              .hasOnly(['order', 'slotTimes', 'completedAt', 'updatedAt']));
         allow delete: if isAdmin();
       }
+
+      // One private document per evaluator and round. Firestore rules cannot mask
+      // individual fields, so ownership is enforced at the document path itself.
+      match /evaluatorAssessments/{evaluatorUid} {
+        function parentRace() {
+          return get(/databases/$(database)/documents/races/$(raceId)).data;
+        }
+
+        function ownsAssessmentDocument() {
+          return isApprovedRole('evaluator') &&
+            request.auth.uid == evaluatorUid &&
+            isOwnTeam(parentRace().team);
+        }
+
+        function validAssessmentShape() {
+          return request.resource.data.keys().hasAll([
+              'evaluatorUid', 'entries', 'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'evaluatorUid', 'entries', 'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.evaluatorUid == evaluatorUid &&
+            request.resource.data.entries is map &&
+            request.resource.data.entries.size() <= 20 &&
+            request.resource.data.schemaVersion == 2 &&
+            request.resource.data.updatedAt == request.time;
+        }
+
+        allow read: if isAdmin() || ownsAssessmentDocument();
+        allow create: if isAdmin() ||
+          (ownsAssessmentDocument() && validAssessmentShape() &&
+           request.resource.data.createdAt == request.time);
+        allow update: if isAdmin() ||
+          (ownsAssessmentDocument() && validAssessmentShape() &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['entries', 'updatedAt']));
+        allow delete: if isAdmin();
+      }
     }
 
     // Teams (participants + station mapping): team members read, admins write.
@@ -146,15 +199,66 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // General notes use document IDs in the form "<team>_<participant>".
+    // Legacy shared notes remain available only until the administrator completes
+    // the migration. New notes are isolated under authors/{uid}.
     match /general_notes/{noteId} {
-      allow read: if isAdmin() ||
-        (signedIn() && caller().approved == true &&
-         int(noteId.split('_')[0]) == int(caller().team));
+      allow read: if isAdmin() || (!privacyMigrationComplete() &&
+        signedIn() && caller().approved == true &&
+        int(noteId.split('_')[0]) == int(caller().team));
       allow write: if isAdmin();
-      allow write: if signedIn() && caller().approved == true &&
+      allow create: if !privacyMigrationComplete() &&
+        signedIn() && caller().approved == true &&
         caller().role in ['operator', 'evaluator'] &&
         int(noteId.split('_')[0]) == int(caller().team);
+      allow update, delete: if !privacyMigrationComplete() &&
+        signedIn() && caller().approved == true &&
+        caller().role in ['operator', 'evaluator'] &&
+        (!resource.data.keys().hasAny(['privacySchemaVersion']) ||
+          resource.data.privacySchemaVersion != 2) &&
+        int(noteId.split('_')[0]) == int(caller().team);
+
+      match /authors/{authorUid} {
+        function ownsPrivateNotes() {
+          return signedIn() && request.auth.uid == authorUid &&
+            caller().approved == true && caller().role in ['operator', 'evaluator'] &&
+            int(noteId.split('_')[0]) == int(caller().team);
+        }
+
+        function validPrivateNotesShape() {
+          return request.resource.data.keys().hasAll([
+              'authorUid', 'team', 'participantId', 'notes',
+              'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'authorUid', 'team', 'participantId', 'notes',
+              'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.authorUid == authorUid &&
+            int(request.resource.data.team) == int(noteId.split('_')[0]) &&
+            request.resource.data.participantId == noteId.split('_')[1] &&
+            request.resource.data.notes is list &&
+            request.resource.data.notes.size() <= 200 &&
+            request.resource.data.schemaVersion == 2 &&
+            request.resource.data.updatedAt == request.time;
+        }
+
+        allow read: if isAdmin() || ownsPrivateNotes();
+        allow create: if isAdmin() ||
+          (ownsPrivateNotes() && validPrivateNotesShape() &&
+           request.resource.data.createdAt == request.time);
+        allow update: if isAdmin() ||
+          (ownsPrivateNotes() && validPrivateNotesShape() &&
+           request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['notes', 'updatedAt']));
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Immutable source copies created by the administrator before stripping
+    // legacy shared fields. They are never exposed to operational users.
+    match /privacy_migration_archive/{archiveId} {
+      allow read, create, update: if isAdmin();
+      allow delete: if false;
     }
 
     // Operational issue reports contain only an allow-listed diagnostic context.

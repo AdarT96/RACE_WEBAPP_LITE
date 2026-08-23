@@ -249,7 +249,7 @@
     }
     .arrival-row {
       display: grid;
-      grid-template-columns: 36px 32px minmax(56px, 1fr) minmax(76px, auto) auto;
+      grid-template-columns: 36px 32px minmax(56px, 1fr) auto;
       align-items: center; gap: 7px; min-height: 48px; padding: 6px 8px;
       border-radius: 11px; color: var(--text);
     }
@@ -286,11 +286,6 @@
     }
     .arrival-pid-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
     .arrival-comments-count { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
-    .arrival-time {
-      font-family: 'Courier New', monospace;
-      font-size: 12px; color: var(--text-muted); direction: ltr; white-space: nowrap;
-    }
-    .arrival-time.untimed { font-family: inherit; direction: rtl; font-size: 11px; }
     .arrival-actions { display: inline-flex; gap: 3px; direction: ltr; }
     .arrival-move-btn { cursor: pointer; font-size: 15px; }
     .arrival-divider {
@@ -301,7 +296,7 @@
       content: ''; height: 1px; flex: 1; background: var(--border);
     }
     .arrival-row.pending {
-      grid-template-columns: 36px 32px minmax(56px, 1fr) minmax(76px, auto) auto;
+      grid-template-columns: 36px 32px minmax(56px, 1fr) auto;
       background: rgba(148,163,184,.07); border: 1px solid rgba(148,163,184,.18);
       color: var(--text-muted);
     }
@@ -316,17 +311,16 @@
     body.outdoor-mode .arrival-row.pending {
       background: #f1f5f9; border-color: #94a3b8; color: #334155;
     }
-    body.outdoor-mode .arrival-time, body.outdoor-mode .arrival-pending-label { color: #333; }
+    body.outdoor-mode .arrival-pending-label { color: #333; }
 
     @media (max-width: 430px) {
       .arrival-row, .arrival-row.pending {
-        grid-template-columns: 30px 28px minmax(32px, 1fr) 66px 60px;
+        grid-template-columns: 30px 28px minmax(32px, 1fr) 60px;
         gap: 4px; padding: 5px 6px;
       }
       .arrival-drag-handle, .arrival-move-btn { width: 28px; height: 31px; }
       .arrival-actions { gap: 2px; }
       .arrival-pid { font-size: 16px; }
-      .arrival-time { font-size: 11px; }
     }
 
     /* ── Operator placeholder ──────────────────────────── */
@@ -458,6 +452,98 @@
       #issue-report-modal .modal-box { padding: 18px; }
     }
 
+    /* ── Candidate dashboard ────────────────────────────── */
+    .candidate-view[hidden] { display: none !important; }
+    .candidate-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; flex-wrap: wrap; margin-bottom: 14px;
+    }
+    .candidate-picker-grid {
+      display: grid; grid-template-columns: repeat(var(--participant-columns, 4), minmax(0, 1fr));
+      gap: 8px;
+    }
+    .candidate-picker-btn {
+      min-height: 52px; padding: 8px; border: 2px solid var(--border);
+      border-radius: 11px; background: var(--surface); color: var(--text);
+      font: inherit; font-size: clamp(15px, 4vw, 20px); font-weight: 900;
+      cursor: pointer; direction: ltr;
+    }
+    .candidate-picker-btn.selected { border-color: var(--accent); background: rgba(99,102,241,.18); }
+    .candidate-header {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap;
+    }
+    .candidate-number { font: 900 clamp(32px, 9vw, 54px)/1 monospace; direction: ltr; color: var(--accent); }
+    .candidate-privacy-note { color: var(--text-muted); font-size: 12px; max-width: 560px; }
+    .candidate-traits {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
+      gap: 9px; margin-top: 14px;
+    }
+    .candidate-trait {
+      padding: 12px; border: 1px solid var(--border); border-radius: 12px;
+      background: var(--surface);
+    }
+    .candidate-trait .score { font-size: 27px; font-weight: 900; color: var(--accent); direction: ltr; }
+    .candidate-trait .name { margin-top: 3px; font-size: 12px; font-weight: 700; }
+    .candidate-trait .coverage { margin-top: 4px; color: var(--text-muted); font-size: 10px; }
+    .candidate-station-tabs {
+      display: flex; gap: 8px; overflow-x: auto; padding: 4px 1px 8px;
+      scroll-snap-type: x proximity; scrollbar-width: none;
+    }
+    .candidate-station-tabs::-webkit-scrollbar { display: none; }
+    .candidate-station-tab {
+      flex: 0 0 auto; min-height: 44px; padding: 8px 14px;
+      border: 1px solid var(--border); border-radius: 999px;
+      background: var(--surface); color: var(--text); font: inherit;
+      font-size: 13px; font-weight: 800; cursor: pointer; scroll-snap-align: center;
+    }
+    .candidate-station-tab.selected { border-color: var(--accent); background: rgba(99,102,241,.18); }
+    .candidate-round-card {
+      padding: 13px; margin-top: 10px; border: 1px solid var(--border);
+      border-radius: 12px; background: var(--surface);
+    }
+    .candidate-round-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; flex-wrap: wrap; margin-bottom: 11px;
+    }
+    .candidate-result-chip {
+      display: inline-flex; align-items: center; gap: 6px; min-height: 34px;
+      padding: 6px 10px; border-radius: 999px; background: rgba(34,197,94,.12);
+      color: var(--success); font-weight: 800;
+    }
+    .candidate-score-editor { display: grid; gap: 8px; margin-top: 10px; }
+    .candidate-score-editor-row {
+      display: grid; grid-template-columns: minmax(120px, 1fr) minmax(210px, 2fr);
+      gap: 8px; align-items: center;
+    }
+    .candidate-score-buttons { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; direction: ltr; }
+    .candidate-score-buttons button {
+      min-height: 38px; padding: 0; border: 1px solid var(--border); border-radius: 8px;
+      background: var(--card); color: var(--text); font-weight: 800; cursor: pointer;
+    }
+    .candidate-score-buttons button.selected { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .candidate-notes-list { display: grid; gap: 7px; margin: 10px 0; }
+    .candidate-note {
+      display: flex; align-items: flex-start; gap: 8px; padding: 9px 10px;
+      border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    }
+    .candidate-note .body { flex: 1; min-width: 0; white-space: pre-wrap; }
+    .candidate-note .meta { margin-top: 3px; color: var(--text-muted); font-size: 10px; }
+    .candidate-note-actions { display: inline-flex; gap: 3px; }
+    .candidate-note .delete, .candidate-note .edit {
+      border: 0; background: transparent; cursor: pointer; padding: 3px 5px;
+    }
+    .candidate-note .delete { color: var(--danger); }
+    .candidate-note .edit { color: var(--info); }
+    .candidate-note-form { display: flex; gap: 7px; align-items: flex-start; flex-wrap: wrap; }
+    .candidate-note-form textarea { flex: 1; min-width: 190px; }
+    .candidate-chart-wrap { height: 230px; margin: 12px 0; }
+    .candidate-empty { padding: 22px; text-align: center; color: var(--text-muted); }
+    @media (max-width: 600px) {
+      .candidate-score-editor-row { grid-template-columns: 1fr; }
+      .candidate-traits { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
     /* ── Comments popover ──────────────────────────────── */
     .modal-body-mid { padding: 16px 20px; }
     .modal-body-mid .tag-pill {
@@ -578,6 +664,7 @@
               onclick="toggleAppMenu()" aria-haspopup="menu" aria-expanded="false"
               aria-controls="app-menu" aria-label="פתח תפריט">☰</button>
       <div class="app-menu" id="app-menu" role="menu" hidden>
+        <button type="button" class="app-menu-item" role="menuitem" onclick="openCandidateDashboard()">👤 מועמדים</button>
         <button type="button" class="app-menu-item" role="menuitem" onclick="openIssueReport()">⚠️ דיווח תקלה</button>
         <button type="button" class="app-menu-item" role="menuitem" id="outdoor-btn" onclick="toggleOutdoorMode(); closeAppMenu()">☀️ מצב חוץ</button>
         <button type="button" class="app-menu-item" role="menuitem" onclick="logout()">↪ התנתק</button>
@@ -586,7 +673,7 @@
   </div>
 </nav>
 
-<div class="container" style="padding-top:16px; padding-bottom:80px">
+<div class="container" id="station-view" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
   <div class="section app-section section--overview" id="station-header-section">
@@ -689,7 +776,7 @@
         </span>
       </summary>
       <div class="section-body">
-        <p class="arrival-order-help">גרור באמצעות הידית כדי לתקן את הסדר. הזמנים נשארים קבועים לפי המקום.</p>
+        <p class="arrival-order-help">גרור באמצעות הידית או השתמש בחצים כדי לתקן את הסדר.</p>
         <div id="arrival-order-status" class="arrival-order-status" aria-live="polite"></div>
         <div id="finished-list" class="finished-list"></div>
         <div id="finished-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
@@ -774,7 +861,7 @@
     </summary>
     <div class="section-body">
       <p style="font-size:12px; color:var(--text-muted); margin:6px 0 14px">
-        הערות קבועות על המשתתף. נשמרות לידו וזמינות למעריכים ולמפק״צ בכל התחנות.
+        הערות קבועות על המשתתף. רק ההערות שלך מוצגות לך בכל התחנות.
       </p>
 
     <div class="gn-picker mb-12">
@@ -815,6 +902,71 @@
   </details>
 
 </div><!-- /container -->
+
+<!-- ══════════ Candidate dashboard ══════════ -->
+<main class="container candidate-view" id="candidate-view" style="padding-top:16px; padding-bottom:80px" hidden>
+  <div class="candidate-toolbar">
+    <button type="button" class="btn btn-ghost" onclick="closeCandidateDashboard()">→ חזרה לתחנה</button>
+    <span class="candidate-privacy-note">המידע בדף אישי: כל משתמש רואה רק הערכות והערות שהוא עצמו כתב.</span>
+  </div>
+
+  <section class="section app-section section--overview">
+    <div class="section-title-row">
+      <div class="section-title-group">
+        <span class="section-kicker">צוות <span id="candidate-team-label">—</span></span>
+        <h1 style="margin:0">בחירת מועמד</h1>
+      </div>
+    </div>
+    <p class="section-help">בחר מספר כדי לפתוח את הדשבורד האישי.</p>
+    <div id="candidate-picker" class="candidate-picker-grid"></div>
+    <div id="candidate-picker-empty" class="candidate-empty" hidden>אין מועמדים בצוות.</div>
+  </section>
+
+  <div id="candidate-content" hidden>
+    <section class="section app-section section--evaluation">
+      <div class="candidate-header">
+        <div>
+          <span class="section-kicker">דשבורד מועמד</span>
+          <div id="candidate-number" class="candidate-number">—</div>
+        </div>
+        <div id="candidate-loading" class="candidate-privacy-note" aria-live="polite"></div>
+      </div>
+      <div id="candidate-evaluator-summary">
+        <div id="candidate-traits" class="candidate-traits"></div>
+      </div>
+      <div id="candidate-operator-message" class="candidate-empty" hidden>
+        בהתאם לנפרדות ההערכה, מפק״צ אינו רואה ציונים או תוצאות הערכה.
+      </div>
+    </section>
+
+    <section class="section app-section section--results" id="candidate-stations-section">
+      <div class="section-title-row">
+        <div class="section-title-group">
+          <span class="section-kicker">ההערכות שלי בלבד</span>
+          <h2>תוצאות לפי תחנה</h2>
+        </div>
+      </div>
+      <div id="candidate-station-tabs" class="candidate-station-tabs" role="tablist"></div>
+      <div id="candidate-station-panel"></div>
+    </section>
+
+    <section class="section app-section section--general">
+      <div class="section-title-row">
+        <div class="section-title-group">
+          <span class="section-kicker">אישי ונפרד מהתחנות</span>
+          <h2>הערות כלליות שלי</h2>
+        </div>
+      </div>
+      <div id="candidate-general-notes" class="candidate-notes-list"></div>
+      <div id="candidate-general-empty" class="candidate-empty">עוד לא כתבת הערות כלליות למועמד זה.</div>
+      <div class="candidate-note-form">
+        <textarea id="candidate-general-input" class="form-input" rows="2" maxlength="2000"
+                  placeholder="כתוב הערה כללית…"></textarea>
+        <button type="button" class="btn btn-primary" onclick="addCandidateGeneralNote()">הוסף הערה</button>
+      </div>
+    </section>
+  </div>
+</main>
 
 <!-- ══════════ Chart modal ══════════ -->
 <div class="modal-overlay" id="chart-modal">
@@ -887,7 +1039,6 @@
   import {
     DEFAULT_SESSION_LIMIT_SECONDS,
     timestampToMs as tsToMs,
-    sessionLimitMs,
     isSessionExpired,
     isSessionEffectivelyRunning,
     effectiveSessionElapsedMs,
@@ -895,6 +1046,13 @@
     canRoleControlSession
   } from "./js/session-policy.js";
   import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
+  import {
+    EVALUATION_SCHEMA_VERSION, TRAITS, assessmentEntryFor, buildCandidateSummary,
+    createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
+    normalizeNotes, traitIdFor
+  } from "./js/evaluation-model.js";
+  import { createEvaluationRepository } from "./js/evaluation-repository.js";
+  import { createPrivateNotesRepository } from "./js/private-notes-repository.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
@@ -935,6 +1093,20 @@
   let stationNoteSelectedPid = null; // משתתף שנבחר בסקציית "הערות לתחנה"
   let arrivalDragState = null;     // גרירה פעילה ברשימת סדר ההגעה
   let arrivalOrderSaving = false;  // מונע שתי שמירות סדר מקבילות מאותו מסך
+  let privacyMigrationComplete = false;
+  let privacySettingsUnsubscribe = null;
+  let evaluationRepository = null;
+  let privateNotesRepository = null;
+  let currentAssessment = normalizeAssessment(null);
+  let currentAssessmentRaceId = null;
+  let currentAssessmentLoading = false;
+  let currentAssessmentUnsubscribe = null;
+
+  const candidateState = {
+    participantId: null, summary: null, races: [], assessmentsByRace: new Map(),
+    arrivalsByRace: new Map(), selectedStationKey: null, notes: [],
+    notesUnsubscribe: null, chart: null, loadingToken: 0, openRoundIds: new Set()
+  };
 
   // ספירת חזרות: תצוגה מקומית + תור הפרשים לכל סבב, כדי לא לדרוס מעריך אחר
   let localReps    = {};
@@ -953,11 +1125,43 @@
         const data = snap.data();
         if (data && data.types && typeof data.types === 'object') {
           Object.entries(data.types).forEach(([id, saved]) => {
-            stationTypes[id] = { ...(stationTypes[id] || {}), ...(saved || {}) };
+            const defaults = stationTypes[id] || {};
+            const merged = { ...defaults, ...(saved || {}) };
+            if (Array.isArray(saved?.params)) {
+              merged.params = saved.params.map((param, index) => ({
+                ...(defaults.params?.[index] || {}), ...param,
+                id: param.id || defaults.params?.[index]?.id || traitIdFor(param)
+              }));
+            }
+            stationTypes[id] = merged;
           });
         }
       }
     } catch (e) { /* נשארים עם ברירת המחדל */ }
+  }
+
+  function privacyIsComplete(data) {
+    return data?.schemaVersion === EVALUATION_SCHEMA_VERSION && data?.status === 'complete';
+  }
+
+  async function loadPrivacyState() {
+    try {
+      const snapshot = await getDoc(doc(db, 'settings', 'evaluationPrivacy'));
+      privacyMigrationComplete = snapshot.exists() && privacyIsComplete(snapshot.data());
+    } catch (error) {
+      privacyMigrationComplete = false;
+    }
+  }
+
+  function subscribeToPrivacyState() {
+    if (privacySettingsUnsubscribe) privacySettingsUnsubscribe();
+    privacySettingsUnsubscribe = onSnapshot(doc(db, 'settings', 'evaluationPrivacy'), snapshot => {
+      const complete = snapshot.exists() && privacyIsComplete(snapshot.data());
+      if (complete === privacyMigrationComplete) return;
+      privacyMigrationComplete = complete;
+      if (selectedTeam && selectedStation) loadCurrentSession();
+      if (candidateRoute()) applyAppRoute();
+    });
   }
 
   // ═════════ Helpers ═════════
@@ -1147,15 +1351,6 @@
 
   function arrivalElapsedMs(race, markedAt) {
     return measuredElapsedMs(race, markedAt);
-  }
-
-  function arrivalTimeDisplay(race, markedAt) {
-    if (markedAt == null) return { text: '—', untimed: false };
-    if (tsToMs(markedAt) == null) return { text: 'שומר…', untimed: true };
-    const elapsed = arrivalElapsedMs(race, markedAt);
-    return elapsed == null
-      ? { text: '— ללא זמן', untimed: true }
-      : { text: formatMMSS(elapsed), untimed: false };
   }
 
   function stationDisplayName(stationId, teamData) {
@@ -1378,6 +1573,9 @@
       document.getElementById('app-menu-button')?.focus();
     }
   });
+  window.addEventListener('hashchange', () => {
+    if (currentUser) applyAppRoute();
+  });
 
   // ═════════ Auth ═════════
   onAuthStateChanged(auth, async (user) => {
@@ -1406,6 +1604,10 @@
     subscribeToQuickTags();
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים
     await loadStationTypes();
+    await loadPrivacyState();
+    subscribeToPrivacyState();
+    evaluationRepository = createEvaluationRepository(db, currentUser);
+    privateNotesRepository = createPrivateNotesRepository(db, currentUser);
     applyRoleVisibility();
     initCollapsibleSections();
     initRoundNavigationKeyboard();
@@ -1473,6 +1675,7 @@
 
     // הערות כלליות זמינות תמיד לצד התחנה
     initGeneralNotes();
+    applyAppRoute();
   }
 
   function applyRoleVisibility() {
@@ -1686,6 +1889,42 @@
     });
   }
 
+  function detachCurrentAssessmentSubscription() {
+    if (currentAssessmentUnsubscribe) currentAssessmentUnsubscribe();
+    currentAssessmentUnsubscribe = null;
+    currentAssessment = normalizeAssessment(null, currentUser?.uid || '');
+    currentAssessmentRaceId = null;
+    currentAssessmentLoading = false;
+  }
+
+  function subscribeToCurrentAssessment(race) {
+    if (!canEvaluate() || !race?.id || !evaluationRepository) {
+      detachCurrentAssessmentSubscription();
+      return;
+    }
+    if (currentAssessmentRaceId === race.id && currentAssessmentUnsubscribe) return;
+    detachCurrentAssessmentSubscription();
+    currentAssessmentRaceId = race.id;
+    currentAssessmentLoading = true;
+    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, assessment => {
+      if (currentRaceId !== race.id) return;
+      currentAssessment = assessment;
+      currentAssessmentLoading = false;
+      renderRace();
+    }, error => {
+      if (currentRaceId !== race.id) return;
+      currentAssessmentLoading = false;
+      showToast('שגיאה בטעינת ההערכה האישית: ' + error.message, 'error');
+      renderRace();
+    });
+  }
+
+  function currentAssessmentEntry(participantId, race = currentRace, assessment = currentAssessment) {
+    return assessmentEntryFor({
+      assessment, race, participantId, evaluatorUid: currentUser?.uid || ''
+    });
+  }
+
   // ═════════ Live rounds for the selected team + station ═════════
   function loadCurrentSession() {
     if (!selectedTeam || !selectedStation) return;
@@ -1694,9 +1933,14 @@
     followLatest = true;
     detachRaceSubscription();
 
-    const q = query(collection(db, 'races'),
+    const constraints = [
       where('team', '==', selectedTeam),
-      where('station', '==', selectedStation));
+      where('station', '==', selectedStation)
+    ];
+    if (privacyMigrationComplete) {
+      constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
+    }
+    const q = query(collection(db, 'races'), ...constraints);
 
     raceQueryUnsubscribe = onSnapshot(q, (snap) => {
       const previousLatestId = latestRace?.id || null;
@@ -1709,6 +1953,7 @@
 
       if (!latestRace) {
         detachEvaluatorArrivalSubscription();
+        detachCurrentAssessmentSubscription();
         currentRace = null;
         currentRaceId = null;
         renderRoundNavigation();
@@ -1730,13 +1975,20 @@
         stationNoteSelectedPid = null;
       }
       subscribeToEvaluatorArrival(target);
+      subscribeToCurrentAssessment(target);
 
       const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
       if (newRoundArrived && isEvaluator() && !followLatest) {
         showToast(`סבב ${latestRace.round} התחיל — אפשר לחזור אליו משורת הסטטוס`, 'info');
       }
       renderRace();
-    }, (err) => {
+    }, async err => {
+      const before = privacyMigrationComplete;
+      await loadPrivacyState();
+      if (!before && privacyMigrationComplete) {
+        loadCurrentSession();
+        return;
+      }
       showToast('שגיאה בהאזנה לסבבים: ' + err.message, 'error');
       renderIdlePlaceholder('שגיאה. נסה לרענן.');
     });
@@ -1745,6 +1997,7 @@
   function detachRaceSubscription() {
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
     detachEvaluatorArrivalSubscription();
+    detachCurrentAssessmentSubscription();
     racesForContext = [];
     latestRace = null;
     currentRace = null;
@@ -1763,6 +2016,7 @@
     localReps = {};
     stationNoteSelectedPid = null;
     subscribeToEvaluatorArrival(race);
+    subscribeToCurrentAssessment(race);
     renderRace();
   };
 
@@ -1816,15 +2070,13 @@
   }
 
   // ═════════ Rendering ═════════
-  function renderArrivalOrderList(participants, arrival, tags, race) {
+  function renderArrivalOrderList(participants, arrival, race) {
     const list = document.getElementById('finished-list');
     const count = document.getElementById('finished-count');
     const empty = document.getElementById('finished-empty');
     const status = document.getElementById('arrival-order-status');
     const placed = arrivalEntriesInOrder(arrival);
     const placedIds = new Set(placed.map(entry => String(entry.participantId)));
-    const tagsByParticipant = new Map((Array.isArray(tags) ? tags : [])
-      .map(tag => [String(tag.participantId), tag]));
     const pending = (Array.isArray(participants) ? participants : [])
       .map(String)
       .filter(pid => !placedIds.has(pid))
@@ -1834,9 +2086,7 @@
     const arrivedHtml = placed.map((entry, index) => {
       const pidRaw = String(entry.participantId);
       const pid = escHtml(pidRaw);
-      const tag = tagsByParticipant.get(pidRaw) || null;
-      const time = arrivalTimeDisplay(race, entry.finishedAt);
-      const commentsN = visibleCommentsFor(tag).length;
+      const commentsN = currentAssessmentEntry(pidRaw, race).comments.length;
       const comments = commentsN > 0
         ? `<span class="arrival-comments-count">💬 ${commentsN}</span>` : '';
       const disabled = canReorder ? '' : ' disabled';
@@ -1851,7 +2101,6 @@
                 onpointerdown="startArrivalDrag(event)">⠿</button>
         <span class="arrival-place">${index + 1}</span>
         <span class="arrival-pid-wrap"><span class="arrival-pid">${pid}</span>${comments}</span>
-        <span class="arrival-time${time.untimed ? ' untimed' : ''}">${escHtml(time.text)}</span>
         <span class="arrival-actions">
           <button type="button" class="arrival-move-btn"${upDisabled}
                   aria-label="העבר את משתתף ${pid} מקום אחד למעלה"
@@ -1871,7 +2120,6 @@
           <span class="arrival-placeholder" aria-hidden="true"></span>
           <span class="arrival-place" aria-hidden="true">—</span>
           <span class="arrival-pid">${pid}</span>
-          <span class="arrival-pending-label">טרם הגיע</span>
           <span class="arrival-placeholder" aria-hidden="true"></span>
         </div>`;
       }).join('')}` : '';
@@ -1908,9 +2156,11 @@
     // סוג המדידה של התחנה קובע את התנהגות הרשת: מקום / ספירת חזרות / ללא
     const st = currentStationType();
     const measure = st?.measure || 'place';
-    const allTags = Array.isArray(currentRace.tags) ? currentRace.tags : [];
     const repsByPid = {};
-    allTags.forEach(t => { if (t.reps != null) repsByPid[String(t.participantId)] = t.reps; });
+    participants.forEach(participantId => {
+      const measurement = currentAssessmentEntry(participantId).measurement;
+      if (measurement != null) repsByPid[String(participantId)] = measurement;
+    });
 
     // Station overview + status
     renderStationOverview(st, teamData);
@@ -1923,7 +2173,8 @@
     setText('hdr-status', statusLabel);
     renderStickyRound(currentRace.round || 1, statusLabel);
     setText('hdr-progress',
-      measure === 'place' ? (canEvaluate() ? (finished.length + ' / ' + participants.length) : '—')
+      !canEvaluate() ? '—'
+      : measure === 'place' ? (finished.length + ' / ' + participants.length)
       : measure === 'reps' ? (Object.keys(repsByPid).length + ' / ' + participants.length)
       : '—');
 
@@ -1960,15 +2211,9 @@
       gridTitle.textContent = effectivelyRunning
         ? '👥 משתתפים למירוץ'
         : '👥 השלמת סדר ההגעה';
-      const startMs = tsToMs(currentRace.startedAt);
-      const withinTimedWindow = startMs != null && nowMs - startMs <= sessionLimitMs(currentRace);
       setText('grid-instruction', effectivelyRunning
-        ? (withinTimedWindow
-          ? 'לחץ על מספר המשתתף ברגע ההגעה. הסדר נשמר מיד ברשימה האישית שלך.'
-          : `חלפו ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דקות. ניתן להמשיך לסמן סדר הגעה, אך סימונים חדשים יישמרו ללא זמן.`)
-        : (withinTimedWindow
-          ? `הסבב נעצר, אך ניתן להמשיך לסמן. זמן נשמר עד ${DEFAULT_SESSION_LIMIT_SECONDS / 60} דקות מתחילת הסבב.`
-          : 'ניתן להשלים ולתקן את הסדר. סימונים חדשים יישמרו ללא זמן.'));
+        ? 'לחץ על מספר המשתתף ברגע ההגעה. הסדר נשמר מיד ברשימה האישית שלך.'
+        : 'הסבב נעצר, אך אפשר להמשיך להשלים ולתקן את סדר ההגעה.');
       // כל המספרים נשארים בגריד בסדר קבוע. משתתף שסומן מוסתר בתוך התא שלו,
       // כך שלחיצה לעולם אינה מזיזה את שאר הכפתורים.
       const allSorted = stableParticipantGridItems(participants, finishedIds);
@@ -1998,17 +2243,20 @@
 
     // Finished list — רק בתחנות סדר הגעה (מקום)
     const finishedSection = document.getElementById('finished-section');
-    if (measure === 'place') {
+    if (canEvaluate() && measure === 'place') {
       finishedSection.style.display = '';
       const listOwnedByInteraction =
         (arrivalDragState?.raceId === currentRace.id) ||
         (arrivalOrderSaving && document.getElementById('finished-list').dataset.raceId === currentRace.id);
       if (!listOwnedByInteraction) {
         arrivalDragState = null;
-        renderArrivalOrderList(participants, arrival, allTags, currentRace);
+        renderArrivalOrderList(participants, arrival, currentRace);
       }
     } else {
       finishedSection.style.display = 'none';
+      // Do not retain evaluation rows in a commander view, even in hidden DOM.
+      document.getElementById('finished-list').replaceChildren();
+      setText('finished-count', '0');
     }
 
     // Station notes picker (all team participants)
@@ -2169,6 +2417,7 @@
           startedAt: serverTimestamp(),
           startedBy: currentUser.uid,
           timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
+          evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
           participantIds: uniqueParticipantIds(teamData.participants),
           tags:      []
         });
@@ -2259,10 +2508,6 @@
     return arrivalRows(list).map(row => String(row.dataset.pid));
   }
 
-  function arrivalSlotTimeLabels(list) {
-    return arrivalRows(list).map(row => row.querySelector('.arrival-time')?.textContent || '—');
-  }
-
   function arrangeArrivalRows(list, order) {
     const rowsByPid = new Map(arrivalRows(list).map(row => [String(row.dataset.pid), row]));
     const boundary = list.querySelector('.arrival-divider');
@@ -2272,14 +2517,12 @@
     });
   }
 
-  function refreshArrivalPreview(list, slotTimeLabels) {
+  function refreshArrivalPreview(list) {
     const rows = arrivalRows(list);
     rows.forEach((row, index) => {
       const place = row.querySelector('.arrival-place');
-      const time = row.querySelector('.arrival-time');
       const buttons = row.querySelectorAll('.arrival-move-btn');
       if (place) place.textContent = String(index + 1);
-      if (time) time.textContent = slotTimeLabels[index] || '—';
       if (buttons[0]) buttons[0].disabled = arrivalOrderSaving || index === 0;
       if (buttons[1]) buttons[1].disabled = arrivalOrderSaving || index === rows.length - 1;
     });
@@ -2331,7 +2574,7 @@
     const rect = target.getBoundingClientRect();
     const after = event.clientY > rect.top + rect.height / 2;
     state.list.insertBefore(state.row, after ? target.nextSibling : target);
-    refreshArrivalPreview(state.list, state.slotTimeLabels);
+    refreshArrivalPreview(state.list);
 
     const edge = 72;
     if (event.clientY < edge) window.scrollBy(0, -10);
@@ -2378,7 +2621,6 @@
       raceId: list.dataset.raceId,
       signature: list.dataset.arrivalSignature || '',
       originalOrder: arrivalOrderFromList(list),
-      slotTimeLabels: arrivalSlotTimeLabels(list),
       list, row, handle
     };
     row.classList.add('dragging');
@@ -2399,9 +2641,8 @@
     if (from < 0) return;
     const order = moveParticipantInOrder(originalOrder, participantId, from + Number(delta));
     if (order.join('|') === originalOrder.join('|')) return;
-    const slotTimeLabels = arrivalSlotTimeLabels(list);
     arrangeArrivalRows(list, order);
-    refreshArrivalPreview(list, slotTimeLabels);
+    refreshArrivalPreview(list);
     persistArrivalOrder(list, order, list.dataset.arrivalSignature || '', list.dataset.raceId);
   };
 
@@ -2445,19 +2686,10 @@
   }
 
   // ═════════ Station notes (per-race, resets per session) ═════════
-  // Comment shape: { text, authorName, authorUid, at }.
-  // תאימות לאחור: הערות ישנות שנשמרו כמחרוזות מנורמלות בקריאה.
-  function normalizeComment(c) {
-    if (c && typeof c === 'object') return c;
-    return { text: String(c || ''), authorName: '', authorUid: '', at: 0 };
-  }
-
-  // מחזיר רק הערות שהמשתמש רשאי לראות — מנהל רואה הכל, אחר רק שלו.
-  function visibleCommentsFor(tag) {
-    const raw = Array.isArray(tag?.comments) ? tag.comments : [];
-    const all = raw.map(normalizeComment);
-    if (isAdmin()) return all;
-    return all.filter(c => c.authorUid === currentUser?.uid);
+  // Compatibility adapter for exports that still use the old `at` field name.
+  function normalizeComment(comment, index = 0) {
+    const note = normalizeNote(comment, index);
+    return { ...note, at: note.createdAt };
   }
 
   function renderStationNotesSection() {
@@ -2476,7 +2708,6 @@
 
     // רשימת המשתתפים קפואה לפי הסבב, כדי ששינוי מאוחר בצוות לא ישנה היסטוריה.
     const participants = participantIdsForRace(currentRace, evaluatorArrival);
-    const tags = Array.isArray(currentRace.tags) ? currentRace.tags : [];
     const myArrivalIds = new Set(evaluatorArrivalStateForRace(currentRace, evaluatorArrival).order);
     sizeParticipantGrid(picker, participants.length);
     info.textContent = `#${currentRace.round || 1} · ${participants.length}`;
@@ -2495,17 +2726,17 @@
     }
     pickerEmpty.style.display = 'none';
 
-    // נקודת ההתקדמות אישית למעריך: ציון/הערה/סדר שלו, או מדידת reps משותפת.
-    const hasData = (t, pid) => Boolean(
-      (t?.scores?.[currentUser?.uid] && Object.keys(t.scores[currentUser.uid]).length) ||
-      visibleCommentsFor(t).length || t?.reps != null || myArrivalIds.has(pid)
-    );
+    // נקודת ההתקדמות אישית לחלוטין: רק נתוני המעריך המחובר וסדר ההגעה שלו.
+    const hasData = pid => {
+      const entry = currentAssessmentEntry(pid);
+      return Object.keys(entry.scores).length > 0 || entry.comments.length > 0 ||
+        entry.measurement != null || myArrivalIds.has(pid);
+    };
 
     const sorted = participants.slice().sort((a, b) => Number(a) - Number(b));
     picker.innerHTML = sorted.map(pid => {
-      const tag = tags.find(t => String(t.participantId) === pid);
       const selected = stationNoteSelectedPid === pid;
-      const dataCls = hasData(tag, pid) ? ' has-data' : '';
+      const dataCls = hasData(pid) ? ' has-data' : '';
       return `<button class="note-picker-btn ${selected ? 'selected' : ''}${dataCls}"
                      onclick="selectStationNoteParticipant('${escHtml(pid)}', false)">${escHtml(pid)}</button>`;
     }).join('');
@@ -2549,34 +2780,9 @@
     renderStationNotesList();
   }
 
-  // מחזיר את ה-tag של המשתתף הנבחר בסבב הנוכחי
+  // מחזיר את הרשומה הפרטית של המעריך המחובר, עם תאימות קריאה לנתון ישן שלו.
   function selectedTag() {
-    return (currentRace?.tags || []).find(t => String(t.participantId) === stationNoteSelectedPid) || null;
-  }
-
-  // מחזיר עותק חדש של מערך ה-tags שבו ה-tag של pid קיים (נוצר אם חסר) ועבר mutate.
-  // כך אפשר לתת ציון/הערה/מספר גם למשתתף שעדיין לא סומן "סיים".
-  function upsertTags(existing, pid, mutate) {
-    const arr = (Array.isArray(existing) ? existing : []).map(t => ({ ...t }));
-    let tag = arr.find(t => String(t.participantId) === String(pid));
-    if (!tag) { tag = { participantId: String(pid), comments: [] }; arr.push(tag); }
-    mutate(tag);
-    return arr;
-  }
-
-  // Every evaluator mutation reads the newest array inside a transaction, so two
-  // evaluators cannot silently replace one another's recent score/comment update.
-  async function mutateRaceTags(raceId, mutate) {
-    const raceRef = doc(db, 'races', raceId);
-    return runTransaction(db, async (transaction) => {
-      const snap = await transaction.get(raceRef);
-      if (!snap.exists()) throw new Error('הסבב לא נמצא');
-      const race = snap.data();
-      const existing = Array.isArray(race.tags) ? race.tags.map(tag => ({ ...tag })) : [];
-      const updated = mutate(existing, race);
-      transaction.update(raceRef, { tags: updated });
-      return updated;
-    });
+    return stationNoteSelectedPid ? currentAssessmentEntry(stationNoteSelectedPid) : null;
   }
 
   // ═════════ ספירת חזרות (תחנות reps) ═════════
@@ -2589,8 +2795,7 @@
     }
     pid = String(pid);
     if (localReps[pid] == null) {
-      const tag = (currentRace.tags || []).find(t => String(t.participantId) === pid);
-      localReps[pid] = Number(tag && tag.reps) || 0;
+      localReps[pid] = Number(currentAssessmentEntry(pid).measurement) || 0;
     }
     localReps[pid] += 1;
     const racePending = pendingRepsByRace[currentRaceId] || {};
@@ -2618,21 +2823,25 @@
 
     repsSavePromise = (async () => {
       try {
-        const updatedTags = await mutateRaceTags(raceId, (existing) => {
-          let updated = existing;
+        const baseMeasurements = Object.fromEntries(Object.keys(pendingDeltas).map(pid => [
+          pid, currentRaceId === raceId ? currentAssessmentEntry(pid).measurement : null
+        ]));
+        const updatedAssessment = await evaluationRepository.mutate(raceId, entries => {
           Object.entries(pendingDeltas).forEach(([pid, delta]) => {
-            updated = upsertTags(updated, pid, (tag) => {
-              tag.reps = Number(tag.reps || 0) + Number(delta || 0);
-            });
+            const entry = normalizeAssessmentEntry(entries[pid]);
+            const base = entry.measurement == null ? Number(baseMeasurements[pid] || 0) : entry.measurement;
+            entry.measurement = base + Number(delta || 0);
+            entry.measurementCleared = false;
+            entries[pid] = entry;
           });
-          return updated;
+          return entries;
         });
 
         if (currentRaceId === raceId) {
           Object.keys(pendingDeltas).forEach(pid => {
-            const savedTag = updatedTags.find(tag => String(tag.participantId) === String(pid));
+            const savedEntry = updatedAssessment.entries[String(pid)];
             const stillPending = Number(pendingRepsByRace[raceId]?.[pid] || 0);
-            localReps[pid] = Number(savedTag?.reps || 0) + stillPending;
+            localReps[pid] = Number(savedEntry?.measurement || 0) + stillPending;
             const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
             if (el) el.textContent = String(localReps[pid]);
           });
@@ -2671,8 +2880,8 @@
     const box = document.getElementById('sn-measure');
     if (!box) return;
     if (!st || st.measure !== 'reps') { box.style.display = 'none'; box.innerHTML = ''; return; }
-    const tag = selectedTag();
-    const val = (tag && tag.reps != null) ? tag.reps : '';
+    const entry = selectedTag();
+    const val = entry?.measurement != null ? entry.measurement : '';
     const label = st.measureLabel || 'מספר חזרות';
     const manual = usesManualMeasure(st);
     const canEditMeasure = canEvaluate() && (manual ||
@@ -2694,10 +2903,9 @@
     const box = document.getElementById('sn-params');
     if (!box) return;
     if (!st || !Array.isArray(st.params) || st.params.length === 0) { box.innerHTML = ''; return; }
-    const tag = selectedTag();
-    const myScores = (tag && tag.scores && tag.scores[currentUser?.uid]) || {};
+    const myScores = selectedTag()?.scores || {};
     box.innerHTML = st.params.map((p, pi) => {
-      const cur = Number(myScores[p.name] || 0);
+      const cur = Number(myScores[traitIdFor(p)] || 0);
       const scoreBtns = [1,2,3,4,5,6,7].map(v =>
         `<button class="sn-score-btn ${cur === v ? 'selected' : ''}" onclick="setStationScore(${pi}, ${v})">${v}</button>`
       ).join('');
@@ -2722,23 +2930,27 @@
     const st = currentStationType();
     const p = st?.params?.[pi];
     if (!p || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
-    const uid = currentUser?.uid || '_';
     const raceId = currentRaceId;
     const pid = stationNoteSelectedPid;
+    const traitId = traitIdFor(p);
     try {
-      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
-        const scores = { ...(tag.scores || {}) };
-        const mine = { ...(scores[uid] || {}) };
-        if (Number(mine[p.name]) === Number(val)) delete mine[p.name];
-        else mine[p.name] = Number(val);
-        scores[uid] = mine;
-        tag.scores = scores;
-      }));
+      const visible = currentAssessmentEntry(pid);
+      await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.scores = { ...entry.scores };
+        entry.clearedScores = entry.clearedScores.filter(id => id !== traitId);
+        if (Number(visible.scores[traitId]) === Number(val)) {
+          delete entry.scores[traitId];
+          entry.clearedScores.push(traitId);
+        } else {
+          entry.scores[traitId] = Number(val);
+        }
+        return entry;
+      });
     }
     catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
   };
 
-  // קובע/מנקה ערך מדידה כמותית (מספר חזרות/ברגים/שלב) — ערך יחיד אובייקטיבי
+  // קובע/מנקה את המדידה של המעריך הנוכחי בלבד.
   window.setStationReps = async (val) => {
     const st = currentStationType();
     const manual = usesManualMeasure(st);
@@ -2760,9 +2972,11 @@
     const pid = stationNoteSelectedPid;
     try {
       if (!await commitPendingReps()) return;
-      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
-        if (num == null) delete tag.reps; else tag.reps = num;
-      }));
+      await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.measurement = num;
+        entry.measurementCleared = num == null;
+        return entry;
+      });
       if (currentRaceId === raceId) {
         if (num == null) delete localReps[pid]; else localReps[pid] = num;
       }
@@ -2783,30 +2997,24 @@
     const empty = document.getElementById('sn-list-empty');
     const title = document.getElementById('sn-list-title');
     if (!list) return;
-    const tag = (currentRace?.tags || []).find(t => String(t.participantId) === stationNoteSelectedPid);
-    const raw = Array.isArray(tag?.comments) ? tag.comments : [];
-    title.textContent = isAdmin() ? 'הערות לסבב הזה:' : 'הערות שלי לסבב הזה:';
+    const raw = selectedTag()?.comments || [];
+    title.textContent = 'הערות שלי לסבב הזה:';
     const rows = [];
     raw.forEach((c, idx) => {
       const n = normalizeComment(c);
-      if (!isAdmin() && n.authorUid !== currentUser?.uid) return;
-      const when = n.at ? new Date(n.at).toLocaleString('he-IL') : '';
-      const isMine = n.authorUid === currentUser?.uid;
-      const canDelete = isAdmin() || isMine;
+      const when = n.createdAt ? new Date(n.createdAt).toLocaleString('he-IL') : '';
       rows.push(`<div class="gn-note-row">
         <div class="txt">
           <div>${escHtml(n.text || '')}</div>
           <div class="meta">${escHtml(n.authorName || '(ישן)')} · ${escHtml(when)}</div>
         </div>
-        ${canDelete ? `<button class="del" title="מחק" onclick="deleteStationNote(${idx})">✕</button>` : ''}
+        <button class="del" title="מחק" onclick="deleteStationNote('${escHtml(n.id)}')">✕</button>
       </div>`);
     });
     if (rows.length === 0) {
       list.innerHTML = '';
       empty.style.display = '';
-      empty.textContent = isAdmin()
-        ? 'עוד לא נכתבו הערות למשתתף זה בסבב הזה.'
-        : 'עוד לא כתבת הערות למשתתף זה בסבב הזה.';
+      empty.textContent = 'עוד לא כתבת הערות למשתתף זה בסבב הזה.';
       return;
     }
     empty.style.display = 'none';
@@ -2831,48 +3039,33 @@
     }
     const raceId = currentRaceId;
     const pid = stationNoteSelectedPid;
-    const noteObj = {
-      text,
-      authorName: currentUser?.name || '',
-      authorUid:  currentUser?.uid || '',
-      at:         Date.now()
-    };
+    const noteObj = createNote({
+      text, authorName: currentUser?.name || '', authorUid: currentUser?.uid || ''
+    });
     try {
-      await mutateRaceTags(raceId, (existing) => upsertTags(existing, pid, (tag) => {
-        tag.comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
-        tag.comments.push(noteObj);
-      }));
+      await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.comments = normalizeNotes([...entry.comments, noteObj]);
+        return entry;
+      });
       showToast('הערה נוספה', 'success');
     } catch (e) {
       showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
     }
   }
 
-  window.deleteStationNote = async (indexInRawArr) => {
+  window.deleteStationNote = async noteId => {
     if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
-    const existing = Array.isArray(currentRace.tags) ? currentRace.tags : [];
-    const target = existing.find(t => String(t.participantId) === stationNoteSelectedPid);
+    const target = selectedTag()?.comments.find(comment => comment.id === String(noteId));
     if (!target) return;
-    const raw = Array.isArray(target.comments) ? target.comments : [];
-    const c = normalizeComment(raw[indexInRawArr]);
-    if (!isAdmin() && c.authorUid !== currentUser?.uid) {
-      showToast('אפשר למחוק רק הערות שכתבת בעצמך', 'error'); return;
-    }
     if (!confirm('למחוק את ההערה?')) return;
     const raceId = currentRaceId;
     const pid = stationNoteSelectedPid;
-    const identity = { text: c.text, authorUid: c.authorUid, at: c.at };
     try {
-      await mutateRaceTags(raceId, (fresh) => fresh.map(tag => {
-        if (String(tag.participantId) !== pid) return tag;
-        const comments = Array.isArray(tag.comments) ? tag.comments.slice() : [];
-        const index = comments.findIndex(comment => {
-          const normalized = normalizeComment(comment);
-          return normalized.text === identity.text && normalized.authorUid === identity.authorUid && normalized.at === identity.at;
-        });
-        if (index >= 0) comments.splice(index, 1);
-        return { ...tag, comments };
-      }));
+      await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.comments = entry.comments.filter(comment => comment.id !== String(noteId));
+        if (!entry.hiddenCommentIds.includes(String(noteId))) entry.hiddenCommentIds.push(String(noteId));
+        return entry;
+      });
       showToast('הערה נמחקה', 'info');
     } catch (e) {
       showToast('שגיאה במחיקה: ' + e.message, 'error');
@@ -2975,7 +3168,7 @@
   }
 
   // מי הוערך בסבב הזה, לפי כל המקורות: ציונים, הערות וסדר הגעה.
-  function evaluatorUidsForRace(race, arrivalsByUid) {
+  function evaluatorUidsForRace(race, arrivalsByUid, assessmentsByUid) {
     const uids = new Set();
     for (const tag of (Array.isArray(race.tags) ? race.tags : [])) {
       Object.keys(tag.scores || {}).forEach(u => { if (u) uids.add(u); });
@@ -2984,55 +3177,61 @@
         .forEach(c => { if (c.authorUid) uids.add(c.authorUid); });
     }
     for (const uid of arrivalsByUid.keys()) if (uid) uids.add(uid);
+    for (const uid of assessmentsByUid.keys()) if (uid) uids.add(uid);
     return [...uids];
   }
 
   // מנהל מסנכרן את ההערכות של כל המעריכים; מעריך מסנכרן את שלו בלבד.
   // בלי זה, סנכרון שמורשה למנהל בלבד היה כותב רק את ההערכות של המנהל עצמו
   // ומשאיר את כל שאר המעריכים מחוץ לקבצים.
-  function buildSyncRowsForRace(race, arrivalsByUid = new Map()) {
+  function buildSyncRowsForRace(race, arrivalsByUid = new Map(), assessmentsByUid = new Map()) {
     const uids = isAdmin()
-      ? evaluatorUidsForRace(race, arrivalsByUid)
+      ? evaluatorUidsForRace(race, arrivalsByUid, assessmentsByUid)
       : [currentUser?.uid || ''].filter(Boolean);
 
     const rows = [];
     for (const evaluatorUid of uids) {
-      rows.push(...buildRowsForEvaluator(race, evaluatorUid, arrivalsByUid.get(evaluatorUid) || null));
+      rows.push(...buildRowsForEvaluator(
+        race,
+        evaluatorUid,
+        arrivalsByUid.get(evaluatorUid) || null,
+        assessmentsByUid.get(evaluatorUid) || null
+      ));
     }
     return rows;
   }
 
-  function buildRowsForEvaluator(race, uid, personalArrival) {
+  function buildRowsForEvaluator(race, uid, personalArrival, personalAssessment) {
     const rows = [];
     const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
     const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
-    const tags = Array.isArray(race.tags) ? race.tags : [];
-    const tagsByParticipant = new Map(tags.map(tag => [String(tag.participantId), tag]));
     const arrival = st?.measure === 'place'
       ? evaluatorArrivalStateForRace(race, personalArrival)
       : null;
     const placeByParticipant = new Map((arrival?.order || [])
       .map((participantId, index) => [String(participantId), index + 1]));
-    const participantIds = uniqueParticipantIds(tags.map(tag => tag.participantId)
-      .concat(arrival?.order || []));
+    const participantIds = uniqueParticipantIds((race.participantIds || [])
+      .concat(Object.keys(personalAssessment?.entries || {}), arrival?.order || []));
 
     for (const participantId of participantIds) {
-      const tag = tagsByParticipant.get(String(participantId)) || { participantId: String(participantId) };
-      const pidRaw = String(tag.participantId || '').replace(/\D+/g, '');
+      const pidRaw = String(participantId || '').replace(/\D+/g, '');
       const place = placeByParticipant.get(String(participantId));
       const markedAt = place != null ? arrival?.slotTimes?.[String(place)] : null;
       const elapsedMs = arrivalElapsedMs(race, markedAt);
 
-      // הציונים וההערות של המעריך שהשורה הזו מתארת
-      const myScores = (tag.scores && tag.scores[uid]) || {};
-      const myComments = (Array.isArray(tag.comments) ? tag.comments : [])
-        .map(normalizeComment)
-        .filter(c => c.authorUid === uid)
-        .map(c => c.text).filter(Boolean).join('|');
+      // הציונים וההערות של המעריך שהשורה הזו מתארת בלבד
+      const entry = assessmentEntryFor({
+        assessment: personalAssessment, race, participantId, evaluatorUid: uid
+      });
+      const myScores = Object.fromEntries((st?.params || []).flatMap(param => {
+        const score = entry.scores[traitIdFor(param)];
+        return score == null ? [] : [[param.name, score]];
+      }));
+      const myComments = entry.comments.map(comment => comment.text).filter(Boolean).join('|');
 
       // מדלגים על משתתף שהמעריך הזה לא נתן לו כלום (ואין נתון אובייקטיבי)
       const hasData = Object.keys(myScores).length > 0 || myComments ||
-                      place != null || tag.reps != null;
+                      place != null || entry.measurement != null;
       if (!hasData) continue;
 
       const row = {
@@ -3046,7 +3245,7 @@
         measure:        st ? st.measure : '',
         measure_label:  st ? (st.measureLabel || '') : '',
         place:          place != null ? Number(place) : '',
-        reps:           tag.reps  != null ? Number(tag.reps)  : '',
+        reps:           entry.measurement != null ? Number(entry.measurement) : '',
         first_ms:       elapsedMs == null ? '' : elapsedMs,
         scores:         myScores,
         comments:       myComments,
@@ -3064,9 +3263,11 @@
 
   async function gatherRacesForCurrentContext() {
     if (!selectedTeam || !selectedStation) return [];
-    const q = query(collection(db, 'races'),
-      where('team', '==', selectedTeam),
-      where('station', '==', selectedStation));
+    const constraints = [where('team', '==', selectedTeam), where('station', '==', selectedStation)];
+    if (privacyMigrationComplete) {
+      constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
+    }
+    const q = query(collection(db, 'races'), ...constraints);
     const snap = await getDocs(q);
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
@@ -3125,6 +3326,41 @@
     });
   }
 
+  // המבט האישי משמש את דף המועמד בלבד ואינו חושף מסמכים של מעריכים אחרים.
+  async function gatherEvaluatorAssessmentsForRaces(races) {
+    if (!evaluationRepository) return new Map();
+    return evaluationRepository.getMany(races);
+  }
+
+  // לסנכרון מנהל בלבד: Map<raceId, Map<evaluatorUid, assessment>>.
+  // מעריך רגיל מקבל כאן רק את המסמך שלו; חוקי Firestore אוכפים זאת גם בשרת.
+  async function gatherEvaluatorAssessmentsByUidForRaces(races) {
+    const result = new Map();
+    const list = Array.isArray(races) ? races : [];
+
+    if (isAdmin()) {
+      const snapshots = await Promise.all(list.map(race =>
+        getDocs(collection(db, 'races', String(race.id), 'evaluatorAssessments'))));
+      snapshots.forEach((snapshot, index) => {
+        const byUid = new Map();
+        snapshot.forEach(document => {
+          byUid.set(document.id, normalizeAssessment(document.data(), document.id));
+        });
+        result.set(String(list[index].id), byUid);
+      });
+      return result;
+    }
+
+    const personalByRace = await gatherEvaluatorAssessmentsForRaces(list);
+    for (const race of list) {
+      const byUid = new Map();
+      const assessment = personalByRace.get(String(race.id));
+      if (currentUser?.uid && assessment) byUid.set(currentUser.uid, assessment);
+      result.set(String(race.id), byUid);
+    }
+    return result;
+  }
+
   window.doSyncSheets = async () => {
     if (!canEvaluate()) { showToast('סנכרון הערכות זמין למעריכים בלבד', 'error'); return; }
     if (sheetsSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
@@ -3148,10 +3384,17 @@
       // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
       await loadEvaluatorDirectory();
       const races = await gatherRacesForCurrentContext();
-      const arrivalsByRace = await gatherEvaluatorArrivalsForRaces(races);
+      const [arrivalsByRace, assessmentsByRace] = await Promise.all([
+        gatherEvaluatorArrivalsForRaces(races),
+        gatherEvaluatorAssessmentsByUidForRaces(races)
+      ]);
       let stationRows = [];
       for (const r of races) {
-        stationRows = stationRows.concat(buildSyncRowsForRace(r, arrivalsByRace.get(r.id) || new Map()));
+        stationRows = stationRows.concat(buildSyncRowsForRace(
+          r,
+          arrivalsByRace.get(r.id) || new Map(),
+          assessmentsByRace.get(r.id) || new Map()
+        ));
       }
 
       // הערות כלליות של הצוות הנוכחי בלבד
@@ -3288,10 +3531,6 @@
     subscribeToGnNotes();
   };
 
-  function gnDocId() {
-    return `${gnState.team}_${gnState.participantId}`;
-  }
-
   function detachGnSubscription() {
     if (gnState.unsub) { gnState.unsub(); gnState.unsub = null; }
     gnState.notes = [];
@@ -3300,24 +3539,15 @@
   function subscribeToGnNotes() {
     detachGnSubscription();
     if (!gnState.team || !gnState.participantId) return;
-    gnState.unsub = onSnapshot(doc(db, 'general_notes', gnDocId()), (snap) => {
-      const data = snap.exists() ? snap.data() : null;
-      gnState.notes = (data && Array.isArray(data.notes)) ? data.notes : [];
-      renderGeneralNotesList(gnState.notes);
-    }, (err) => {
+    gnState.unsub = privateNotesRepository.subscribe(gnState.team, gnState.participantId, notes => {
+      gnState.notes = notes;
+      renderGeneralNotesList(notes);
+    }, err => {
       showToast('שגיאה בטעינת הערות: ' + err.message, 'error');
     });
   }
 
   function isAdmin() { return currentUser?.role === 'admin'; }
-
-  // מחזיר רק את ההערות שהמשתמש רשאי לראות (מנהל = הכל, אחר = רק שלו).
-  // הפילטר מסתמך על `authorUid` שנשמר בכל הערה.
-  function visibleNotesFor(notes) {
-    const all = Array.isArray(notes) ? notes : [];
-    if (isAdmin()) return all;
-    return all.filter(n => n && n.authorUid === currentUser?.uid);
-  }
 
   function renderGeneralNotesList(notes) {
     const wrap = document.getElementById('gn-list-wrap');
@@ -3332,37 +3562,25 @@
 
     const list  = document.getElementById('gn-list');
     const empty = document.getElementById('gn-empty');
-    const visible = visibleNotesFor(notes);
+    const visible = normalizeNotes(notes);
 
     if (!visible.length) {
       list.innerHTML = '';
       empty.style.display = '';
-      empty.textContent = isAdmin()
-        ? 'אין הערות למשתתף זה עדיין.'
-        : 'עוד לא כתבת הערות למשתתף זה.';
+      empty.textContent = 'עוד לא כתבת הערות למשתתף זה.';
       return;
     }
     empty.style.display = 'none';
 
-    // אינדקסים אמיתיים ברשימה המקורית — הכרחי כדי שדולקציה תמחק את ההערה הנכונה
-    const notesRef = Array.isArray(notes) ? notes : [];
-    const withIdx = visible.map(n => ({ n, idx: notesRef.indexOf(n) }));
-    // חדשות ראשונות
-    withIdx.sort((a, b) => (b.n.at || 0) - (a.n.at || 0));
-
-    list.innerHTML = withIdx.map(({ n, idx }) => {
-      const when = n.at ? new Date(n.at).toLocaleString('he-IL') : '';
-      const isMine = n.authorUid === currentUser?.uid;
-      const canDelete = isAdmin() || isMine;
-      const delBtn = canDelete
-        ? `<button class="del" title="מחק" onclick="deleteGeneralNote(${idx})">✕</button>`
-        : '';
+    visible.sort((a, b) => b.createdAt - a.createdAt);
+    list.innerHTML = visible.map(n => {
+      const when = n.createdAt ? new Date(n.createdAt).toLocaleString('he-IL') : '';
       return `<div class="gn-note-row">
         <div class="txt">
           <div>${escHtml(n.text || '')}</div>
           <div class="meta">${escHtml(n.authorName || '')} · ${escHtml(when)}</div>
         </div>
-        ${delBtn}
+        <button class="del" title="מחק" onclick="deleteGeneralNote('${escHtml(n.id)}')">✕</button>
       </div>`;
     }).join('');
   }
@@ -3393,66 +3611,49 @@
     if (!gnState.team || !gnState.participantId) {
       showToast('בחר צוות ומשתתף', 'error'); return;
     }
-    const newNote = {
-      text,
-      authorName: currentUser?.name || '',
-      authorUid:  currentUser?.uid || '',
-      at:         Date.now()
-    };
+    const newNote = createNote({
+      text, authorName: currentUser?.name || '', authorUid: currentUser?.uid || ''
+    });
     try {
-      const ref = doc(db, 'general_notes', gnDocId());
-      const snap = await getDoc(ref);
-      const existing = snap.exists() && Array.isArray(snap.data().notes) ? snap.data().notes : [];
-      await setDoc(ref, {
-        team:         gnState.team,
-        participantId: gnState.participantId,
-        notes:        [...existing, newNote],
-        updatedAt:    serverTimestamp()
-      }, { merge: true });
+      await privateNotesRepository.mutate(gnState.team, gnState.participantId,
+        notes => [...notes, newNote]);
       showToast('הערה נוספה', 'success');
     } catch (e) {
       showToast('שגיאה בשמירה: ' + e.message, 'error');
     }
   }
 
-  window.deleteGeneralNote = async (indexInArr) => {
+  window.deleteGeneralNote = async noteId => {
     if (!gnState.team || !gnState.participantId) return;
-    // הגנה — לא נמחק הערה של מישהו אחר אם אינך מנהל
-    const target = gnState.notes[indexInArr];
+    const target = gnState.notes.find(note => note.id === String(noteId));
     if (!target) return;
-    if (!isAdmin() && target.authorUid !== currentUser?.uid) {
-      showToast('אפשר למחוק רק הערות שכתבת בעצמך', 'error');
-      return;
-    }
     if (!confirm('למחוק את ההערה?')) return;
     try {
-      const filtered = gnState.notes.filter((_, i) => i !== indexInArr);
-      await updateDoc(doc(db, 'general_notes', gnDocId()), {
-        notes: filtered, updatedAt: serverTimestamp()
-      });
+      await privateNotesRepository.mutate(gnState.team, gnState.participantId,
+        notes => notes.filter(note => note.id !== String(noteId)));
       showToast('הערה נמחקה', 'info');
     } catch (e) {
       showToast('שגיאה במחיקה: ' + e.message, 'error');
     }
   };
 
-  // אוסף שורות הערות כלליות של צוות מסוים בלבד (מעריך → רק ההערות שלו; מנהל → כולן).
-  // שאילתה ממוקדת לצוות (where team ==) — לא קורא את כל ה-collection, ולכן עובר את חוקי Firestore.
+  // מעריך מסנכרן רק את ההערות שלו; מנהל מסנכרן את כל הכותבים לצורכי ייצוא.
+  // שני המסלולים קוראים את מבנה הפרטיות החדש ואינם מחזירים הערות לממשק המשתמש.
   async function collectTeamNoteRows(team) {
     const rows = [];
     if (!team) return rows;
-    const snap = await getDocs(query(collection(db, 'general_notes'), where('team', '==', team)));
-    snap.forEach(d => {
-      const data = d.data();
-      const pid = data.participantId;
-      if (!pid) return;
-      const notes = Array.isArray(data.notes) ? data.notes : [];
+    const teamData = teamsCache[team] || await loadTeamData(team);
+    const participants = uniqueParticipantIds(teamData?.participants || []);
+    const notesByParticipant = await Promise.all(participants.map(pid => isAdmin()
+      ? privateNotesRepository.getAllAuthors(team, pid)
+      : privateNotesRepository.get(team, pid)));
+    participants.forEach((pid, index) => {
+      const notes = notesByParticipant[index];
       for (const n of notes) {
-        if (!isAdmin() && n.authorUid !== currentUser?.uid) continue; // מעריך → רק שלו
         const body = {
           type:           'general_note',
           participant_id: pid,
-          team_id:        data.team,
+          team_id:        team,
           note:           n.text || '',
           evaluator_name: n.authorName || '',
           evaluator_uid:  n.authorUid || ''
@@ -3465,6 +3666,504 @@
     });
     return rows;
   }
+
+  // ═════════ Candidate dashboard ═════════
+  function candidateTeam() {
+    return currentUser?.role === 'admin' ? selectedTeam : pad2(currentUser?.team || '');
+  }
+
+  function candidateRoute() {
+    const match = location.hash.match(/^#candidate(?:\/([^/]+))?$/);
+    return match ? { participantId: match[1] ? decodeURIComponent(match[1]) : null } : null;
+  }
+
+  window.openCandidateDashboard = participantId => {
+    closeAppMenu();
+    location.hash = participantId
+      ? `candidate/${encodeURIComponent(String(participantId))}` : 'candidate';
+  };
+
+  window.closeCandidateDashboard = () => {
+    history.pushState(null, '', `${location.pathname}${location.search}`);
+    applyAppRoute();
+  };
+
+  window.selectCandidate = participantId => {
+    location.hash = `candidate/${encodeURIComponent(String(participantId))}`;
+  };
+
+  function detachCandidateNotes() {
+    if (candidateState.notesUnsubscribe) candidateState.notesUnsubscribe();
+    candidateState.notesUnsubscribe = null;
+    candidateState.notes = [];
+  }
+
+  function destroyCandidateChart() {
+    if (candidateState.chart) candidateState.chart.destroy();
+    candidateState.chart = null;
+  }
+
+  async function applyAppRoute() {
+    const route = candidateRoute();
+    const stationView = document.getElementById('station-view');
+    const candidateView = document.getElementById('candidate-view');
+    if (!route) {
+      stationView.hidden = false;
+      candidateView.hidden = true;
+      detachCandidateNotes();
+      destroyCandidateChart();
+      return;
+    }
+
+    stationView.hidden = true;
+    candidateView.hidden = false;
+    await renderCandidatePicker();
+    if (route.participantId) await loadCandidateDashboard(route.participantId);
+    else {
+      candidateState.participantId = null;
+      document.getElementById('candidate-content').hidden = true;
+      detachCandidateNotes();
+      destroyCandidateChart();
+    }
+  }
+
+  async function renderCandidatePicker() {
+    const team = candidateTeam();
+    const picker = document.getElementById('candidate-picker');
+    const empty = document.getElementById('candidate-picker-empty');
+    setText('candidate-team-label', team ? Number(team) : '—');
+    if (!team) {
+      picker.innerHTML = '';
+      empty.hidden = false;
+      empty.textContent = 'יש לבחור צוות תחילה.';
+      return;
+    }
+    const teamData = teamsCache[team] || await loadTeamData(team);
+    const participants = uniqueParticipantIds(teamData?.participants || [])
+      .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
+    sizeParticipantGrid(picker, participants.length);
+    empty.hidden = participants.length > 0;
+    picker.innerHTML = participants.map(participantId => `
+      <button type="button" class="candidate-picker-btn ${candidateState.participantId === participantId ? 'selected' : ''}"
+              onclick="selectCandidate('${escHtml(participantId)}')">${escHtml(participantId)}</button>
+    `).join('');
+  }
+
+  async function queryTeamRaces(team) {
+    const constraints = [where('team', '==', team)];
+    if (privacyMigrationComplete) {
+      constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
+    }
+    const snapshot = await getDocs(query(collection(db, 'races'), ...constraints));
+    return snapshot.docs.map(document => ({ id: document.id, ...document.data() }))
+      .sort((a, b) => Number(a.station || 0) - Number(b.station || 0) ||
+        Number(a.round || 0) - Number(b.round || 0));
+  }
+
+  async function loadCandidateDashboard(participantId) {
+    const team = candidateTeam();
+    const teamData = teamsCache[team] || await loadTeamData(team);
+    const participants = uniqueParticipantIds(teamData?.participants || []);
+    const pid = String(participantId);
+    if (!team || !participants.includes(pid)) {
+      showToast('המועמד אינו שייך לצוות שלך', 'error');
+      window.openCandidateDashboard();
+      return;
+    }
+
+    const token = ++candidateState.loadingToken;
+    if (candidateState.participantId !== pid) candidateState.openRoundIds.clear();
+    candidateState.participantId = pid;
+    candidateState.selectedStationKey = null;
+    document.getElementById('candidate-content').hidden = false;
+    setText('candidate-number', pid);
+    setText('candidate-loading', 'טוען…');
+    await renderCandidatePicker();
+    subscribeToCandidateGeneralNotes(team, pid);
+
+    const evaluatorView = isEvaluator() || isAdmin();
+    document.getElementById('candidate-evaluator-summary').hidden = !evaluatorView;
+    document.getElementById('candidate-stations-section').hidden = !evaluatorView;
+    document.getElementById('candidate-operator-message').hidden = evaluatorView;
+    if (!evaluatorView) {
+      candidateState.summary = null;
+      setText('candidate-loading', 'מוצגות רק ההערות שלך');
+      return;
+    }
+
+    try {
+      const races = await queryTeamRaces(team);
+      const placeRaces = races.filter(race => stationTypeFor(race.station, teamData)?.measure === 'place');
+      const [assessmentsByRace, arrivalsByRace] = await Promise.all([
+        gatherEvaluatorAssessmentsForRaces(races),
+        gatherEvaluatorArrivalsForRaces(placeRaces)
+      ]);
+      if (token !== candidateState.loadingToken) return;
+      const personalArrivalsByRace = new Map();
+      for (const race of placeRaces) {
+        personalArrivalsByRace.set(
+          String(race.id),
+          personalArrivalFrom(arrivalsByRace.get(String(race.id)))
+        );
+      }
+      candidateState.races = races;
+      candidateState.assessmentsByRace = assessmentsByRace;
+      candidateState.arrivalsByRace = personalArrivalsByRace;
+      candidateState.summary = buildCandidateSummary({
+        participantId: pid, races, assessmentsByRace, arrivalsByRace: personalArrivalsByRace,
+        evaluatorUid: currentUser.uid,
+        stationTypeForRace: race => stationTypeFor(race.station, teamData)
+      });
+      candidateState.selectedStationKey = candidateState.summary.stations[0]?.key || null;
+      renderCandidateSummary();
+      setText('candidate-loading', 'מעודכן לפי הנתונים שלך בלבד');
+    } catch (error) {
+      if (token !== candidateState.loadingToken) return;
+      setText('candidate-loading', 'הטעינה נכשלה');
+      showToast('שגיאה בטעינת דשבורד מועמד: ' + error.message, 'error');
+    }
+  }
+
+  function renderCandidateSummary() {
+    const summary = candidateState.summary;
+    if (!summary) return;
+    const traits = document.getElementById('candidate-traits');
+    traits.innerHTML = TRAITS.map(trait => {
+      const average = summary.traitAverages[trait.id];
+      return `<div class="candidate-trait">
+        <div class="score">${average ? average.value.toFixed(1) : '—'}</div>
+        <div class="name">${escHtml(trait.name)}</div>
+        <div class="coverage">${average ? `ממוצע של ${average.stationCount} תחנות` : 'אין עדיין ציונים שלי'}</div>
+      </div>`;
+    }).join('');
+
+    const tabs = document.getElementById('candidate-station-tabs');
+    if (!summary.stations.length) {
+      tabs.innerHTML = '';
+      document.getElementById('candidate-station-panel').innerHTML =
+        '<div class="candidate-empty">עוד לא שמרת נתונים למועמד זה בתחנות.</div>';
+      return;
+    }
+    tabs.innerHTML = summary.stations.map(station => `
+      <button type="button" role="tab" class="candidate-station-tab ${station.key === candidateState.selectedStationKey ? 'selected' : ''}"
+              aria-selected="${station.key === candidateState.selectedStationKey}"
+              onclick="selectCandidateStation('${escHtml(station.key)}')">${escHtml(station.name)}</button>
+    `).join('');
+    renderCandidateStation();
+  }
+
+  window.selectCandidateStation = stationKey => {
+    candidateState.selectedStationKey = String(stationKey);
+    renderCandidateSummary();
+  };
+
+  function scoreEditorHtml(station, round) {
+    if (!station.params.length) return '';
+    return `<div class="candidate-score-editor">${station.params.map(param => {
+      const traitId = traitIdFor(param);
+      const current = Number(round.scores[traitId] || 0);
+      const buttons = [1,2,3,4,5,6,7].map(score => `
+        <button type="button" class="${current === score ? 'selected' : ''}"
+                aria-label="${escHtml(param.name)} ציון ${score}"
+                onclick="setCandidateScore('${escHtml(round.raceId)}','${escHtml(traitId)}',${score})">${score}</button>
+      `).join('');
+      return `<div class="candidate-score-editor-row">
+        <strong>${escHtml(param.name)}</strong><div class="candidate-score-buttons">${buttons}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
+  function stationNoteHtml(round) {
+    const notes = round.comments.slice().sort((a, b) => b.createdAt - a.createdAt);
+    const list = notes.length ? `<div class="candidate-notes-list">${notes.map(note => `
+      <div class="candidate-note"><div class="body">
+        <div>${escHtml(note.text)}</div>
+        <div class="meta">${note.createdAt ? escHtml(new Date(note.createdAt).toLocaleString('he-IL')) : ''}${note.updatedAt > note.createdAt ? ' · נערך' : ''}</div>
+      </div><span class="candidate-note-actions">
+        <button type="button" class="edit" title="ערוך"
+          onclick="editCandidateStationNote('${escHtml(round.raceId)}','${escHtml(note.id)}')">✎</button>
+        <button type="button" class="delete" title="מחק"
+          onclick="deleteCandidateStationNote('${escHtml(round.raceId)}','${escHtml(note.id)}')">✕</button>
+      </span></div>
+    `).join('')}</div>` : '<div class="candidate-empty">אין הערות שלי בסבב זה.</div>';
+    return `${list}<div class="candidate-note-form">
+      <textarea class="form-input" rows="2" maxlength="2000" id="candidate-note-${escHtml(round.raceId)}"
+                placeholder="הוסף הערה לסבב הזה…"></textarea>
+      <button type="button" class="btn btn-primary"
+              onclick="addCandidateStationNote('${escHtml(round.raceId)}')">הוסף</button>
+    </div>`;
+  }
+
+  function renderCandidateStation() {
+    destroyCandidateChart();
+    const station = candidateState.summary?.stations
+      .find(item => item.key === candidateState.selectedStationKey);
+    const panel = document.getElementById('candidate-station-panel');
+    if (!station) { panel.innerHTML = ''; return; }
+
+    const chart = station.measure === 'place' && station.rounds.some(round => round.place != null)
+      ? '<div class="candidate-chart-wrap"><canvas id="candidate-station-chart"></canvas></div>' : '';
+    panel.innerHTML = chart + station.rounds.map(round => {
+      let result = '';
+      if (station.measure === 'place') {
+        result = round.place == null
+          ? `<button type="button" class="btn btn-ghost" onclick="moveCandidatePlace('${escHtml(round.raceId)}','append')">סמן כהגיע</button>`
+          : `<span class="candidate-result-chip">מקום ${round.place}</span>
+             <span style="display:inline-flex;gap:4px">
+               <button type="button" class="btn btn-ghost" ${round.place <= 1 ? 'disabled' : ''}
+                       onclick="moveCandidatePlace('${escHtml(round.raceId)}',-1)">↑</button>
+               <button type="button" class="btn btn-ghost" ${round.place >= round.placedCount ? 'disabled' : ''}
+                       onclick="moveCandidatePlace('${escHtml(round.raceId)}',1)">↓</button>
+             </span>`;
+      } else if (station.measure === 'reps') {
+        result = `<label class="candidate-result-chip">${escHtml(station.measureLabel)}
+          <input type="number" min="0" step="1" inputmode="numeric" class="form-input"
+                 style="width:82px;direction:ltr" value="${round.measurement == null ? '' : round.measurement}"
+                 onchange="setCandidateMeasurement('${escHtml(round.raceId)}',this.value)"></label>`;
+      }
+      return `<article class="candidate-round-card">
+        <div class="candidate-round-head"><strong>סבב ${round.round}</strong><div>${result}</div></div>
+        ${scoreEditorHtml(station, round)}
+        <details style="margin-top:12px" ${candidateState.openRoundIds.has(round.raceId) ? 'open' : ''}
+                 ontoggle="toggleCandidateRoundDetails('${escHtml(round.raceId)}',this.open)">
+          <summary style="cursor:pointer;font-weight:800">הערות שלי (${round.comments.length})</summary>
+          ${stationNoteHtml(round)}
+        </details>
+      </article>`;
+    }).join('');
+
+    if (chart) requestAnimationFrame(() => renderCandidateStationChart(station));
+  }
+
+  window.toggleCandidateRoundDetails = (raceId, open) => {
+    if (open) candidateState.openRoundIds.add(String(raceId));
+    else candidateState.openRoundIds.delete(String(raceId));
+  };
+
+  function renderCandidateStationChart(station) {
+    const canvas = document.getElementById('candidate-station-chart');
+    if (!canvas) return;
+    const values = station.rounds.map(round => round.place);
+    const maxPlace = Math.max(1, ...values.filter(value => value != null));
+    candidateState.chart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: station.rounds.map(round => `סבב ${round.round}`),
+        datasets: [{ label: 'המקום שלי', data: values, borderColor: '#6366f1',
+          backgroundColor: '#6366f1', tension: .15, spanGaps: false, pointRadius: 5 }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { reverse: true, min: 1, max: maxPlace, ticks: { stepSize: 1, color: '#94a3b8' } },
+          x: { ticks: { color: '#94a3b8' }, grid: { display: false } }
+        }
+      }
+    });
+  }
+
+  function rebuildCandidateSummary() {
+    const pid = candidateState.participantId;
+    const stationKey = candidateState.selectedStationKey;
+    if (!pid) return;
+    const teamData = teamsCache[candidateTeam()] || {};
+    candidateState.summary = buildCandidateSummary({
+      participantId: pid, races: candidateState.races,
+      assessmentsByRace: candidateState.assessmentsByRace,
+      arrivalsByRace: candidateState.arrivalsByRace,
+      evaluatorUid: currentUser.uid,
+      stationTypeForRace: race => stationTypeFor(race.station, teamData)
+    });
+    if (stationKey && candidateState.summary.stations.some(station => station.key === stationKey)) {
+      candidateState.selectedStationKey = stationKey;
+    } else {
+      candidateState.selectedStationKey = candidateState.summary.stations[0]?.key || null;
+    }
+    renderCandidateSummary();
+  }
+
+  window.setCandidateScore = async (raceId, traitId, score) => {
+    const pid = candidateState.participantId;
+    if (!pid || !isEvaluator() && !isAdmin()) return;
+    const race = candidateState.races.find(item => item.id === raceId);
+    const assessment = candidateState.assessmentsByRace.get(raceId);
+    const visible = assessmentEntryFor({ assessment, race, participantId: pid, evaluatorUid: currentUser.uid });
+    try {
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.scores = { ...entry.scores };
+        entry.clearedScores = entry.clearedScores.filter(id => id !== traitId);
+        if (Number(visible.scores[traitId]) === Number(score)) {
+          delete entry.scores[traitId];
+          entry.clearedScores.push(traitId);
+        } else entry.scores[traitId] = Number(score);
+        return entry;
+      });
+      candidateState.assessmentsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה בשמירת ציון: ' + error.message, 'error'); }
+  };
+
+  window.setCandidateMeasurement = async (raceId, rawValue) => {
+    const pid = candidateState.participantId;
+    const raw = String(rawValue ?? '').trim();
+    const value = raw === '' ? null : Number(raw);
+    if (!pid || value != null && (!Number.isInteger(value) || value < 0)) {
+      showToast('יש להזין מספר שלם שאינו שלילי', 'error'); renderCandidateStation(); return;
+    }
+    try {
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.measurement = value;
+        entry.measurementCleared = value == null;
+        return entry;
+      });
+      candidateState.assessmentsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + error.message, 'error'); }
+  };
+
+  window.moveCandidatePlace = async (raceId, direction) => {
+    const pid = candidateState.participantId;
+    if (!pid) return;
+    try {
+      const updated = await mutateEvaluatorArrival(raceId, arrival => {
+        const order = arrival.order.slice();
+        const index = order.indexOf(pid);
+        if (direction === 'append') {
+          if (index < 0) order.push(pid);
+        } else if (index >= 0) {
+          const target = Math.max(0, Math.min(order.length - 1, index + Number(direction)));
+          if (target !== index) [order[index], order[target]] = [order[target], order[index]];
+        }
+        const appended = direction === 'append' && index < 0;
+        if (appended && !arrival.participantIds.includes(pid)) {
+          throw new Error('המועמד אינו ברשימת הסבב');
+        }
+        const next = appended ? { ...arrival, order } : arrivalWithOrder(arrival, order);
+        if (appended) {
+          next.slotTimes = { ...next.slotTimes, [String(order.length)]: serverTimestamp() };
+          if (order.length === arrival.participantIds.length) {
+            next.completedAt = arrival.completedAt || serverTimestamp();
+          }
+        }
+        return next;
+      });
+      candidateState.arrivalsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + error.message, 'error'); }
+  };
+
+  window.addCandidateStationNote = async raceId => {
+    const pid = candidateState.participantId;
+    const input = document.getElementById(`candidate-note-${raceId}`);
+    const text = String(input?.value || '').trim();
+    if (!pid || !text) { showToast('יש לכתוב הערה', 'error'); return; }
+    try {
+      const note = createNote({ text, authorUid: currentUser.uid, authorName: currentUser.name });
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.comments = normalizeNotes([...entry.comments, note]);
+        return entry;
+      });
+      candidateState.assessmentsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה בשמירת הערה: ' + error.message, 'error'); }
+  };
+
+  window.deleteCandidateStationNote = async (raceId, noteId) => {
+    const pid = candidateState.participantId;
+    if (!pid || !confirm('למחוק את ההערה?')) return;
+    try {
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.comments = entry.comments.filter(note => note.id !== noteId);
+        if (!entry.hiddenCommentIds.includes(noteId)) entry.hiddenCommentIds.push(noteId);
+        return entry;
+      });
+      candidateState.assessmentsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+  };
+
+  window.editCandidateStationNote = async (raceId, noteId) => {
+    const pid = candidateState.participantId;
+    const station = candidateState.summary?.stations.find(item =>
+      item.rounds.some(round => round.raceId === raceId));
+    const round = station?.rounds.find(item => item.raceId === raceId);
+    const current = round?.comments.find(note => note.id === noteId);
+    if (!pid || !current) return;
+    const text = prompt('עריכת הערה', current.text);
+    if (text == null) return;
+    const clean = text.trim();
+    if (!clean) { showToast('לא ניתן לשמור הערה ריקה', 'error'); return; }
+    try {
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+        entry.comments = entry.comments.map(note => note.id === noteId
+          ? { ...note, text: clean, updatedAt: Date.now() } : note);
+        return entry;
+      });
+      candidateState.assessmentsByRace.set(raceId, updated);
+      rebuildCandidateSummary();
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+  };
+
+  function subscribeToCandidateGeneralNotes(team, participantId) {
+    detachCandidateNotes();
+    candidateState.notesUnsubscribe = privateNotesRepository.subscribe(team, participantId, notes => {
+      candidateState.notes = notes;
+      renderCandidateGeneralNotes();
+    }, error => showToast('שגיאה בטעינת הערות כלליות: ' + error.message, 'error'));
+  }
+
+  function renderCandidateGeneralNotes() {
+    const list = document.getElementById('candidate-general-notes');
+    const empty = document.getElementById('candidate-general-empty');
+    const notes = candidateState.notes.slice().sort((a, b) => b.createdAt - a.createdAt);
+    empty.hidden = notes.length > 0;
+    list.innerHTML = notes.map(note => `<div class="candidate-note"><div class="body">
+      <div>${escHtml(note.text)}</div>
+      <div class="meta">${note.createdAt ? escHtml(new Date(note.createdAt).toLocaleString('he-IL')) : ''}${note.updatedAt > note.createdAt ? ' · נערך' : ''}</div>
+    </div><span class="candidate-note-actions">
+      <button type="button" class="edit" title="ערוך" onclick="editCandidateGeneralNote('${escHtml(note.id)}')">✎</button>
+      <button type="button" class="delete" title="מחק" onclick="deleteCandidateGeneralNote('${escHtml(note.id)}')">✕</button>
+    </span></div>`).join('');
+  }
+
+  window.addCandidateGeneralNote = async () => {
+    const team = candidateTeam();
+    const pid = candidateState.participantId;
+    const input = document.getElementById('candidate-general-input');
+    const text = String(input?.value || '').trim();
+    if (!team || !pid || !text) { showToast('יש לכתוב הערה', 'error'); return; }
+    try {
+      const note = createNote({ text, authorUid: currentUser.uid, authorName: currentUser.name });
+      await privateNotesRepository.mutate(team, pid, notes => [...notes, note]);
+      input.value = '';
+    } catch (error) { showToast('שגיאה בשמירת הערה: ' + error.message, 'error'); }
+  };
+
+  window.deleteCandidateGeneralNote = async noteId => {
+    const team = candidateTeam();
+    const pid = candidateState.participantId;
+    if (!team || !pid || !confirm('למחוק את ההערה?')) return;
+    try {
+      await privateNotesRepository.mutate(team, pid,
+        notes => notes.filter(note => note.id !== String(noteId)));
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+  };
+
+  window.editCandidateGeneralNote = async noteId => {
+    const team = candidateTeam();
+    const pid = candidateState.participantId;
+    const current = candidateState.notes.find(note => note.id === String(noteId));
+    if (!team || !pid || !current) return;
+    const text = prompt('עריכת הערה כללית', current.text);
+    if (text == null) return;
+    const clean = text.trim();
+    if (!clean) { showToast('לא ניתן לשמור הערה ריקה', 'error'); return; }
+    try {
+      await privateNotesRepository.mutate(team, pid, notes => notes.map(note =>
+        note.id === String(noteId) ? { ...note, text: clean, updatedAt: Date.now() } : note));
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+  };
 
   // ═════════ Comparison chart ═════════
   let compareChartInstance = null;
@@ -3479,12 +4178,7 @@
 
     // Load all races for team+station (all rounds)
     try {
-      const q = query(collection(db, 'races'),
-        where('team', '==', selectedTeam),
-        where('station', '==', selectedStation));
-      const snap = await getDocs(q);
-      compareChartAllRaces = [];
-      snap.forEach(d => compareChartAllRaces.push({ id: d.id, ...d.data() }));
+      compareChartAllRaces = await gatherRacesForCurrentContext();
       compareChartArrivalByRace = await gatherEvaluatorArrivalsForRaces(compareChartAllRaces);
     } catch (e) {
       showToast('שגיאה בטעינת סבבים: ' + e.message, 'error');

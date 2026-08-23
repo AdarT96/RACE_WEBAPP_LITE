@@ -84,7 +84,7 @@ const DEFAULT_STATION_TYPES = {
   sprints: {
     name: "ספרינטים",
     measure: "place",
-    markingNote: "לסמן כל סיבוב סדרי הגעה, מדידת זמנים מדויקת בת השוואה בין כל המתמודדים",
+    markingNote: "לסמן בכל סבב את סדר ההגעה האישי של המעריך",
     params: [
       { name: "חוסן וכושר הסתגלות", quickNotes: [
         "תנודתיות במיקומים לאורך התחנה",
@@ -377,8 +377,27 @@ const DEFAULT_STATION_ORDER = [
   "debate", "discussion"
 ];
 
+// Stable storage keys. Display names may be edited or reworded without splitting
+// historical averages into a second trait. Unknown administrator-defined traits
+// keep their explicit id (or, for legacy data, their name) until assigned one.
+const TRAIT_IDS_BY_NAME = Object.freeze({
+  "חוסן וכושר הסתגלות": "resilience",
+  "אקטיביות": "activity",
+  "אינטליגנציה חברתית": "social_intelligence",
+  "אסרטיביות": "assertiveness",
+  "ניתוח מידע ושיקול דעת": "analysis_judgment"
+});
+
+Object.values(DEFAULT_STATION_TYPES).forEach(type => {
+  type.params = (Array.isArray(type.params) ? type.params : []).map(param => ({
+    ...param,
+    id: param.id || TRAIT_IDS_BY_NAME[param.name] || param.name
+  }));
+});
+
 // חשיפה לסקריפטים (app.html / admin.html)
 if (typeof window !== "undefined") {
   window.DEFAULT_STATION_TYPES = DEFAULT_STATION_TYPES;
   window.DEFAULT_STATION_ORDER = DEFAULT_STATION_ORDER;
+  window.TRAIT_IDS_BY_NAME = TRAIT_IDS_BY_NAME;
 }
