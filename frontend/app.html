@@ -72,7 +72,7 @@
       border: 1px solid var(--success); background: rgba(34,197,94,.10); font-size: 13px;
     }
     .live-round-banner strong { color: var(--success); }
-    .evaluator-only[hidden], .session-control-only[hidden] { display: none !important; }
+    .evaluator-only[hidden], .session-control-only[hidden], .admin-only[hidden] { display: none !important; }
 
     /* ── Page hierarchy ─────────────────────────────────── */
     .app-section {
@@ -756,7 +756,7 @@
               title="השווה את המקום שהמשתתפים הגיעו בכל סבב בתחנה הזאת">
         📈 גרף השוואה
       </button>
-      <button class="btn btn-info evaluator-only" onclick="doSyncSheets()" style="padding:12px 20px"
+      <button class="btn btn-info evaluator-only admin-only" onclick="doSyncSheets()" style="padding:12px 20px"
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
@@ -1477,6 +1477,9 @@
 
   function applyRoleVisibility() {
     document.querySelectorAll('.evaluator-only').forEach(el => { el.hidden = !canEvaluate(); });
+    // הסנכרון ל-Sheets שמור למנהל בלבד — פריסת ה-Apps Script מרשה רק לו לכתוב,
+    // ולחיצה של מעריך הייתה מחזירה שגיאה בלבד.
+    document.querySelectorAll('.admin-only').forEach(el => { el.hidden = !isAdmin(); });
   }
 
   function hideAllSessionControls() {
@@ -2882,18 +2885,38 @@
   // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
-  // שולח את הבקשה הראשונה לבד (היא יוצרת את קובץ הצוות) וממתין לסיומה,
-  // ורק אז שולח את השאר במקביל — כך בקשות מקבילות מוצאות קובץ קיים ולא מכפילות.
-  async function sendRowsFirstThenRest(rows) {
-    const send = (row) => fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
-    if (rows.length === 0) return 0;
-    let ok = 0;
-    try { const r0 = await send(rows[0]); if (r0.ok) ok++; } catch (e) {}
-    if (rows.length > 1) {
-      const rest = await Promise.allSettled(rows.slice(1).map(send));
-      ok += rest.filter(r => r.status === 'fulfilled' && r.value.ok).length;
+  // ה-Apps Script מחזיר 200 גם כשהפעולה נכשלה, עם { success:false, message }.
+  // לכן חובה לקרוא את הגוף — בדיקת res.ok בלבד ספרה כשלונות כהצלחות.
+  async function sendRow(row) {
+    try {
+      const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
+      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
+      const data = await res.json();
+      return { ok: data.success === true, message: data.message || '', warning: data.warning || '' };
+    } catch (e) {
+      return { ok: false, message: e.message };
     }
-    return ok;
+  }
+
+  // הראשונה לבדה ואז השאר במקביל: כשהראשונה נכשלת (למשל אין קובץ לצוות),
+  // רואים את הסיבה מיד במקום להציף את הסקריפט ב-90 בקשות שכולן ייכשלו.
+  async function sendRowsFirstThenRest(rows) {
+    if (rows.length === 0) return { ok: 0, problems: [] };
+    const results = [await sendRow(rows[0])];
+    if (rows.length > 1) {
+      const rest = await Promise.all(rows.slice(1).map(sendRow));
+      results.push(...rest);
+    }
+    // הודעות זהות מתקבצות — 90 שורות עם אותה תקלה הן תקלה אחת
+    const problems = new Map();
+    for (const r of results) {
+      const msg = !r.ok ? (r.message || 'שגיאה לא ידועה') : (r.warning || '');
+      if (msg) problems.set(msg, (problems.get(msg) || 0) + 1);
+    }
+    return {
+      ok: results.filter(r => r.ok).length,
+      problems: [...problems].map(([message, count]) => ({ message, count }))
+    };
   }
 
   function buildSyncRowsForRace(race, personalArrival = null) {
@@ -3013,13 +3036,19 @@
       const allRows = stationRows.concat(noteRows);
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
 
-      // שולח קודם שורה אחת (יוצרת את קובץ הצוות) ואז את השאר — מונע כפילות.
-      const ok = await sendRowsFirstThenRest(allRows);
+      const { ok, problems } = await sendRowsFirstThenRest(allRows);
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
-      if (fail === 0) showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
-      else if (ok === 0) showToast(`הסנכרון נכשל (${fail} רשומות)`, 'error');
-      else showToast(`סונכרנו ${ok}/${allRows.length} (${fail} נכשלו)`, 'error');
+
+      if (fail === 0 && problems.length === 0) {
+        showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
+      } else {
+        // מציג את הסיבה עצמה, לא רק מונה. תקלה חוזרת = שורה אחת עם מונה.
+        const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
+        const head = ok === 0 ? `הסנכרון נכשל (${fail})` : `סונכרנו ${ok}/${allRows.length}`;
+        showToast(`${head} — ${detail}`, ok === 0 ? 'error' : 'info');
+        console.warn('[sync] problems:', problems);
+      }
     } catch (e) {
       showToast('שגיאה בסנכרון: ' + e.message, 'error');
     } finally {
