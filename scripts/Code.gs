@@ -69,6 +69,7 @@ function doPost(e) {
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
     if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
     if (type === "audit_files")            return handleAuditFiles_(ss);
+    if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -81,8 +82,50 @@ function doPost(e) {
   }
 }
 
+// פתיחת כתובת ה-exec בדפדפן מחזירה את הגרסה הפרוסה בפועל.
+// בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
+// שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
+// לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
+var CODE_VERSION = "2026-08-23-c";
+
+// FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
+// להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
+// היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
+var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries"];
+
 function doGet(e) {
-  return buildResponse(true, "Gibush sync alive — קובץ לצוות · טאב למועמד");
+  return buildDataResponse_(true, "Gibush sync alive", {
+    version: CODE_VERSION,
+    features: FEATURES,
+    driveAccess: driveProbe_()
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  להריץ מהעורך פעם אחת: Run ▶ authorizeDrive
+// ════════════════════════════════════════════════════════════
+// הרצת doGet או פונקציה אחרת לא תבקש הרשאת Drive, כי הן לא נוגעות
+// ב-DriveApp — האישור נדרש רק כשקריאה אמיתית מתבצעת. הפונקציה הזו
+// קיימת בשביל לגרום למסך ההרשאות להופיע.
+//
+// אחרי האישור חובה לפרוס מחדש (Deploy → Manage deployments → ✏️ →
+// New version): אפליקציית ה-web רצה עם ההרשאות שהיו בזמן הפריסה.
+function authorizeDrive() {
+  var root = DriveApp.getRootFolder().getName();
+  var main = DriveApp.getFileById(SHEET_ID).getName();
+  Logger.log("Drive OK — root: %s | main sheet: %s", root, main);
+  return "Drive OK — " + main;
+}
+
+// בודקת אם לסקריפט באמת יש הרשאת Drive פעילה. זו החשודה המרכזית
+// בכפילויות: כשהיא חסרה, כל בדיקת קיום קובץ נכשלת.
+function driveProbe_() {
+  try {
+    DriveApp.getRootFolder().getName();
+    return "ok";
+  } catch (err) {
+    return "FAILED: " + err.message;
+  }
 }
 
 // ---------- זיהוי סוג התחנה ----------
@@ -487,7 +530,9 @@ function inspectFile_(row) {
     row.state = "error: " + err.message;
     return;
   }
-  if (row.state !== "alive") return;
+  // גם קובץ בסל המחזור נמדד: הוא עדיין נפתח לפי ID, ו"בסל" אינו ראיה
+  // לכך שהוא ריק. בלי המדידה הזו ניקוי עלול למחוק נתונים שלא ראינו.
+  if (row.state !== "alive" && row.state !== "trashed") return;
   try {
     var sheets = SpreadsheetApp.openById(row.fileId).getSheets();
     for (var i = 0; i < sheets.length; i++) {
@@ -498,6 +543,40 @@ function inspectFile_(row) {
   } catch (err2) {
     row.state = "open-failed: " + err2.message;
   }
+}
+
+// ---------- איפוס הרישום ----------
+// מנקה את טבלאות הרישום כדי שהקצאה מחדש תתחיל מדף חלק.
+// אינו נוגע בקבצים עצמם — רק מנתק את ההפניות אליהם ומחזיר את
+// רשימת המזהים כדי שאפשר יהיה למחוק אותם ידנית מ-Drive.
+//
+// בטוח כי הגיליונות הם תוצר נגזר: כל שורה נבנית מ-Firestore בזמן
+// הסנכרון, ולכן סנכרון אחד אחרי ההקצאה מחזיר את כל התוכן.
+// שימוש: POST { type: "reset_registries", confirm: "RESET" }
+function handleResetRegistries_(ss, payload) {
+  if (String(payload.confirm || "") !== "RESET") {
+    return buildResponse(false,
+      'הפעולה מוחקת את טבלאות הרישום — נדרש confirm:"RESET" כדי לאשר');
+  }
+  return buildDataResponse_(true, "Registries cleared", {
+    teams:      clearRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1),
+    evaluators: clearRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3)
+  });
+}
+
+function clearRegistry_(ss, tabName, width, fileCol) {
+  var sheet = ss.getSheetByName(tabName);
+  if (!sheet || sheet.getLastRow() < 2) return { removed: 0, fileIds: [] };
+
+  var count = sheet.getLastRow() - 1;
+  var vals  = sheet.getRange(2, 1, count, width).getValues();
+  var ids   = [];
+  for (var i = 0; i < vals.length; i++) {
+    var id = String(vals[i][fileCol] || "").trim();
+    if (id) ids.push(id);
+  }
+  sheet.deleteRows(2, count); // הכותרות נשארות
+  return { removed: count, fileIds: ids };
 }
 
 // ---------- Generic helpers ----------

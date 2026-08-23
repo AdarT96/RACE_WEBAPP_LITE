@@ -528,16 +528,24 @@
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
     try {
       let created = 0, existed = 0, failed = 0;
+      const reasons = new Map(); // הסיבה עצמה, לא רק המונה
       // רציף בכוונה — כל יצירה תופסת את נעילת הסקריפט
       for (let t = 1; t <= max; t++) {
         if (btn) btn.innerHTML = `⏳ צוות ${t}/${max}…`;
         try {
           const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t) });
           if (/created/i.test(data.message || '')) created++; else existed++;
-        } catch (e) { failed++; console.warn(`[team sheet ${t}]`, e.message); }
+        } catch (e) {
+          failed++;
+          reasons.set(e.message, (reasons.get(e.message) || 0) + 1);
+          console.warn(`[team sheet ${t}]`, e.message);
+        }
       }
       let msg = `נוצרו ${created} · קיימים ${existed}`;
-      if (failed) msg += ` · נכשלו ${failed}`;
+      if (failed) {
+        msg += ` · נכשלו ${failed} — ` +
+               [...reasons].map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
+      }
       showToast(msg, failed ? 'error' : 'success');
     } catch (e) {
       showToast('שגיאה: ' + e.message, 'error');
