@@ -60,7 +60,9 @@ function doPost(e) {
       if (payload.key !== API_SECRET_KEY) return buildResponse(false, "Unauthorized");
     }
 
-    var ss = SpreadsheetApp.openById(SHEET_ID);
+    var ss = openSpreadsheet_(SHEET_ID,
+      "הקובץ הראשי (SHEET_ID) לא נגיש — נמחק, הועבר לסל, או שאין לסקריפט הרשאה אליו. " +
+      "בדוק את SHEET_ID ב-Code.gs ואת הרשאות הפריסה");
     var type = String(payload.type || "").trim();
 
     if (type === "general_note")           return handleGeneralNote_(ss, payload);
@@ -246,7 +248,9 @@ function writeGeneralNoteRow_(ss, payload) {
 function findTeamFile_(ss, team) {
   var entry = findTeamEntry_(ss, team);
   if (!entry || !entry.fileId) return null;
-  return SpreadsheetApp.openById(entry.fileId);
+  return openSpreadsheet_(entry.fileId,
+    "קובץ הצוות " + team + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+    "פאנל מנהל → קבצי Google Sheets → \"צור קבצי צוותים\" ייצור קובץ חדש במקומו");
 }
 
 // יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהפאנל),
@@ -397,11 +401,30 @@ function mirrorToEvaluatorFile_(ss, payload, fn) {
   if (!entry || !entry.fileId) {
     return "אין קובץ רשום למעריך " + (name || uid) + " — צור אותו בפאנל המנהל";
   }
+  var evalSs;
   try {
-    fn(SpreadsheetApp.openById(entry.fileId));
-    return "";
+    evalSs = openSpreadsheet_(entry.fileId,
+      "קובץ המעריך " + (name || uid) + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
+      "פאנל מנהל → כפתור \"צור מחדש\" ליד שם המעריך");
   } catch (err) {
-    return "כתיבה לקובץ המעריך " + (name || uid) + " נכשלה: " + err.message;
+    return err.message;
+  }
+  try {
+    fn(evalSs);
+    return "";
+  } catch (err2) {
+    return "כתיבה לקובץ המעריך " + (name || uid) + " נכשלה: " + err2.message;
+  }
+}
+
+// פותח גיליון עם הודעת שגיאה שאומרת מה לעשות, במקום חריגה גולמית באנגלית.
+// חשוב במיוחד עכשיו: מאז שהיצירה יצאה מהנתיב החם, קובץ חסר כבר לא "מתקן"
+// את עצמו בשקט — ולכן ההודעה היא כל מה שמכוון את המשתמש.
+function openSpreadsheet_(id, hint) {
+  try {
+    return SpreadsheetApp.openById(id);
+  } catch (err) {
+    throw new Error(hint + " [" + err.message + "]");
   }
 }
 
