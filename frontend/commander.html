@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>דשבורד מפקד הגיבוש</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    body { padding-bottom: 32px; }
+    .formation-container { max-width: 1180px; margin: 0 auto; padding: 18px; }
+    .formation-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; }
+    .formation-heading p { margin-top:5px; }
+    .formation-kpis { display:grid; grid-template-columns:repeat(5,minmax(120px,1fr)); gap:10px; margin:16px 0; }
+    .formation-kpi { padding:16px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); text-align:center; }
+    .formation-kpi strong { display:block; font-size:clamp(25px,5vw,35px); line-height:1; }
+    .formation-kpi span { display:block; margin-top:7px; color:var(--text-muted); font-size:12px; }
+    .formation-grid { display:grid; grid-template-columns:minmax(0,2fr) minmax(290px,1fr); gap:14px; align-items:start; }
+    .formation-stack { display:grid; gap:14px; }
+    .formation-card { background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+    .formation-card h2 { margin-bottom:4px; }
+    .formation-card-help { margin-bottom:12px; font-size:12px; }
+    .formation-table-wrap { overflow-x:auto; }
+    .formation-table { width:100%; border-collapse:collapse; min-width:620px; }
+    .formation-table th, .formation-table td { padding:10px 8px; border-bottom:1px solid var(--border); text-align:right; vertical-align:middle; }
+    .formation-table th { color:var(--text-muted); font-size:11px; }
+    .formation-table tbody tr:last-child td { border-bottom:0; }
+    .formation-status { display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; font-size:11px; font-weight:800; }
+    .formation-status.running, .formation-status.active { color:#4ade80; background:rgba(34,197,94,.12); }
+    .formation-status.stopped { color:#fbbf24; background:rgba(245,158,11,.12); }
+    .formation-status.withdrawn { color:#f87171; background:rgba(239,68,68,.12); }
+    .formation-status.not_started { color:var(--text-muted); background:rgba(148,163,184,.12); }
+    .recommendation-list, .anomaly-list { display:grid; gap:9px; }
+    .recommendation-item { padding:12px; border:1px solid rgba(245,158,11,.38); border-radius:11px; background:rgba(245,158,11,.07); }
+    .recommendation-title { display:flex; justify-content:space-between; gap:8px; flex-wrap:wrap; font-weight:800; }
+    .recommendation-details { color:var(--text-muted); font-size:12px; white-space:pre-wrap; margin:6px 0 10px; }
+    .recommendation-actions { display:flex; gap:7px; flex-wrap:wrap; }
+    .reason-bars { display:grid; gap:9px; }
+    .reason-row { display:grid; grid-template-columns:70px 1fr 28px; align-items:center; gap:8px; font-size:12px; }
+    .reason-track { height:9px; border-radius:999px; background:var(--surface); overflow:hidden; }
+    .reason-fill { height:100%; background:var(--danger); border-radius:inherit; }
+    .candidate-action { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .team-toggle {
+      display:inline-flex; align-items:center; gap:7px; padding:7px 9px;
+      border:0; border-radius:8px; background:transparent; color:var(--text);
+      font:inherit; font-weight:900; cursor:pointer;
+    }
+    .team-toggle:hover, .team-toggle:focus-visible { background:var(--surface); }
+    .team-details-cell { padding:8px 0 16px !important; border-bottom:1px solid var(--border); }
+    .team-candidate-heading {
+      display:flex; align-items:center; justify-content:space-between; gap:10px;
+      padding:10px 12px; color:var(--text-muted); font-size:12px;
+    }
+    .team-candidate-list { display:grid; gap:7px; }
+    .team-candidate-row {
+      display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(330px,2fr) 80px minmax(100px,.8fr) auto;
+      align-items:center; gap:10px; padding:10px 12px;
+      border:1px solid var(--border); border-radius:10px; background:var(--surface);
+    }
+    .team-candidate-primary { display:grid; gap:3px; }
+    .team-candidate-primary span { color:var(--text-muted); font-size:12px; }
+    .team-candidate-id { display:grid; gap:3px; direction:ltr; text-align:right; }
+    .team-candidate-id span { color:var(--text-muted); font-size:10px; direction:rtl; }
+    .team-candidate-profile { display:grid; grid-template-columns:repeat(3,minmax(100px,1fr)); gap:8px; }
+    .team-candidate-profile > div { display:grid; gap:3px; }
+    .team-candidate-profile span { color:var(--text-muted); font-size:10px; }
+    .empty-panel { color:var(--text-muted); padding:18px 8px; text-align:center; }
+    .formation-alert { padding:10px 12px; border-radius:10px; border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.09); color:#fca5a5; }
+    .updated-at { color:var(--text-muted); font-size:11px; }
+    .modal-layer { position:fixed; inset:0; z-index:1000; display:grid; place-items:center; padding:14px; background:rgba(5,8,15,.8); }
+    .modal-layer[hidden] { display:none; }
+    .modal-card { width:min(520px,100%); background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; box-shadow:var(--shadow); }
+    .modal-fields { display:grid; gap:10px; margin:15px 0; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    @media (max-width:850px) {
+      .formation-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
+      .formation-grid { grid-template-columns:1fr; }
+    }
+    @media (max-width:580px) {
+      .formation-container { padding:12px; }
+      .formation-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); }
+      .navbar-actions .user-name { display:none; }
+      .formation-table { min-width:0; }
+      .formation-table thead { display:none; }
+      .formation-table tbody, .formation-table tr, .formation-table td { display:block; width:100%; }
+      .formation-table tr { padding:9px 11px; margin-bottom:9px; border:1px solid var(--border); border-radius:11px; background:var(--surface); }
+      .formation-table td { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:7px 0; border-bottom:1px solid var(--border); text-align:left; }
+      .formation-table td:last-child { border-bottom:0; }
+      .formation-table td::before { content:attr(data-label); color:var(--text-muted); font-size:11px; text-align:right; }
+      .formation-table td.empty-panel { display:block; text-align:center; }
+      .formation-table td.empty-panel::before { display:none; }
+      .formation-table td.candidate-action { justify-content:space-between; }
+      .formation-table tr.team-details-row { padding:0; border:0; background:transparent; }
+      .formation-table td.team-details-cell { display:block; padding:0 0 14px !important; border:0; }
+      .formation-table td.team-details-cell::before { display:none; }
+      .team-candidate-row { grid-template-columns:1fr 1fr; }
+      .team-candidate-profile { grid-column:1 / -1; }
+      .team-candidate-row .candidate-action { grid-column:1 / -1; }
+    }
+    @media (max-width:420px) {
+      .team-candidate-row, .team-candidate-profile { grid-template-columns:1fr; }
+      .team-candidate-profile, .team-candidate-row .candidate-action { grid-column:auto; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand"><span class="logo">🧭</span><span>מפקד הגיבוש</span></div>
+    <div class="navbar-actions">
+      <span id="commander-user" class="user-name"></span>
+      <span class="badge badge-info">תפעול</span>
+      <a id="admin-link" href="admin.html" class="btn btn-ghost" style="display:none; padding:6px 10px">ניהול</a>
+      <button class="btn btn-ghost" style="padding:6px 10px" onclick="logout()">התנתק</button>
+    </div>
+  </nav>
+
+  <main class="formation-container">
+    <div class="formation-heading">
+      <div>
+        <h1 id="event-name">דשבורד גיבוש</h1>
+        <p id="event-status">מתחבר לנתונים…</p>
+      </div>
+      <div id="last-updated" class="updated-at"></div>
+    </div>
+
+    <div id="blocking-message" class="formation-alert" hidden></div>
+    <div id="dashboard-content" hidden>
+      <section class="formation-kpis" aria-label="תמונת מצב">
+        <div class="formation-kpi"><strong id="kpi-candidates">0</strong><span>מועמדים בגיבוש</span></div>
+        <div class="formation-kpi"><strong id="kpi-active">0</strong><span>פעילים</span></div>
+        <div class="formation-kpi"><strong id="kpi-withdrawn">0</strong><span>נשרו</span></div>
+        <div class="formation-kpi"><strong id="kpi-teams">0</strong><span>צוותים</span></div>
+        <div class="formation-kpi"><strong id="kpi-running">0</strong><span>צוותים בתחנה פעילה</span></div>
+      </section>
+
+      <div id="anomalies" class="anomaly-list" style="margin-bottom:14px"></div>
+
+      <div class="formation-grid">
+        <div class="formation-stack">
+          <section class="formation-card">
+            <h2>מצב הצוותים</h2>
+            <p class="formation-card-help">לחץ על צוות כדי לפתוח את רשימת המועמדים שלו. הנתונים מתעדכנים בזמן אמת.</p>
+            <div class="formation-table-wrap">
+              <table class="formation-table">
+                <thead><tr><th>צוות</th><th>פעילים</th><th>נשרו</th><th>תחנה</th><th>סבב</th><th>מצב</th></tr></thead>
+                <tbody id="teams-table"></tbody>
+              </table>
+            </div>
+          </section>
+
+        </div>
+
+        <aside class="formation-stack">
+          <section class="formation-card">
+            <h2>המלצות מפק״צים</h2>
+            <p class="formation-card-help">רק המלצות שעדיין ממתינות להחלטה.</p>
+            <div id="recommendations" class="recommendation-list"></div>
+          </section>
+          <section class="formation-card">
+            <h2>סיבות נשירה</h2>
+            <div id="reason-bars" class="reason-bars"></div>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </main>
+
+  <div id="status-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
+    <form id="status-form" class="modal-card" onsubmit="confirmCandidateStatus(event)">
+      <h2 id="status-modal-title">עדכון מצב מועמד</h2>
+      <p id="status-modal-summary"></p>
+      <div class="modal-fields">
+        <select id="status-reason" class="form-select" required>
+          <option value="">— בחר סיבת נשירה —</option>
+          <option value="voluntary">פרישה</option><option value="medical">רפואי</option><option value="dismissal">הדחה</option>
+        </select>
+        <textarea id="status-details" class="form-input" rows="3" maxlength="1000" placeholder="פירוט תפעולי (אופציונלי)"></textarea>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeStatusModal()">ביטול</button>
+        <button id="status-submit" type="submit" class="btn btn-danger">אישור נשירה</button>
+      </div>
+    </form>
+  </div>
+
+  <div id="identity-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="identity-modal-title">
+    <form class="modal-card" onsubmit="confirmCandidateIdentity(event)">
+      <h2 id="identity-modal-title">תיקון פרטי מועמד</h2>
+      <p id="identity-modal-summary"></p>
+      <div class="modal-fields">
+        <label>שם פרטי
+          <input id="identity-first-name" class="form-input" maxlength="80" required>
+        </label>
+        <label>תעודת זהות
+          <input id="identity-national-id" class="form-input" inputmode="numeric" maxlength="11" required style="direction:ltr">
+        </label>
+        <label>טלפון איש קשר חירום
+          <input id="identity-emergency-phone" class="form-input" type="tel" inputmode="tel" maxlength="20" required style="direction:ltr">
+        </label>
+        <label>כשירות רופא
+          <select id="identity-doctor-clearance" class="form-input">
+            <option value="0">טרם נבדק</option><option value="1">כשיר</option><option value="2">לא כשיר</option>
+          </select>
+        </label>
+        <label>כשירות חובש
+          <select id="identity-medic-clearance" class="form-input">
+            <option value="0">טרם נבדק</option><option value="1">כשיר</option><option value="2">לא כשיר</option>
+          </select>
+        </label>
+      </div>
+      <p class="formation-card-help">עריכת פרטי זהות זמינה למנהל בלבד ואינה משנה את מספר המועמד או הצוות.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" onclick="closeIdentityModal()">ביטול</button>
+        <button id="identity-submit" type="submit" class="btn btn-primary">שמור פרטים</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="js/firebase-config.js"></script>
+  <script src="js/station-types.js"></script>
+  <script type="module" src="js/commander-dashboard.js"></script>
+</body>
+</html>

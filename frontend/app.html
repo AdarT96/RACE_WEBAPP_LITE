@@ -466,14 +466,36 @@
       min-height: 52px; padding: 8px; border: 2px solid var(--border);
       border-radius: 11px; background: var(--surface); color: var(--text);
       font: inherit; font-size: clamp(15px, 4vw, 20px); font-weight: 900;
-      cursor: pointer; direction: ltr;
+      cursor: pointer;
     }
+    .candidate-picker-number { display:block; direction:ltr; }
+    .candidate-picker-name { display:block; margin-top:3px; font-size:11px; font-weight:700; }
     .candidate-picker-btn.selected { border-color: var(--accent); background: rgba(99,102,241,.18); }
+    .candidate-picker-btn.withdrawn {
+      color: var(--text-muted); border-color: rgba(239,68,68,.35);
+      background: rgba(239,68,68,.07);
+    }
+    .candidate-picker-btn .candidate-picker-status {
+      display: block; margin-top: 3px; font-size: 10px; font-weight: 700; direction: rtl;
+    }
     .candidate-header {
       display: flex; align-items: center; justify-content: space-between;
       gap: 12px; flex-wrap: wrap;
     }
     .candidate-number { font: 900 clamp(32px, 9vw, 54px)/1 monospace; direction: ltr; color: var(--accent); }
+    .candidate-identity { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-top:7px; }
+    .candidate-first-name { font-size:clamp(20px,5vw,28px); font-weight:900; }
+    .candidate-national-id { color:var(--text-muted); font-size:13px; direction:ltr; }
+    .candidate-profile-grid {
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(145px,1fr));
+      gap:8px; margin-top:13px;
+    }
+    .candidate-profile-item { padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+    .candidate-profile-item span { display:block; color:var(--text-muted); font-size:10px; margin-bottom:4px; }
+    .candidate-profile-item strong, .candidate-profile-item a { color:var(--text); font-size:13px; font-weight:800; }
+    .candidate-clearance.fit { color:var(--success); }
+    .candidate-clearance.unfit { color:var(--danger); }
+    .candidate-clearance.pending { color:var(--text-muted); }
     .candidate-privacy-note { color: var(--text-muted); font-size: 12px; max-width: 560px; }
     .candidate-traits {
       display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
@@ -539,6 +561,13 @@
     .candidate-note-form textarea { flex: 1; min-width: 190px; }
     .candidate-chart-wrap { height: 230px; margin: 12px 0; }
     .candidate-empty { padding: 22px; text-align: center; color: var(--text-muted); }
+    .candidate-operations { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+    .candidate-status-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .candidate-status-badge { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 800; }
+    .candidate-status-badge.active { color: var(--success); background: rgba(34,197,94,.12); }
+    .candidate-status-badge.withdrawn { color: var(--danger); background: rgba(239,68,68,.12); }
+    .dropout-recommendation-form { display: grid; grid-template-columns: minmax(130px, 180px) 1fr auto; gap: 8px; margin-top: 12px; align-items: start; }
+    @media (max-width: 680px) { .dropout-recommendation-form { grid-template-columns: 1fr; } }
     @media (max-width: 600px) {
       .candidate-score-editor-row { grid-template-columns: 1fr; }
       .candidate-traits { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -928,6 +957,15 @@
         <div>
           <span class="section-kicker">דשבורד מועמד</span>
           <div id="candidate-number" class="candidate-number">—</div>
+          <div class="candidate-identity">
+            <span id="candidate-first-name" class="candidate-first-name"></span>
+            <span id="candidate-national-id" class="candidate-national-id"></span>
+          </div>
+          <div class="candidate-profile-grid">
+            <div class="candidate-profile-item"><span>טלפון איש קשר חירום</span><a id="candidate-emergency-phone" dir="ltr">—</a></div>
+            <div class="candidate-profile-item"><span>כשירות רופא</span><strong id="candidate-doctor-clearance">—</strong></div>
+            <div class="candidate-profile-item"><span>כשירות חובש</span><strong id="candidate-medic-clearance">—</strong></div>
+          </div>
         </div>
         <div id="candidate-loading" class="candidate-privacy-note" aria-live="polite"></div>
       </div>
@@ -936,6 +974,29 @@
       </div>
       <div id="candidate-operator-message" class="candidate-empty" hidden>
         בהתאם לנפרדות ההערכה, מפק״צ אינו רואה ציונים או תוצאות הערכה.
+      </div>
+      <div class="candidate-operations">
+        <div class="candidate-status-line">
+          <strong>מצב בגיבוש:</strong>
+          <span id="candidate-operational-status" class="candidate-status-badge active">פעיל</span>
+          <span id="candidate-dropout-reason" style="font-size:12px; color:var(--text-muted)"></span>
+        </div>
+        <div id="candidate-dropout-recommendation" hidden>
+          <div id="candidate-recommendation-current" style="font-size:12px; margin-top:10px"></div>
+          <div class="dropout-recommendation-form" id="candidate-recommendation-form">
+            <select id="candidate-recommendation-reason" class="form-input" aria-label="סיבת נשירה">
+              <option value="">— בחר סיבה —</option>
+              <option value="voluntary">פרישה</option>
+              <option value="medical">רפואי</option>
+              <option value="dismissal">הדחה</option>
+            </select>
+            <textarea id="candidate-recommendation-details" class="form-input" rows="2" maxlength="1000"
+                      placeholder="פירוט קצר למפקד הגיבוש (אופציונלי)"></textarea>
+            <button type="button" class="btn btn-warning" onclick="submitDropoutRecommendation()">שלח המלצה לנשירה</button>
+          </div>
+          <button id="candidate-recommendation-cancel" type="button" class="btn btn-ghost"
+                  style="display:none; margin-top:8px" onclick="cancelDropoutRecommendation()">בטל המלצה פתוחה</button>
+        </div>
       </div>
     </section>
 
@@ -1053,6 +1114,12 @@
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createPrivateNotesRepository } from "./js/private-notes-repository.js";
+  import {
+    CANDIDATE_STATUSES, DROPOUT_REASONS, RECOMMENDATION_STATUSES,
+    activeParticipantIds, clearanceStatusLabel, dropoutReasonLabel, normalizeCandidateRecord
+  } from "./js/formation-operations-model.js";
+  import { createFormationOperationsRepository } from "./js/formation-operations-repository.js";
+  import { ROLES, roleLabel } from "./js/roles.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
@@ -1097,6 +1164,11 @@
   let privacySettingsUnsubscribe = null;
   let evaluationRepository = null;
   let privateNotesRepository = null;
+  let formationRepository = null;
+  let activeFormationEvent = null;
+  let candidatesByTeam = new Map();
+  let candidatesTeamUnsubscribe = null;
+  let candidatesSubscribedTeam = null;
   let currentAssessment = normalizeAssessment(null);
   let currentAssessmentRaceId = null;
   let currentAssessmentLoading = false;
@@ -1105,7 +1177,9 @@
   const candidateState = {
     participantId: null, summary: null, races: [], assessmentsByRace: new Map(),
     arrivalsByRace: new Map(), selectedStationKey: null, notes: [],
-    notesUnsubscribe: null, chart: null, loadingToken: 0, openRoundIds: new Set()
+    notesUnsubscribe: null, operationsUnsubscribe: null, recommendationUnsubscribe: null,
+    operationalState: null, recommendation: null,
+    chart: null, loadingToken: 0, openRoundIds: new Set()
   };
 
   // ספירת חזרות: תצוגה מקומית + תור הפרשים לכל סבב, כדי לא לדרוס מעריך אחר
@@ -1169,10 +1243,10 @@
   const escHtml = s => (s == null ? '' : String(s))
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const setText = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-  const raceIdFor = (team, station, round) => `race_${team}_${station}_${round}`;
+  const raceIdFor = (eventId, team, station, round) => `race_${eventId}_${team}_${station}_${round}`;
 
-  function isOperator() { return currentUser?.role === 'operator'; }
-  function isEvaluator() { return currentUser?.role === 'evaluator'; }
+  function isOperator() { return currentUser?.role === ROLES.OPERATOR; }
+  function isEvaluator() { return currentUser?.role === ROLES.EVALUATOR; }
   function canControlSession() { return canRoleControlSession(currentUser?.role); }
   function canEvaluate() { return isEvaluator() || isAdmin(); }
 
@@ -1588,6 +1662,15 @@
       setTimeout(() => { signOut(auth); window.location.href = 'index.html'; }, 2500);
       return;
     }
+    if (data.role === ROLES.FORMATION_COMMANDER) {
+      window.location.href = 'commander.html';
+      return;
+    }
+    if (![ROLES.ADMIN, ROLES.OPERATOR, ROLES.EVALUATOR].includes(data.role)) {
+      await signOut(auth);
+      window.location.href = 'index.html';
+      return;
+    }
     currentUser = { ...data, uid: user.uid };
     initApp();
   });
@@ -1595,9 +1678,8 @@
 
   // ═════════ Init ═════════
   async function initApp() {
-    const roleLabels = { operator: 'מפק״צ', evaluator: 'מעריך', admin: 'מנהל' };
     const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
-    setText('user-role-badge', (roleLabels[currentUser.role] || currentUser.role) + teamLabel);
+    setText('user-role-badge', roleLabel(currentUser.role) + teamLabel);
     setConnectedFirebase(true);
 
     // תיוגים משותפים + real-time refresh
@@ -1608,9 +1690,16 @@
     subscribeToPrivacyState();
     evaluationRepository = createEvaluationRepository(db, currentUser);
     privateNotesRepository = createPrivateNotesRepository(db, currentUser);
+    formationRepository = createFormationOperationsRepository(db, currentUser);
+    activeFormationEvent = await formationRepository.getActiveEvent();
     applyRoleVisibility();
     initCollapsibleSections();
     initRoundNavigationKeyboard();
+
+    if (!activeFormationEvent) {
+      showBlockingWarn('לא הוגדר אירוע גיבוש פעיל. מנהל המערכת צריך ליצור אירוע בפאנל המנהל.');
+      return;
+    }
 
     // Populate station selector
     const stationSel = document.getElementById('station-select');
@@ -1796,11 +1885,33 @@
   }
 
   // ═════════ Teams data ═════════
+  function subscribeToTeamCandidates(teamNumber) {
+    if (candidatesSubscribedTeam === teamNumber && candidatesTeamUnsubscribe) return;
+    if (candidatesTeamUnsubscribe) candidatesTeamUnsubscribe();
+    candidatesSubscribedTeam = teamNumber;
+    candidatesTeamUnsubscribe = onSnapshot(query(
+      collection(db, 'events', activeFormationEvent.id, 'candidates'),
+      where('team', '==', teamNumber)
+    ), snapshot => {
+      candidatesByTeam.set(teamNumber, snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+      if (candidateRoute() && candidateTeam() === teamNumber) renderCandidatePicker();
+    }, error => showToast('שגיאה בעדכון מצבי המועמדים: ' + error.message, 'error'));
+  }
+
   async function loadTeamData(teamNumber) {
-    if (!teamNumber) return null;
+    if (!teamNumber || !activeFormationEvent) return null;
     try {
-      const snap = await getDoc(doc(db, 'teams', teamNumber));
-      const data = snap.exists() ? snap.data() : null;
+      const snap = await getDoc(doc(db, 'events', activeFormationEvent.id, 'teams', teamNumber));
+      const data = snap.exists() ? {
+        ...snap.data(), participants: Array.isArray(snap.data().participantIds)
+          ? snap.data().participantIds.slice() : []
+      } : null;
+      const candidatesSnapshot = await getDocs(query(
+        collection(db, 'events', activeFormationEvent.id, 'candidates'),
+        where('team', '==', teamNumber)
+      ));
+      candidatesByTeam.set(teamNumber, candidatesSnapshot.docs.map(item => ({ id: item.id, ...item.data() })));
+      subscribeToTeamCandidates(teamNumber);
       teamsCache[teamNumber] = data;
       return data;
     } catch (e) {
@@ -1810,9 +1921,15 @@
   }
 
   async function preloadTeamsForAdmin() {
+    if (!activeFormationEvent) return;
     try {
-      const snap = await getDocs(collection(db, 'teams'));
-      snap.forEach(d => { teamsCache[d.id] = d.data(); });
+      const snap = await getDocs(collection(db, 'events', activeFormationEvent.id, 'teams'));
+      for (const teamDocument of snap.docs) {
+        const data = teamDocument.data();
+        teamsCache[teamDocument.id] = {
+          ...data, participants: Array.isArray(data.participantIds) ? data.participantIds.slice() : []
+        };
+      }
     } catch (e) { /* silent — admin might still pick a fresh team */ }
   }
 
@@ -1833,10 +1950,13 @@
     localStorage.setItem('lite:lastTeam', selectedTeam || '');
     if (!selectedTeam) {
       detachRaceSubscription();
+      if (candidatesTeamUnsubscribe) candidatesTeamUnsubscribe();
+      candidatesTeamUnsubscribe = null;
+      candidatesSubscribedTeam = null;
       renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
       return;
     }
-    if (!teamsCache[selectedTeam]) await loadTeamData(selectedTeam);
+    await loadTeamData(selectedTeam);
     refreshStationDropdownLabels();
     await loadCurrentSession();
   };
@@ -1927,13 +2047,14 @@
 
   // ═════════ Live rounds for the selected team + station ═════════
   function loadCurrentSession() {
-    if (!selectedTeam || !selectedStation) return;
+    if (!activeFormationEvent || !selectedTeam || !selectedStation) return;
 
     localReps = {};
     followLatest = true;
     detachRaceSubscription();
 
     const constraints = [
+      where('eventId', '==', activeFormationEvent.id),
       where('team', '==', selectedTeam),
       where('station', '==', selectedStation)
     ];
@@ -2391,15 +2512,37 @@
       ? latestRace
       : null;
     const nextRound = latestRace ? (Number(latestRace.round || 0) + 1) : 1;
-    const raceId = raceIdFor(selectedTeam, selectedStation, nextRound);
+    if (!activeFormationEvent) { showToast('אין אירוע גיבוש פעיל', 'error'); return; }
+    const raceId = raceIdFor(activeFormationEvent.id, selectedTeam, selectedStation, nextRound);
     const raceRef = doc(db, 'races', raceId);
     const previousRaceRef = expiredPreviousRace ? doc(db, 'races', expiredPreviousRace.id) : null;
+    const eventRef = doc(db, 'events', activeFormationEvent.id);
+    const roster = uniqueParticipantIds(teamData.participants);
     setControlActionBusy(true);
     try {
       await runTransaction(db, async (transaction) => {
-        const existing = await transaction.get(raceRef);
-        const previous = previousRaceRef ? await transaction.get(previousRaceRef) : null;
+        const reads = [transaction.get(raceRef), transaction.get(eventRef)];
+        if (previousRaceRef) reads.push(transaction.get(previousRaceRef));
+        roster.forEach(participantId => reads.push(transaction.get(
+          formationRepository.candidateRef(activeFormationEvent.id, selectedTeam, participantId)
+        )));
+        const snapshots = await Promise.all(reads);
+        const existing = snapshots[0];
+        const eventSnapshot = snapshots[1];
+        const previous = previousRaceRef ? snapshots[2] : null;
+        const stateOffset = previousRaceRef ? 3 : 2;
+        const states = roster.map((participantId, index) => normalizeCandidateRecord(
+          snapshots[stateOffset + index]?.exists() ? snapshots[stateOffset + index].data() : null,
+          { team: selectedTeam, participantId }
+        ));
+        const participants = activeParticipantIds({
+          id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
+        }, states);
         if (existing.exists()) throw new Error('הסבב כבר נוצר. המסך יתעדכן אוטומטית.');
+        if (!eventSnapshot.exists() || eventSnapshot.data().status !== 'active') {
+          throw new Error('אירוע הגיבוש אינו פעיל');
+        }
+        if (participants.length === 0) throw new Error('אין מועמדים פעילים בצוות');
         if (previous?.exists() && previous.data().status === 'running') {
           if (!isSessionExpired(previous.data())) throw new Error('הסבב הקודם עדיין פעיל');
           transaction.update(previousRaceRef, {
@@ -2410,6 +2553,7 @@
           });
         }
         transaction.set(raceRef, {
+          eventId:   activeFormationEvent.id,
           team:      selectedTeam,
           station:   selectedStation,
           round:     nextRound,
@@ -2418,7 +2562,7 @@
           startedBy: currentUser.uid,
           timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
           evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
-          participantIds: uniqueParticipantIds(teamData.participants),
+          participantIds: participants,
           tags:      []
         });
       });
@@ -3262,8 +3406,11 @@
   }
 
   async function gatherRacesForCurrentContext() {
-    if (!selectedTeam || !selectedStation) return [];
-    const constraints = [where('team', '==', selectedTeam), where('station', '==', selectedStation)];
+    if (!activeFormationEvent || !selectedTeam || !selectedStation) return [];
+    const constraints = [
+      where('eventId', '==', activeFormationEvent.id),
+      where('team', '==', selectedTeam), where('station', '==', selectedStation)
+    ];
     if (privacyMigrationComplete) {
       constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
     }
@@ -3642,7 +3789,8 @@
   async function collectTeamNoteRows(team) {
     const rows = [];
     if (!team) return rows;
-    const teamData = teamsCache[team] || await loadTeamData(team);
+    let teamData = teamsCache[team] || null;
+    if (!teamData || !candidatesByTeam.has(team)) teamData = await loadTeamData(team) || teamData;
     const participants = uniqueParticipantIds(teamData?.participants || []);
     const notesByParticipant = await Promise.all(participants.map(pid => isAdmin()
       ? privateNotesRepository.getAllAuthors(team, pid)
@@ -3698,6 +3846,145 @@
     candidateState.notes = [];
   }
 
+  function detachCandidateOperations() {
+    if (candidateState.operationsUnsubscribe) candidateState.operationsUnsubscribe();
+    if (candidateState.recommendationUnsubscribe) candidateState.recommendationUnsubscribe();
+    candidateState.operationsUnsubscribe = null;
+    candidateState.recommendationUnsubscribe = null;
+    candidateState.operationalState = null;
+    candidateState.recommendation = null;
+  }
+
+  function replaceCachedCandidate(team, operationalState) {
+    const existing = candidatesByTeam.get(team) || [];
+    const key = String(operationalState.participantId);
+    const next = existing.filter(item => String(item.participantId) !== key);
+    next.push(operationalState);
+    candidatesByTeam.set(team, next);
+  }
+
+  function recommendationStatusLabel(status) {
+    return ({
+      [RECOMMENDATION_STATUSES.OPEN]: 'ממתינה להחלטת מפקד הגיבוש',
+      [RECOMMENDATION_STATUSES.ACCEPTED]: 'אושרה',
+      [RECOMMENDATION_STATUSES.REJECTED]: 'נדחתה',
+      [RECOMMENDATION_STATUSES.CANCELLED]: 'בוטלה'
+    })[status] || '';
+  }
+
+  function renderCandidateProfile(profile) {
+    setText('candidate-first-name', profile.firstName || 'שם לא הוזן');
+    setText('candidate-national-id', profile.nationalId
+      ? `ת״ז ${profile.nationalId}` : 'תעודת זהות לא הוזנה');
+    const phone = document.getElementById('candidate-emergency-phone');
+    phone.textContent = profile.emergencyContactPhone || 'לא הוזן';
+    if (profile.emergencyContactPhone) phone.href = `tel:${profile.emergencyContactPhone}`;
+    else phone.removeAttribute('href');
+    const doctor = document.getElementById('candidate-doctor-clearance');
+    const medic = document.getElementById('candidate-medic-clearance');
+    const clearanceClass = value => value === 1 ? 'fit' : value === 2 ? 'unfit' : 'pending';
+    doctor.textContent = clearanceStatusLabel(profile.doctorClearance);
+    doctor.className = `candidate-clearance ${clearanceClass(profile.doctorClearance)}`;
+    medic.textContent = clearanceStatusLabel(profile.medicClearance);
+    medic.className = `candidate-clearance ${clearanceClass(profile.medicClearance)}`;
+  }
+
+  function renderCandidateOperations() {
+    const operationalState = candidateState.operationalState || normalizeCandidateRecord(null, {
+      team: candidateTeam(), participantId: candidateState.participantId
+    });
+    renderCandidateProfile(operationalState);
+    const withdrawn = operationalState.status === CANDIDATE_STATUSES.WITHDRAWN;
+    const statusBadge = document.getElementById('candidate-operational-status');
+    statusBadge.textContent = withdrawn ? 'נשר' : 'פעיל';
+    statusBadge.className = `candidate-status-badge ${withdrawn ? 'withdrawn' : 'active'}`;
+    setText('candidate-dropout-reason', withdrawn && operationalState.reasonLabel
+      ? `סיבה: ${operationalState.reasonLabel}` : '');
+
+    const recommendationArea = document.getElementById('candidate-dropout-recommendation');
+    recommendationArea.hidden = !isOperator();
+    if (!isOperator()) return;
+
+    const recommendation = candidateState.recommendation;
+    const current = document.getElementById('candidate-recommendation-current');
+    const form = document.getElementById('candidate-recommendation-form');
+    const cancel = document.getElementById('candidate-recommendation-cancel');
+    const hasOpenRecommendation = recommendation?.status === RECOMMENDATION_STATUSES.OPEN;
+
+    if (recommendation?.reasonCode) {
+      const detail = recommendation.details ? ` · ${recommendation.details}` : '';
+      current.textContent = `המלצה: ${dropoutReasonLabel(recommendation.reasonCode)} · ${recommendationStatusLabel(recommendation.status)}${detail}`;
+    } else {
+      current.textContent = 'מפק״צ יכול להעביר למפקד הגיבוש המלצה מנומקת לנשירה.';
+    }
+    form.hidden = withdrawn || hasOpenRecommendation;
+    cancel.style.display = hasOpenRecommendation && recommendation.recommendedBy === currentUser.uid ? '' : 'none';
+  }
+
+  function subscribeToCandidateOperations(team, participantId) {
+    detachCandidateOperations();
+    if (!formationRepository || !activeFormationEvent) return;
+    candidateState.operationsUnsubscribe = formationRepository.subscribeCandidate(
+      activeFormationEvent.id, team, participantId,
+      operationalState => {
+        if (candidateState.participantId !== String(participantId)) return;
+        candidateState.operationalState = operationalState;
+        replaceCachedCandidate(team, operationalState);
+        renderCandidateOperations();
+        renderCandidatePicker();
+      },
+      error => showToast('שגיאה בעדכון מצב המועמד: ' + error.message, 'error')
+    );
+    if (isOperator()) {
+      candidateState.recommendationUnsubscribe = formationRepository.subscribeRecommendation(
+        activeFormationEvent.id, team, participantId,
+        recommendation => {
+          if (candidateState.participantId !== String(participantId)) return;
+          candidateState.recommendation = recommendation;
+          renderCandidateOperations();
+        },
+        error => showToast('שגיאה בעדכון המלצת הנשירה: ' + error.message, 'error')
+      );
+    }
+    renderCandidateOperations();
+  }
+
+  window.submitDropoutRecommendation = async () => {
+    const participantId = candidateState.participantId;
+    const team = candidateTeam();
+    const reason = document.getElementById('candidate-recommendation-reason').value;
+    const details = document.getElementById('candidate-recommendation-details').value;
+    if (!isOperator() || !participantId || !team || !activeFormationEvent) return;
+    if (!DROPOUT_REASONS[reason]) {
+      showToast('יש לבחור סיבת נשירה', 'error');
+      return;
+    }
+    const button = document.querySelector('#candidate-recommendation-form button');
+    button.disabled = true;
+    try {
+      await formationRepository.recommendDropout(activeFormationEvent.id, team, participantId, reason, details);
+      document.getElementById('candidate-recommendation-reason').value = '';
+      document.getElementById('candidate-recommendation-details').value = '';
+      showToast('ההמלצה נשלחה למפקד הגיבוש', 'success');
+    } catch (error) {
+      showToast('שליחת ההמלצה נכשלה: ' + error.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  window.cancelDropoutRecommendation = async () => {
+    const participantId = candidateState.participantId;
+    const team = candidateTeam();
+    if (!isOperator() || !participantId || !team || !activeFormationEvent) return;
+    try {
+      await formationRepository.cancelRecommendation(activeFormationEvent.id, team, participantId);
+      showToast('ההמלצה בוטלה', 'success');
+    } catch (error) {
+      showToast('ביטול ההמלצה נכשל: ' + error.message, 'error');
+    }
+  };
+
   function destroyCandidateChart() {
     if (candidateState.chart) candidateState.chart.destroy();
     candidateState.chart = null;
@@ -3711,6 +3998,7 @@
       stationView.hidden = false;
       candidateView.hidden = true;
       detachCandidateNotes();
+      detachCandidateOperations();
       destroyCandidateChart();
       return;
     }
@@ -3723,6 +4011,7 @@
       candidateState.participantId = null;
       document.getElementById('candidate-content').hidden = true;
       detachCandidateNotes();
+      detachCandidateOperations();
       destroyCandidateChart();
     }
   }
@@ -3738,19 +4027,28 @@
       empty.textContent = 'יש לבחור צוות תחילה.';
       return;
     }
-    const teamData = teamsCache[team] || await loadTeamData(team);
+    let teamData = teamsCache[team] || null;
+    if (!teamData || !candidatesByTeam.has(team)) teamData = await loadTeamData(team) || teamData;
     const participants = uniqueParticipantIds(teamData?.participants || [])
       .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
+    const operationalStates = new Map((candidatesByTeam.get(team) || [])
+      .map(state => [String(state.participantId), normalizeCandidateRecord(state, { team, participantId: state.participantId })]));
     sizeParticipantGrid(picker, participants.length);
     empty.hidden = participants.length > 0;
-    picker.innerHTML = participants.map(participantId => `
-      <button type="button" class="candidate-picker-btn ${candidateState.participantId === participantId ? 'selected' : ''}"
-              onclick="selectCandidate('${escHtml(participantId)}')">${escHtml(participantId)}</button>
-    `).join('');
+    picker.innerHTML = participants.map(participantId => {
+      const candidate = operationalStates.get(participantId) || normalizeCandidateRecord(null, { team, participantId });
+      const withdrawn = candidate.status === CANDIDATE_STATUSES.WITHDRAWN;
+      return `<button type="button" class="candidate-picker-btn ${candidateState.participantId === participantId ? 'selected' : ''} ${withdrawn ? 'withdrawn' : ''}"
+              onclick="selectCandidate('${escHtml(participantId)}')">
+              <span class="candidate-picker-number">${escHtml(participantId)}</span>
+              <span class="candidate-picker-name">${escHtml(candidate.firstName || 'שם לא הוזן')}</span>
+              ${withdrawn ? `<span class="candidate-picker-status">נשר · ${escHtml(candidate.reasonLabel)}</span>` : ''}</button>`;
+    }).join('');
   }
 
   async function queryTeamRaces(team) {
-    const constraints = [where('team', '==', team)];
+    if (!activeFormationEvent) return [];
+    const constraints = [where('eventId', '==', activeFormationEvent.id), where('team', '==', team)];
     if (privacyMigrationComplete) {
       constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
     }
@@ -3777,9 +4075,13 @@
     candidateState.selectedStationKey = null;
     document.getElementById('candidate-content').hidden = false;
     setText('candidate-number', pid);
+    const candidateRecord = (candidatesByTeam.get(team) || [])
+      .find(candidate => String(candidate.participantId) === pid);
+    renderCandidateProfile(normalizeCandidateRecord(candidateRecord, { team, participantId: pid }));
     setText('candidate-loading', 'טוען…');
     await renderCandidatePicker();
     subscribeToCandidateGeneralNotes(team, pid);
+    subscribeToCandidateOperations(team, pid);
 
     const evaluatorView = isEvaluator() || isAdmin();
     document.getElementById('candidate-evaluator-summary').hidden = !evaluatorView;

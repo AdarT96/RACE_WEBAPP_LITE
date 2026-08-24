@@ -1,0 +1,32 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "races",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventId", "order": "ASCENDING" },
+        { "fieldPath": "team", "order": "ASCENDING" },
+        { "fieldPath": "station", "order": "ASCENDING" },
+        { "fieldPath": "evaluationSchemaVersion", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "races",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventId", "order": "ASCENDING" },
+        { "fieldPath": "team", "order": "ASCENDING" },
+        { "fieldPath": "evaluationSchemaVersion", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "races",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventId", "order": "ASCENDING" },
+        { "fieldPath": "evaluationSchemaVersion", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

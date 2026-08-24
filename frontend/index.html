@@ -86,7 +86,7 @@
           <input id="reg-pass2" type="password" class="form-input" placeholder="חזור על הסיסמה" autocomplete="new-password">
         </div>
 
-        <div class="form-group">
+        <div class="form-group" id="reg-team-group">
           <label class="form-label">צוות (1-15)</label>
           <select id="reg-team" class="form-select">
             <option value="">— בחר צוות —</option>
@@ -111,6 +111,15 @@
             <div class="role-info">
               <h4>מעריך</h4>
               <p>צפייה בזמנים, סימון תוצאות, ציונים והערות</p>
+            </div>
+          </label>
+
+          <label class="role-option" id="role-opt-formation_commander">
+            <input type="radio" name="role" value="formation_commander" id="role-formation-commander" onchange="updateRoleSelected()">
+            <span class="role-icon">🧭</span>
+            <div class="role-info">
+              <h4>מפקד הגיבוש</h4>
+              <p>תמונת מצב תפעולית של כל הצוותים והנשירות</p>
             </div>
           </label>
         </div>
@@ -142,13 +151,24 @@
     });
     const chosen = document.querySelector('input[name=role]:checked');
     const sel = document.getElementById('reg-role');
-    if (chosen && sel) sel.value = chosen.value;
+    if (chosen && sel) {
+      sel.value = chosen.value;
+      const globalRole = chosen.value === 'formation_commander';
+      const teamGroup = document.getElementById('reg-team-group');
+      const teamSelect = document.getElementById('reg-team');
+      teamGroup.style.display = globalRole ? 'none' : '';
+      teamSelect.disabled = globalRole;
+      if (globalRole) teamSelect.value = '';
+    }
   }
 
   window.addEventListener('DOMContentLoaded', () => {
     // populate role hidden select
     const sel = document.getElementById('reg-role');
-    ['operator','evaluator'].forEach(r => {
+    const blankRole = document.createElement('option');
+    blankRole.value = ''; blankRole.textContent = '';
+    sel.appendChild(blankRole);
+    ['operator','evaluator','formation_commander'].forEach(r => {
       const o = document.createElement('option');
       o.value = r; o.text = r;
       sel.appendChild(o);

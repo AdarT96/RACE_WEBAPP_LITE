@@ -9,6 +9,7 @@ import { getAuth, createUserWithEmailAndPassword,
          onAuthStateChanged }          from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
 import { getFirestore, doc, setDoc,
          getDoc, serverTimestamp }     from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+import { ROLES, destinationForRole, isKnownRole, roleNeedsTeam } from './roles.js';
 
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
@@ -56,15 +57,17 @@ async function registerUser() {
   const role  = val('reg-role');
   const team  = val('reg-team');
 
-  if (!name || !email || !pass || !role || !team)
+  if (!name || !email || !pass || !role || (roleNeedsTeam(role) && !team))
     return showMsg('reg-msg', 'יש למלא את כל השדות.');
+  if (!isKnownRole(role) || role === ROLES.ADMIN)
+    return showMsg('reg-msg', 'התפקיד שנבחר אינו תקין.');
   if (pass.length < 8)
     return showMsg('reg-msg', 'הסיסמה חייבת להכיל לפחות 8 תווים.');
   if (pass !== pass2)
     return showMsg('reg-msg', 'הסיסמאות אינן תואמות.');
   
-  const teamNum = parseInt(team);
-  if (isNaN(teamNum) || teamNum < 1 || teamNum > 15)
+  const teamNum = roleNeedsTeam(role) ? parseInt(team) : null;
+  if (roleNeedsTeam(role) && (isNaN(teamNum) || teamNum < 1 || teamNum > 15))
     return showMsg('reg-msg', 'מספר צוות חייב להיות בין 1 ל-15.');
 
   setLoading('reg-btn', true);
@@ -111,12 +114,7 @@ async function loginUser() {
       return showMsg('login-msg', '⏳ החשבון ממתין לאישור מנהל.', 'warning');
     }
 
-    // Route based on role
-    if (data.role === 'admin') {
-      window.location.href = 'admin.html';
-    } else {
-      window.location.href = 'app.html';
-    }
+    window.location.href = destinationForRole(data.role);
   } catch(err) {
     showMsg('login-msg', firebaseErrMsg(err.code));
   } finally {

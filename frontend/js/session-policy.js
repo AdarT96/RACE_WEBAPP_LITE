@@ -2,6 +2,8 @@
 // Keep this module free of DOM/Firebase dependencies so every time calculation
 // has one deterministic implementation.
 
+import { canControlSession } from './roles.js';
+
 export const DEFAULT_SESSION_LIMIT_SECONDS = 40 * 60;
 
 export function timestampToMs(value) {
@@ -60,6 +62,4 @@ export function measuredElapsedMs(race, measuredAt) {
   return elapsed >= 0 && elapsed <= sessionLimitMs(race) ? elapsed : null;
 }
 
-export function canRoleControlSession(role) {
-  return role === 'operator';
-}
+export const canRoleControlSession = canControlSession;
