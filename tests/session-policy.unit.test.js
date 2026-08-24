@@ -51,6 +51,7 @@ test('arrival measurements after the limit are untimed instead of becoming zero'
 test('only the commander role controls session lifecycle', () => {
   assert.equal(canRoleControlSession('operator'), true);
   assert.equal(canRoleControlSession('evaluator'), false);
+  assert.equal(canRoleControlSession('formation_commander'), false);
   assert.equal(canRoleControlSession('admin'), false);
   assert.equal(canRoleControlSession(undefined), false);
 });

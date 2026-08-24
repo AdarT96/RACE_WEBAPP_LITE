@@ -20,8 +20,20 @@ service cloud.firestore {
       return signedIn() && caller().approved == true && caller().role == role;
     }
 
+    function isFormationCommander() {
+      return isApprovedRole('formation_commander');
+    }
+
     function isOwnTeam(team) {
       return int(team) == int(caller().team);
+    }
+
+    function isActiveEvent(eventId) {
+      return exists(/databases/$(database)/documents/settings/activeEvent) &&
+        get(/databases/$(database)/documents/settings/activeEvent).data.status == 'active' &&
+        get(/databases/$(database)/documents/settings/activeEvent).data.eventId == eventId &&
+        exists(/databases/$(database)/documents/events/$(eventId)) &&
+        get(/databases/$(database)/documents/events/$(eventId)).data.status == 'active';
     }
 
     // The administrator sets this marker only after every legacy shared document
@@ -33,18 +45,32 @@ service cloud.firestore {
         get(/databases/$(database)/documents/settings/evaluationPrivacy).data.status == 'complete';
     }
 
-    // Users register themselves as unapproved operator/evaluator accounts. Only an
-    // admin may later approve them or change role/team; self-promotion is forbidden.
+    // Users register themselves as unapproved operational accounts. Only an admin
+    // may later approve them or change role/team; self-promotion is forbidden.
     match /users/{uid} {
       allow read: if signedIn() && request.auth.uid == uid;
       allow read: if isAdmin();
 
       allow create: if signedIn() && request.auth.uid == uid &&
+        request.resource.data.keys().hasAll([
+          'uid', 'name', 'email', 'role', 'team', 'approved', 'createdAt'
+        ]) &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'name', 'email', 'role', 'team', 'approved', 'createdAt'
+        ]) &&
         request.resource.data.uid == request.auth.uid &&
+        request.resource.data.name is string && request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 200 &&
+        request.resource.data.email is string && request.resource.data.email.size() > 0 &&
+        request.resource.data.email.size() <= 320 &&
         request.resource.data.approved == false &&
-        request.resource.data.role in ['operator', 'evaluator'] &&
-        request.resource.data.team is int &&
-        request.resource.data.team >= 1 && request.resource.data.team <= 15;
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.role in ['operator', 'evaluator', 'formation_commander'] &&
+        ((request.resource.data.role in ['operator', 'evaluator'] &&
+          request.resource.data.team is int &&
+          request.resource.data.team >= 1 && request.resource.data.team <= 15) ||
+         (request.resource.data.role == 'formation_commander' &&
+          request.resource.data.team == null));
 
       allow update: if signedIn() && request.auth.uid == uid &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'email']);
@@ -56,12 +82,16 @@ service cloud.firestore {
     match /races/{raceId} {
       allow read: if isAdmin() ||
         (signedIn() && caller().approved == true && isOwnTeam(resource.data.team) &&
-         (!privacyMigrationComplete() || resource.data.evaluationSchemaVersion == 2));
+         (!privacyMigrationComplete() || resource.data.evaluationSchemaVersion == 2)) ||
+        (isFormationCommander() && resource.data.evaluationSchemaVersion == 2 &&
+         resource.data.eventId is string && isActiveEvent(resource.data.eventId));
 
       allow create: if isAdmin() ||
         (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
          request.resource.data.keys()
-           .hasOnly(['team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds', 'evaluationSchemaVersion']) &&
+           .hasOnly(['eventId', 'team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds', 'evaluationSchemaVersion']) &&
+         request.resource.data.keys().hasAll(['eventId', 'team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags']) &&
+         request.resource.data.eventId is string && isActiveEvent(request.resource.data.eventId) &&
          request.resource.data.team is string && request.resource.data.station is string &&
          request.resource.data.status == 'running' &&
          request.resource.data.startedBy == request.auth.uid &&
@@ -71,7 +101,8 @@ service cloud.firestore {
          (!request.resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
            request.resource.data.evaluationSchemaVersion == 2) &&
          (!request.resource.data.keys().hasAny(['participantIds']) ||
-           request.resource.data.participantIds is list) &&
+           (request.resource.data.participantIds is list &&
+            request.resource.data.participantIds.size() <= 20)) &&
          (!request.resource.data.keys().hasAny(['timeLimitSeconds']) ||
            (request.resource.data.timeLimitSeconds is int &&
             request.resource.data.timeLimitSeconds == 2400)) &&
@@ -183,6 +214,245 @@ service cloud.firestore {
            request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['entries', 'updatedAt']));
         allow delete: if isAdmin();
+      }
+    }
+
+    // One immutable operational snapshot per formation event. Operational users
+    // can read only the event/team data required for their role; only admins
+    // create or close events.
+    match /events/{eventId} {
+      allow read: if isAdmin() || isFormationCommander() ||
+        isApprovedRole('operator') || isApprovedRole('evaluator');
+      allow create, update: if isAdmin();
+      allow delete: if false;
+
+      match /teams/{teamNumber} {
+        allow read: if isAdmin() || isFormationCommander() ||
+          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+        allow create, update: if isAdmin();
+        allow delete: if false;
+      }
+
+      match /candidates/{candidateId} {
+        function validDropoutReason(reasonCode, reasonLabel) {
+          return (reasonCode == 'voluntary' && reasonLabel == 'פרישה') ||
+            (reasonCode == 'medical' && reasonLabel == 'רפואי') ||
+            (reasonCode == 'dismissal' && reasonLabel == 'הדחה');
+        }
+
+        function validCandidateRecord() {
+          return request.resource.data.keys().hasAll([
+              'participantId', 'team', 'firstName', 'nationalId', 'emergencyContactPhone',
+              'doctorClearance', 'medicClearance',
+              'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'profileRevision',
+              'lastTransitionId', 'statusChangedAt', 'statusChangedBy',
+              'profileUpdatedAt', 'profileUpdatedBy', 'schemaVersion'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'participantId', 'team', 'firstName', 'nationalId', 'emergencyContactPhone',
+              'doctorClearance', 'medicClearance',
+              'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'profileRevision',
+              'lastTransitionId', 'statusChangedAt', 'statusChangedBy',
+              'profileUpdatedAt', 'profileUpdatedBy', 'schemaVersion'
+            ]) &&
+            request.resource.data.participantId is string &&
+            request.resource.data.participantId.size() > 0 &&
+            request.resource.data.participantId.size() <= 100 &&
+            request.resource.data.participantId.matches('^[0-9]+$') &&
+            request.resource.data.participantId != '0' &&
+            request.resource.data.team is string &&
+            candidateId == request.resource.data.team + '_' + request.resource.data.participantId &&
+            request.resource.data.firstName is string &&
+            request.resource.data.firstName.size() > 0 &&
+            request.resource.data.firstName.size() <= 80 &&
+            request.resource.data.firstName != '0' &&
+            request.resource.data.nationalId is string &&
+            request.resource.data.nationalId.matches('^[0-9]{9}$') &&
+            request.resource.data.emergencyContactPhone is string &&
+            request.resource.data.emergencyContactPhone.matches('^[0-9]{9,15}$') &&
+            request.resource.data.doctorClearance is int &&
+            request.resource.data.doctorClearance in [0, 1, 2] &&
+            request.resource.data.medicClearance is int &&
+            request.resource.data.medicClearance in [0, 1, 2] &&
+            request.resource.data.status in ['active', 'withdrawn'] &&
+            ((request.resource.data.status == 'withdrawn' &&
+              validDropoutReason(request.resource.data.reasonCode, request.resource.data.reasonLabel)) ||
+             (request.resource.data.status == 'active' &&
+              request.resource.data.reasonCode == '' && request.resource.data.reasonLabel == '')) &&
+            request.resource.data.statusRevision is int && request.resource.data.statusRevision >= 0 &&
+            request.resource.data.profileRevision is int && request.resource.data.profileRevision >= 0 &&
+            request.resource.data.lastTransitionId is string &&
+            request.resource.data.statusChangedAt is timestamp &&
+            request.resource.data.statusChangedBy is string &&
+            request.resource.data.profileUpdatedAt is timestamp &&
+            request.resource.data.profileUpdatedBy is string &&
+            request.resource.data.schemaVersion == 3;
+        }
+
+        allow read: if isAdmin() || isFormationCommander() ||
+          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team));
+        allow create: if isAdmin() && validCandidateRecord() &&
+          request.resource.data.status == 'active' && request.resource.data.statusRevision == 0 &&
+          request.resource.data.profileRevision == 0 && request.resource.data.lastTransitionId == '' &&
+          request.resource.data.statusChangedAt == request.time &&
+          request.resource.data.statusChangedBy == request.auth.uid &&
+          request.resource.data.profileUpdatedAt == request.time &&
+          request.resource.data.profileUpdatedBy == request.auth.uid;
+        allow update: if (isAdmin() || isFormationCommander()) && validCandidateRecord() &&
+          isActiveEvent(eventId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'lastTransitionId',
+            'statusChangedAt', 'statusChangedBy'
+          ]) &&
+          request.resource.data.statusRevision == resource.data.statusRevision + 1 &&
+          request.resource.data.statusChangedAt == request.time &&
+          request.resource.data.statusChangedBy == request.auth.uid &&
+          request.resource.data.lastTransitionId.size() > 0 &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/candidateStatusEvents/$(request.resource.data.lastTransitionId)).data.candidateKey == candidateId &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/candidateStatusEvents/$(request.resource.data.lastTransitionId)).data.changedBy == request.auth.uid &&
+          (request.resource.data.status != 'withdrawn' ||
+           !exists(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)) ||
+           get(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status != 'open' ||
+           getAfter(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status == 'accepted');
+        allow update: if isAdmin() && validCandidateRecord() && isActiveEvent(eventId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firstName', 'nationalId', 'emergencyContactPhone',
+            'doctorClearance', 'medicClearance',
+            'profileRevision', 'profileUpdatedAt', 'profileUpdatedBy'
+          ]) &&
+          request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
+          request.resource.data.profileUpdatedAt == request.time &&
+          request.resource.data.profileUpdatedBy == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /dropoutRecommendations/{recommendationId} {
+        function validDropoutReason(reasonCode, reasonLabel) {
+          return (reasonCode == 'voluntary' && reasonLabel == 'פרישה') ||
+            (reasonCode == 'medical' && reasonLabel == 'רפואי') ||
+            (reasonCode == 'dismissal' && reasonLabel == 'הדחה');
+        }
+
+        function validRecommendationShape() {
+          return request.resource.data.keys().hasAll([
+              'participantId', 'team', 'reasonCode', 'reasonLabel', 'details', 'status',
+              'recommendedBy', 'recommendedByName', 'revision', 'createdAt', 'updatedAt',
+              'resolvedAt', 'resolvedBy', 'schemaVersion'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'participantId', 'team', 'reasonCode', 'reasonLabel', 'details', 'status',
+              'recommendedBy', 'recommendedByName', 'revision', 'createdAt', 'updatedAt',
+              'resolvedAt', 'resolvedBy', 'schemaVersion'
+            ]) &&
+            request.resource.data.participantId is string &&
+            request.resource.data.participantId.size() > 0 &&
+            request.resource.data.participantId.size() <= 100 &&
+            request.resource.data.team is string &&
+            recommendationId == request.resource.data.team + '_' + request.resource.data.participantId &&
+            validDropoutReason(request.resource.data.reasonCode, request.resource.data.reasonLabel) &&
+            request.resource.data.details is string && request.resource.data.details.size() <= 1000 &&
+            request.resource.data.status in ['open', 'accepted', 'rejected', 'cancelled'] &&
+            request.resource.data.recommendedBy is string &&
+            request.resource.data.recommendedByName is string &&
+            request.resource.data.recommendedByName.size() <= 200 &&
+            request.resource.data.revision is int && request.resource.data.revision > 0 &&
+            request.resource.data.schemaVersion == 1;
+        }
+
+        function isOwnOpenRecommendation() {
+          return isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
+            request.resource.data.recommendedBy == request.auth.uid;
+        }
+
+        allow read: if isAdmin() || isFormationCommander() ||
+          (isApprovedRole('operator') && isOwnTeam(resource.data.team));
+        allow create: if validRecommendationShape() && isOwnOpenRecommendation() &&
+          isActiveEvent(eventId) && request.resource.data.status == 'open' &&
+          request.resource.data.revision == 1 &&
+          request.resource.data.createdAt == request.time && request.resource.data.updatedAt == request.time &&
+          request.resource.data.resolvedAt == null && request.resource.data.resolvedBy == '' &&
+          exists(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)) &&
+          get(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.status == 'active';
+
+        // A team commander may edit their own open recommendation or open a new
+        // recommendation after the previous one was resolved.
+        allow update: if validRecommendationShape() && isOwnOpenRecommendation() &&
+          isActiveEvent(eventId) && request.resource.data.revision == resource.data.revision + 1 &&
+          request.resource.data.status == 'open' && request.resource.data.updatedAt == request.time &&
+          request.resource.data.resolvedAt == null && request.resource.data.resolvedBy == '' &&
+          ((resource.data.status == 'open' && resource.data.recommendedBy == request.auth.uid &&
+            request.resource.data.createdAt == resource.data.createdAt) ||
+           (resource.data.status in ['accepted', 'rejected', 'cancelled'] &&
+            request.resource.data.createdAt == request.time)) &&
+          exists(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)) &&
+          get(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.status == 'active';
+        allow update: if isApprovedRole('operator') && validRecommendationShape() &&
+          isOwnTeam(resource.data.team) && resource.data.status == 'open' &&
+          resource.data.recommendedBy == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'revision', 'updatedAt', 'resolvedAt', 'resolvedBy'
+          ]) && request.resource.data.status == 'cancelled' &&
+          request.resource.data.revision == resource.data.revision + 1 &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.resolvedAt == request.time &&
+          request.resource.data.resolvedBy == request.auth.uid;
+        allow update: if (isAdmin() || isFormationCommander()) && validRecommendationShape() &&
+          isActiveEvent(eventId) &&
+          resource.data.status == 'open' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'revision', 'updatedAt', 'resolvedAt', 'resolvedBy'
+          ]) && request.resource.data.status in ['accepted', 'rejected'] &&
+          request.resource.data.revision == resource.data.revision + 1 &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.resolvedAt == request.time &&
+          request.resource.data.resolvedBy == request.auth.uid &&
+          (request.resource.data.status == 'rejected' ||
+            (getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.status == 'withdrawn' &&
+             getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.reasonCode == resource.data.reasonCode));
+        allow delete: if false;
+      }
+
+      // Status transitions are appended to an immutable audit trail. The new
+      // candidate state must be part of the same atomic transaction.
+      match /candidateStatusEvents/{transitionId} {
+        function validTransition() {
+          return request.resource.data.keys().hasAll([
+              'candidateKey', 'participantId', 'team', 'fromStatus', 'toStatus',
+              'reasonCode', 'reasonLabel', 'details', 'source', 'recommendationId',
+              'changedAt', 'changedBy', 'changedByName', 'schemaVersion'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'candidateKey', 'participantId', 'team', 'fromStatus', 'toStatus',
+              'reasonCode', 'reasonLabel', 'details', 'source', 'recommendationId',
+              'changedAt', 'changedBy', 'changedByName', 'schemaVersion'
+            ]) &&
+            request.resource.data.participantId is string &&
+            request.resource.data.participantId.size() > 0 &&
+            request.resource.data.participantId.size() <= 100 &&
+            request.resource.data.team is string &&
+            request.resource.data.candidateKey == request.resource.data.team + '_' + request.resource.data.participantId &&
+            request.resource.data.fromStatus in ['active', 'withdrawn'] &&
+            request.resource.data.toStatus in ['active', 'withdrawn'] &&
+            request.resource.data.details is string && request.resource.data.details.size() <= 1000 &&
+            request.resource.data.source in ['direct', 'recommendation'] &&
+            request.resource.data.recommendationId is string &&
+            request.resource.data.changedAt == request.time &&
+            request.resource.data.changedBy == request.auth.uid &&
+            request.resource.data.changedByName is string &&
+            request.resource.data.changedByName.size() <= 200 &&
+            request.resource.data.schemaVersion == 1 &&
+            get(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.status == request.resource.data.fromStatus &&
+            getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.status == request.resource.data.toStatus &&
+            getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.statusChangedBy == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.lastTransitionId == transitionId &&
+            getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.reasonCode == request.resource.data.reasonCode &&
+            getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(request.resource.data.candidateKey)).data.reasonLabel == request.resource.data.reasonLabel;
+        }
+
+        allow read: if isAdmin() || isFormationCommander();
+        allow create: if (isAdmin() || isFormationCommander()) &&
+          isActiveEvent(eventId) && validTransition();
+        allow update, delete: if false;
       }
     }
 

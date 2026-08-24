@@ -5,7 +5,8 @@ import {
   initializeTestEnvironment, assertSucceeds, assertFails
 } from '@firebase/rules-unit-testing';
 import {
-  doc, getDoc, setDoc, updateDoc, serverTimestamp, Timestamp
+  collection, doc, getDoc, getDocs, query, where,
+  setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
 } from 'firebase/firestore';
 import { buildIssueReportData } from '../frontend/js/issue-report.js';
 
@@ -16,6 +17,17 @@ function userDb(uid) {
   return testEnv.authenticatedContext(uid).firestore();
 }
 
+function candidatePayload({ participantId, team, firstName, nationalId }) {
+  return {
+    participantId, team, firstName, nationalId,
+    emergencyContactPhone: '0501234567', doctorClearance: 1, medicClearance: 0,
+    status: 'active', reasonCode: '', reasonLabel: '', statusRevision: 0,
+    profileRevision: 0, lastTransitionId: '',
+    statusChangedAt: Timestamp.now(), statusChangedBy: 'admin1',
+    profileUpdatedAt: Timestamp.now(), profileUpdatedBy: 'admin1', schemaVersion: 3
+  };
+}
+
 async function seedData() {
   await testEnv.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
@@ -24,13 +36,32 @@ async function seedData() {
       operator1: { uid: 'operator1', name: 'מפקצ 1', role: 'operator', team: 1, approved: true },
       operator2: { uid: 'operator2', name: 'מפקצ 2', role: 'operator', team: 2, approved: true },
       evaluator1: { uid: 'evaluator1', name: 'מעריך 1', role: 'evaluator', team: 1, approved: true },
-      evaluator2: { uid: 'evaluator2', name: 'מעריך 2', role: 'evaluator', team: 1, approved: true }
+      evaluator2: { uid: 'evaluator2', name: 'מעריך 2', role: 'evaluator', team: 1, approved: true },
+      formation1: { uid: 'formation1', name: 'מפקד הגיבוש', role: 'formation_commander', team: null, approved: true }
     };
     for (const [uid, data] of Object.entries(users)) {
       await setDoc(doc(db, 'users', uid), data);
     }
+    await setDoc(doc(db, 'settings', 'activeEvent'), {
+      eventId: 'event-1', status: 'active', schemaVersion: 3
+    });
+    await setDoc(doc(db, 'events', 'event-1'), {
+      name: 'אירוע בדיקה', status: 'active', schemaVersion: 3
+    });
+    await setDoc(doc(db, 'events', 'event-1', 'teams', '01'), {
+      teamNumber: '01', participantIds: ['100'], stationMap: {}, schemaVersion: 3
+    });
+    await setDoc(doc(db, 'events', 'event-1', 'teams', '02'), {
+      teamNumber: '02', participantIds: ['200'], stationMap: {}, schemaVersion: 3
+    });
+    await setDoc(doc(db, 'events', 'event-1', 'candidates', '01_100'), candidatePayload({
+      participantId: '100', team: '01', firstName: 'נועה', nationalId: '000000018'
+    }));
+    await setDoc(doc(db, 'events', 'event-1', 'candidates', '02_200'), candidatePayload({
+      participantId: '200', team: '02', firstName: 'יובל', nationalId: '123456782'
+    }));
     await setDoc(doc(db, 'races', 'race_01_07_1'), {
-      team: '01', station: '07', round: 1, status: 'running',
+      eventId: 'event-1', team: '01', station: '07', round: 1, status: 'running',
       startedAt: Timestamp.fromMillis(Date.now() - 10_000), startedBy: 'operator1',
       timeLimitSeconds: 2400, participantIds: ['100'], tags: [], evaluationSchemaVersion: 2
     });
@@ -43,9 +74,19 @@ async function seedData() {
 
 function racePayload({ withLimit = true } = {}) {
   return {
-    team: '01', station: '07', round: withLimit ? 2 : 3, status: 'running',
+    eventId: 'event-1', team: '01', station: '07', round: withLimit ? 2 : 3, status: 'running',
     startedAt: serverTimestamp(), startedBy: 'operator1', participantIds: ['100'], tags: [],
     ...(withLimit ? { timeLimitSeconds: 2400 } : {})
+  };
+}
+
+function recommendationPayload() {
+  return {
+    participantId: '100', team: '01', reasonCode: 'medical', reasonLabel: 'רפואי',
+    details: 'נבדק על ידי החובש', status: 'open',
+    recommendedBy: 'operator1', recommendedByName: 'מפקצ 1', revision: 1,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    resolvedAt: null, resolvedBy: '', schemaVersion: 1
   };
 }
 
@@ -104,6 +145,9 @@ after(async () => {
 test('only the own-team commander can create and stop a race', async () => {
   const operator = userDb('operator1');
   await assertSucceeds(setDoc(doc(operator, 'races', 'race_01_07_2'), racePayload()));
+  await assertFails(setDoc(doc(operator, 'races', 'race_01_07_identity_leak'), {
+    ...racePayload(), round: 5, firstName: 'נועה', nationalId: '000000018'
+  }));
   await assertSucceeds(updateDoc(doc(operator, 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual'
   }));
@@ -113,6 +157,25 @@ test('only the own-team commander can create and stop a race', async () => {
   }));
   await assertFails(updateDoc(doc(userDb('operator2'), 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator2', endedReason: 'manual'
+  }));
+});
+
+test('a formation commander can register only as an unapproved global role', async () => {
+  const newCommander = userDb('new-formation');
+  await assertSucceeds(setDoc(doc(newCommander, 'users', 'new-formation'), {
+    uid: 'new-formation', name: 'חדש', email: 'new@example.com',
+    role: 'formation_commander', team: null, approved: false,
+    createdAt: serverTimestamp()
+  }));
+  const invalidTeamRole = userDb('invalid-team-role');
+  await assertFails(setDoc(doc(invalidTeamRole, 'users', 'invalid-team-role'), {
+    uid: 'invalid-team-role', name: 'לא תקין', email: 'bad@example.com',
+    role: 'operator', team: null, approved: false, createdAt: serverTimestamp()
+  }));
+  const selfAdmin = userDb('self-admin');
+  await assertFails(setDoc(doc(selfAdmin, 'users', 'self-admin'), {
+    uid: 'self-admin', name: 'לא מנהל', email: 'admin@example.com',
+    role: 'admin', team: null, approved: false, createdAt: serverTimestamp()
   }));
 });
 
@@ -160,6 +223,132 @@ test('private general notes are isolated by author, including from the commander
   const operatorRef = doc(userDb('operator1'), 'general_notes', '01_100', 'authors', 'operator1');
   await assertSucceeds(setDoc(operatorRef, privateNotesPayload('operator1')));
   await assertSucceeds(getDoc(operatorRef));
+});
+
+test('the formation commander sees operations across teams but never private evaluations', async () => {
+  const commander = userDb('formation1');
+  await assertSucceeds(getDoc(doc(commander, 'races', 'race_01_07_1')));
+  await assertFails(getDoc(doc(commander, 'races', 'legacy-race')));
+  await assertSucceeds(getDocs(query(collection(commander, 'races'),
+    where('eventId', '==', 'event-1'), where('evaluationSchemaVersion', '==', 2))));
+  await assertFails(getDocs(collection(commander, 'races')));
+  await assertSucceeds(getDoc(doc(commander, 'events', 'event-1', 'teams', '02')));
+  await assertSucceeds(getDoc(doc(commander, 'events', 'event-1', 'candidates', '02_200')));
+  await assertSucceeds(getDocs(collection(commander, 'events', 'event-1', 'candidates')));
+  await assertFails(getDoc(doc(commander,
+    'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1')));
+  await assertFails(getDoc(doc(commander,
+    'races', 'race_01_07_1', 'evaluatorArrivals', 'evaluator1')));
+  await assertFails(getDoc(doc(commander,
+    'general_notes', '01_100', 'authors', 'operator1')));
+  await assertFails(updateDoc(doc(commander, 'races', 'race_01_07_1'), {
+    status: 'stopped', endedAt: serverTimestamp(), endedBy: 'formation1'
+  }));
+});
+
+test('dropout recommendations are team-scoped and only the formation commander resolves them', async () => {
+  const reference = doc(userDb('operator1'), 'events', 'event-1', 'dropoutRecommendations', '01_100');
+  await assertSucceeds(setDoc(reference, recommendationPayload()));
+  await assertSucceeds(getDoc(doc(userDb('formation1'), 'events', 'event-1', 'dropoutRecommendations', '01_100')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'dropoutRecommendations', '01_100')));
+  await assertFails(setDoc(doc(userDb('operator2'), 'events', 'event-1', 'dropoutRecommendations', '01_100'), {
+    ...recommendationPayload(), recommendedBy: 'operator2', recommendedByName: 'מפקצ 2'
+  }));
+  await assertFails(updateDoc(doc(userDb('operator1'), 'events', 'event-1', 'candidates', '01_100'), {
+      status: 'withdrawn', reasonCode: 'medical', reasonLabel: 'רפואי', statusRevision: 1,
+      lastTransitionId: 'not-authorized',
+      statusChangedAt: serverTimestamp(), statusChangedBy: 'operator1'
+  }));
+
+  const commander = userDb('formation1');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const recommendationRef = doc(commander, 'events', 'event-1', 'dropoutRecommendations', '01_100');
+    const stateRef = doc(commander, 'events', 'event-1', 'candidates', '01_100');
+    await transaction.get(recommendationRef);
+    await transaction.get(stateRef);
+    transaction.update(stateRef, {
+      status: 'withdrawn', reasonCode: 'medical', reasonLabel: 'רפואי', statusRevision: 1,
+      lastTransitionId: 'transition-accepted',
+      statusChangedAt: serverTimestamp(), statusChangedBy: 'formation1'
+    });
+    transaction.set(doc(commander, 'events', 'event-1', 'candidateStatusEvents', 'transition-accepted'), {
+      candidateKey: '01_100', participantId: '100', team: '01',
+      fromStatus: 'active', toStatus: 'withdrawn', reasonCode: 'medical', reasonLabel: 'רפואי',
+      details: 'נבדק על ידי החובש', source: 'recommendation', recommendationId: '01_100',
+      changedAt: serverTimestamp(), changedBy: 'formation1', changedByName: 'מפקד הגיבוש', schemaVersion: 1
+    });
+    transaction.update(recommendationRef, {
+      status: 'accepted', revision: 2, updatedAt: serverTimestamp(),
+      resolvedAt: serverTimestamp(), resolvedBy: 'formation1'
+    });
+  }));
+});
+
+test('team members can read their candidate status and dropout reason but not other teams', async () => {
+  const evaluator = userDb('evaluator1');
+  const ownCandidate = await assertSucceeds(getDoc(doc(evaluator, 'events', 'event-1', 'candidates', '01_100')));
+  assert.equal(ownCandidate.data().firstName, 'נועה');
+  assert.equal(ownCandidate.data().nationalId, '000000018');
+  assert.equal(ownCandidate.data().emergencyContactPhone, '0501234567');
+  assert.equal(ownCandidate.data().doctorClearance, 1);
+  await assertSucceeds(getDocs(query(collection(evaluator, 'events', 'event-1', 'candidates'),
+    where('team', '==', '01'))));
+  await assertFails(getDocs(collection(evaluator, 'events', 'event-1', 'candidates')));
+  await assertFails(getDocs(query(collection(evaluator, 'events', 'event-1', 'candidates'),
+    where('team', '==', '02'))));
+  await assertSucceeds(getDoc(doc(userDb('operator1'), 'events', 'event-1', 'candidates', '01_100')));
+  await assertFails(getDoc(doc(userDb('operator2'), 'events', 'event-1', 'candidates', '01_100')));
+});
+
+test('only an admin can correct candidate identity and cannot do so without a profile revision', async () => {
+  const commanderRef = doc(userDb('formation1'), 'events', 'event-1', 'candidates', '01_100');
+  await assertFails(updateDoc(commanderRef, {
+    firstName: 'נעמה', profileRevision: 1,
+    profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'formation1'
+  }));
+  await assertFails(updateDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '01_100'), {
+    firstName: 'נעמה', profileRevision: 1,
+    profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'evaluator1'
+  }));
+  const adminRef = doc(userDb('admin1'), 'events', 'event-1', 'candidates', '01_100');
+  await assertFails(updateDoc(adminRef, {
+    firstName: 'נעמה', profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'admin1'
+  }));
+  await assertFails(updateDoc(adminRef, {
+    emergencyContactPhone: '123', doctorClearance: 9, profileRevision: 1,
+    profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'admin1'
+  }));
+  await assertSucceeds(updateDoc(adminRef, {
+    firstName: 'נעמה', nationalId: '039284765', emergencyContactPhone: '0527654321',
+    doctorClearance: 1, medicClearance: 1, profileRevision: 1,
+    profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'admin1'
+  }));
+});
+
+test('direct formation status changes append an atomic immutable audit event', async () => {
+  const commander = userDb('formation1');
+  const stateRef = doc(commander, 'events', 'event-1', 'candidates', '02_200');
+  const recommendationRef = doc(commander, 'events', 'event-1', 'dropoutRecommendations', '02_200');
+  const historyRef = doc(commander, 'events', 'event-1', 'candidateStatusEvents', 'transition-direct');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(stateRef);
+    await transaction.get(recommendationRef);
+    transaction.update(stateRef, {
+      status: 'withdrawn', reasonCode: 'voluntary', reasonLabel: 'פרישה', statusRevision: 1,
+      lastTransitionId: 'transition-direct',
+      statusChangedAt: serverTimestamp(), statusChangedBy: 'formation1'
+    });
+    transaction.set(historyRef, {
+      candidateKey: '02_200', participantId: '200', team: '02',
+      fromStatus: 'active', toStatus: 'withdrawn', reasonCode: 'voluntary', reasonLabel: 'פרישה',
+      details: '', source: 'direct', recommendationId: '', changedAt: serverTimestamp(),
+      changedBy: 'formation1', changedByName: 'מפקד הגיבוש', schemaVersion: 1
+    });
+  }));
+  const teamView = await assertSucceeds(getDoc(doc(userDb('operator2'),
+    'events', 'event-1', 'candidates', '02_200')));
+  assert.equal(teamView.data().reasonLabel, 'פרישה');
+  await assertFails(updateDoc(historyRef, { details: 'שינוי בדיעבד' }));
 });
 
 test('a migrated general-note parent rejects legacy member writes before the global marker', async () => {
