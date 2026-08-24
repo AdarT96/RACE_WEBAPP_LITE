@@ -16,7 +16,7 @@ const FIREBASE_CONFIG = {
 //  App Settings
 // =====================================================
 const APP_CONFIG = {
-  appVersion: "lite-v1.0",
+  appVersion: "lite-v1.1-schedule",
 
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
   // פריסת 23.08.2026. הפריסה הקודמת (AKfycbyb…) עדיין קיימת ומריצה קוד ישן —

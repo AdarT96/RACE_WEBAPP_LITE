@@ -126,6 +126,38 @@ function privateNotesPayload(uid = 'evaluator1') {
   };
 }
 
+function masterSchedulePayload(uid = 'formation1', revision = 1) {
+  return {
+    eventId: 'event-1', teamIds: ['01', '02'],
+    commanderNames: { '01': 'שחר', '02': 'ברוס' },
+    rows: [{
+      id: 'row-1', date: '2026-08-24', startMinute: 190, kind: 'rotation', label: '',
+      assignments: {
+        '01': { stationId: '04', routeNumber: '1' },
+        '02': { stationId: '02', routeNumber: '3' }
+      }
+    }],
+    loadPolicy: { windowMinutes: 120, maxWindowLoad: 6, highIntensity: 3, maxConsecutiveHigh: 1 },
+    loadWarnings: [], overrideReason: '', revision,
+    revisionKey: `r-${String(revision).padStart(6, '0')}`, schemaVersion: 1,
+    timeZone: 'Asia/Jerusalem', createdAt: serverTimestamp(), createdBy: uid,
+    updatedAt: serverTimestamp(), updatedBy: uid
+  };
+}
+
+function teamSchedulePayload(team, uid = 'formation1', revision = 1) {
+  const stationId = team === '01' ? '04' : '02';
+  return {
+    eventId: 'event-1', team, commanderName: team === '01' ? 'שחר' : 'ברוס',
+    entries: [{
+      id: 'row-1', date: '2026-08-24', startMinute: 190, kind: 'rotation',
+      label: '', stationId, routeNumber: team === '01' ? '1' : '3'
+    }],
+    sourceRevision: revision, schemaVersion: 1, timeZone: 'Asia/Jerusalem',
+    updatedAt: serverTimestamp(), updatedBy: uid
+  };
+}
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId: PROJECT_ID,
@@ -244,6 +276,36 @@ test('the formation commander sees operations across teams but never private eva
   await assertFails(updateDoc(doc(commander, 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'formation1'
   }));
+});
+
+test('schedule writes are atomic, versioned and projected by team', async () => {
+  const commander = userDb('formation1');
+  const masterRef = doc(commander, 'events', 'event-1', 'schedule', 'master');
+  const revisionRef = doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001');
+
+  // A client cannot bypass the durable audit trail by writing only the master.
+  await assertFails(setDoc(masterRef, masterSchedulePayload()));
+
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(masterRef);
+    transaction.set(masterRef, masterSchedulePayload());
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '01'), teamSchedulePayload('01'));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '02'), teamSchedulePayload('02'));
+    transaction.set(revisionRef, masterSchedulePayload());
+  }));
+
+  await assertSucceeds(getDoc(masterRef));
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '02')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'schedule', 'master')));
+  await assertSucceeds(getDoc(doc(userDb('formation1'), 'events', 'event-1', 'teamSchedules', '02')));
+  await assertFails(updateDoc(doc(userDb('operator1'), 'events', 'event-1', 'teamSchedules', '01'), {
+    commanderName: 'ניסיון שינוי'
+  }));
+  await assertFails(updateDoc(masterRef, {
+    ...masterSchedulePayload('formation1', 1), createdAt: Timestamp.now()
+  }));
+  await assertFails(updateDoc(revisionRef, { overrideReason: 'שינוי היסטוריה' }));
 });
 
 test('dropout recommendations are team-scoped and only the formation commander resolves them', async () => {

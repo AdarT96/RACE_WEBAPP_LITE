@@ -233,6 +233,121 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // The master schedule is visible only to formation management. Team staff
+      // read a projection containing their own column, so the full formation
+      // movement plan is never exposed as a side effect of opening the team view.
+      function validMasterSchedule() {
+        return request.resource.data.keys().hasAll([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.eventId == eventId &&
+          request.resource.data.teamIds is list && request.resource.data.teamIds.size() > 0 &&
+          request.resource.data.teamIds.size() <= 15 &&
+          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 15 &&
+          request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
+          request.resource.data.loadPolicy is map &&
+          request.resource.data.loadPolicy.keys().hasAll([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.keys().hasOnly([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.windowMinutes is int &&
+          request.resource.data.loadPolicy.windowMinutes >= 30 &&
+          request.resource.data.loadPolicy.maxWindowLoad is int &&
+          request.resource.data.loadPolicy.maxWindowLoad > 0 &&
+          request.resource.data.loadPolicy.highIntensity is int &&
+          request.resource.data.loadPolicy.highIntensity in [1, 2, 3] &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh is int &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh > 0 &&
+          request.resource.data.loadWarnings is list && request.resource.data.loadWarnings.size() <= 100 &&
+          request.resource.data.overrideReason is string &&
+          request.resource.data.overrideReason.size() <= 500 &&
+          (request.resource.data.loadWarnings.size() == 0 || request.resource.data.overrideReason.size() > 0) &&
+          request.resource.data.revision is int && request.resource.data.revision > 0 &&
+          request.resource.data.revisionKey is string &&
+          request.resource.data.revisionKey.matches('^r-[0-9]{6,12}$') &&
+          request.resource.data.schemaVersion == 1 &&
+          request.resource.data.timeZone == 'Asia/Jerusalem' &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdBy is string &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      function mayManageSchedule() {
+        return (isAdmin() || isFormationCommander()) && isActiveEvent(eventId);
+      }
+
+      match /schedule/{scheduleId} {
+        allow read: if scheduleId == 'master' && (isAdmin() || isFormationCommander());
+        allow create: if scheduleId == 'master' && mayManageSchedule() &&
+          validMasterSchedule() && request.resource.data.revision == 1 &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/scheduleRevisions/$(request.resource.data.revisionKey)).data.revision ==
+            request.resource.data.revision;
+        allow update: if scheduleId == 'master' && mayManageSchedule() &&
+          validMasterSchedule() &&
+          request.resource.data.revision == resource.data.revision + 1 &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.createdBy == resource.data.createdBy &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/scheduleRevisions/$(request.resource.data.revisionKey)).data.revision ==
+            request.resource.data.revision;
+        allow delete: if false;
+      }
+
+      match /teamSchedules/{teamNumber} {
+        function validTeamSchedule() {
+          return request.resource.data.keys().hasAll([
+              'eventId', 'team', 'commanderName', 'entries', 'sourceRevision',
+              'schemaVersion', 'timeZone', 'updatedAt', 'updatedBy'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'eventId', 'team', 'commanderName', 'entries', 'sourceRevision',
+              'schemaVersion', 'timeZone', 'updatedAt', 'updatedBy'
+            ]) &&
+            request.resource.data.eventId == eventId &&
+            request.resource.data.team == teamNumber &&
+            request.resource.data.commanderName is string &&
+            request.resource.data.commanderName.size() <= 80 &&
+            request.resource.data.entries is list && request.resource.data.entries.size() <= 100 &&
+            request.resource.data.sourceRevision is int && request.resource.data.sourceRevision > 0 &&
+            request.resource.data.schemaVersion == 1 &&
+            request.resource.data.timeZone == 'Asia/Jerusalem' &&
+            request.resource.data.updatedAt == request.time &&
+            request.resource.data.updatedBy == request.auth.uid &&
+            teamNumber in getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.teamIds &&
+            request.resource.data.sourceRevision ==
+              getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revision;
+        }
+
+        allow read: if isAdmin() || isFormationCommander() ||
+          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+        allow create, update: if mayManageSchedule() && validTeamSchedule();
+        allow delete: if false;
+      }
+
+      // Every successful save appends the complete approved snapshot. Revisions
+      // can be audited but never rewritten or removed.
+      match /scheduleRevisions/{revisionId} {
+        allow read: if isAdmin() || isFormationCommander();
+        allow create: if mayManageSchedule() && validMasterSchedule() &&
+          revisionId == request.resource.data.revisionKey &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.revision ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revision;
+        allow update, delete: if false;
+      }
+
       match /candidates/{candidateId} {
         function validDropoutReason(reasonCode, reasonLabel) {
           return (reasonCode == 'voluntary' && reasonLabel == 'פרישה') ||
