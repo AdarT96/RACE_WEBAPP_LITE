@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore
+  collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, where
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
@@ -11,6 +11,8 @@ import {
   INTENSITY_LABELS, analyzeScheduleLoad, stationIntensityFor
 } from './schedule-load-policy.js';
 import { ScheduleConflictError, createScheduleRepository } from './schedule-repository.js';
+import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
+import './station-operational-dialog.js';
 import {
   ROLES, canManageSchedule, canViewSchedule, roleLabel
 } from './roles.js';
@@ -32,6 +34,8 @@ let saving = false;
 let conflict = false;
 let currentWarnings = [];
 let teamProjection = null;
+let operationalRaces = [];
+let unsubscribeOperationalRaces = null;
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -141,6 +145,10 @@ function evaluationUrl(team, stationId) {
   return `app.html?team=${encodeURIComponent(team)}&station=${encodeURIComponent(stationId)}`;
 }
 
+function stationOperationalDialog() {
+  return document.getElementById('station-operational-dialog');
+}
+
 function setSaveStatus(message) {
   document.getElementById('schedule-save-status').textContent = message;
   document.getElementById('schedule-save-button').disabled = saving || !dirty || conflict;
@@ -229,8 +237,8 @@ function renderManagerSchedule() {
           <input class="form-input" maxlength="20" value="${escapeHtml(assignment.routeNumber)}"
                  oninput="updateAssignment('${escapeHtml(row.id)}','${team}','routeNumber',this.value)" placeholder="מספר מסלול">
           <div class="station-cell-meta"><span><i class="intensity-dot intensity-${intensity}"></i> ${INTENSITY_LABELS[intensity]}</span>
-            ${assignment.stationId && currentUser.role === ROLES.ADMIN
-              ? `<a class="station-open-link" href="${evaluationUrl(team, assignment.stationId)}">פתח הערכה</a>` : ''}
+            ${assignment.stationId
+              ? `<button type="button" class="station-open-link" onclick="openStationDetails('${escapeHtml(row.id)}','${team}')">פרטי תחנה</button>` : ''}
           </div>
         </div></td>`;
     }).join('')}</tr>`;
@@ -298,6 +306,18 @@ window.removeScheduleRow = rowId => {
   if (!row || !confirm(`למחוק את השורה של ${formatScheduleTime(row.startMinute)}?`)) return;
   draftSchedule.rows = draftSchedule.rows.filter(item => item.id !== row.id);
   window.markScheduleDirty(); renderManagerSchedule();
+};
+
+window.openStationDetails = (rowId, team) => {
+  const row = findRow(rowId);
+  const assignment = row?.kind === SCHEDULE_ROW_KINDS.ROTATION ? row.assignments?.[team] : null;
+  if (!row || !assignment?.stationId) return;
+  stationOperationalDialog()?.show({
+    team, stationId: assignment.stationId, stationName: stationName(team, assignment.stationId),
+    routeNumber: assignment.routeNumber,
+    scheduledLabel: `${dateLabel(row.date)} · ${formatScheduleTime(row.startMinute)}`,
+    races: operationalRaces, nowMs: Date.now()
+  });
 };
 
 window.toggleNewRowLabel = () => {
@@ -450,6 +470,18 @@ function subscribeToSchedule() {
   }
 }
 
+function subscribeToOperationalRaces() {
+  unsubscribeOperationalRaces?.();
+  operationalRaces = [];
+  if (!canManageSchedule(currentUser?.role) || !activeEvent?.id) return;
+  unsubscribeOperationalRaces = onSnapshot(query(collection(db, 'races'),
+    where('eventId', '==', activeEvent.id),
+    where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION)), snapshot => {
+    operationalRaces = snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
+    stationOperationalDialog()?.refresh({ races: operationalRaces, nowMs: Date.now() });
+  }, error => showToast('מצב הסבבים אינו זמין כרגע: ' + error.message, 'error'));
+}
+
 async function initializePage() {
   updateBackLink();
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
@@ -467,6 +499,7 @@ async function initializePage() {
     Math.min(1435, Math.ceil(clock.startMinute / 5) * 5)
   );
   window.toggleNewRowLabel();
+  subscribeToOperationalRaces();
   subscribeToSchedule();
 }
 
@@ -478,6 +511,7 @@ window.addEventListener('beforeunload', event => {
 setInterval(() => {
   if (canManageSchedule(currentUser?.role)) applyCurrentRowHighlight();
   else if (teamProjection) renderTeamSchedule();
+  stationOperationalDialog()?.refresh({ races: operationalRaces, nowMs: Date.now() });
 }, 30000);
 
 onAuthStateChanged(auth, async user => {

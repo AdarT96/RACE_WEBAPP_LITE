@@ -1,3 +1,7 @@
+import {
+  buildTeamOperationalStatus, operationalTimestampMs
+} from './station-operational-status.js';
+
 export const FORMATION_EVENT_SCHEMA_VERSION = 3;
 export const TEAM_ROSTER_SCHEMA_VERSION = 3;
 export const CANDIDATE_SCHEMA_VERSION = 3;
@@ -234,34 +238,6 @@ export function activeParticipantIds(teamData, candidates = []) {
     records.get(participantId)?.status !== CANDIDATE_STATUSES.WITHDRAWN);
 }
 
-function timestampMs(value) {
-  if (typeof value?.toMillis === 'function') return value.toMillis();
-  if (value instanceof Date) return value.getTime();
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function raceActivityMs(race) {
-  return timestampMs(race?.endedAt) ?? timestampMs(race?.startedAt) ?? 0;
-}
-
-function stationSnapshotForTeam(team, races, nowMs, isRaceRunning) {
-  const teamRaces = races.filter(race => padTeam(race.team) === team);
-  const sorted = teamRaces.slice().sort((a, b) => raceActivityMs(b) - raceActivityMs(a));
-  const running = sorted.filter(race => isRaceRunning(race, nowMs));
-  const current = running[0] || sorted[0] || null;
-  return {
-    activeRaceCount: running.length,
-    currentRace: current,
-    station: String(current?.station || ''),
-    round: Math.max(0, Math.floor(Number(current?.round) || 0)),
-    raceStatus: running.length ? 'running' : current ? 'stopped' : 'not_started',
-    lastActivityAt: current ? raceActivityMs(current) : null,
-    hasConcurrentRaces: running.length > 1,
-    stationIdsVisited: [...new Set(teamRaces.map(race => String(race.station || '')).filter(Boolean))]
-  };
-}
-
 export function buildFormationDashboardSnapshot({
   event = null,
   teams = [],
@@ -269,7 +245,7 @@ export function buildFormationDashboardSnapshot({
   recommendations = [],
   races = [],
   nowMs = Date.now(),
-  isRaceRunning = race => race?.status === 'running'
+  isRaceRunning
 } = {}) {
   const normalizedCandidates = (Array.isArray(candidates) ? candidates : [])
     .map(value => normalizeCandidateRecord(value));
@@ -295,7 +271,7 @@ export function buildFormationDashboardSnapshot({
     });
     const active = teamCandidates.filter(candidate => candidate.status === CANDIDATE_STATUSES.ACTIVE).length;
     const withdrawn = teamCandidates.filter(candidate => candidate.status === CANDIDATE_STATUSES.WITHDRAWN).length;
-    const station = stationSnapshotForTeam(team, races, nowMs, isRaceRunning);
+    const station = buildTeamOperationalStatus({ team, races, nowMs, isRaceRunning });
     return {
       team,
       total: participantIds.length,
@@ -332,7 +308,8 @@ export function buildFormationDashboardSnapshot({
         candidate: candidateByKey.get(candidateKey(item.team, item.participantId)) ||
           normalizeCandidateRecord(null, { team: item.team, participantId: item.participantId })
       }))
-      .sort((a, b) => (timestampMs(a.createdAt) || 0) - (timestampMs(b.createdAt) || 0)),
+      .sort((a, b) => (operationalTimestampMs(a.createdAt) || 0) -
+        (operationalTimestampMs(b.createdAt) || 0)),
     anomalies: teamRows.flatMap(team => team.hasConcurrentRaces
       ? [`לצוות ${Number(team.team)} יש יותר מסבב פעיל אחד`] : [])
   };
