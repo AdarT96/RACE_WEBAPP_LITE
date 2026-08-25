@@ -45,8 +45,20 @@
 .load-warning-card { margin-top:14px; border-color:rgba(245,158,11,.48); }
 .load-warning-card p { margin:5px 0 10px; font-size:12px; }
 .load-warning-card ul { margin:0 18px 13px 0; color:#fcd34d; font-size:13px; }
+.schedule-history-card { display:grid; grid-template-columns:minmax(220px,.7fr) minmax(0,2fr); gap:16px; margin-top:14px; }
+.schedule-history-card p { margin-top:5px; font-size:12px; }
+.schedule-history-list { display:grid; gap:7px; }
+.schedule-history-entry { display:grid; grid-template-columns:1fr auto; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+.schedule-history-entry strong, .schedule-history-entry span { display:block; }
+.schedule-history-entry span { margin-top:3px; color:var(--text-muted); font-size:11px; }
+.schedule-preview-layer { position:fixed; inset:0; z-index:1100; display:grid; place-items:center; padding:14px; background:rgba(5,8,15,.82); }
+.schedule-preview-layer[hidden] { display:none; }
+.schedule-preview-card { width:min(660px,100%); max-height:calc(100vh - 28px); overflow:auto; }
+.schedule-preview-head { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; margin-bottom:13px; }
+.schedule-preview-head p { margin-top:4px; font-size:12px; }
+.schedule-preview-card > label { display:grid; gap:5px; margin-bottom:13px; color:var(--text-muted); font-size:12px; }
 .schedule-savebar { position:fixed; bottom:0; left:0; right:0; z-index:20; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:11px max(18px,calc((100vw - 1564px)/2)); background:rgba(15,17,23,.94); border-top:1px solid var(--border); backdrop-filter:blur(12px); }
-.schedule-savebar > div { display:flex; gap:8px; }
+.schedule-savebar > div { display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end; }
 .schedule-savebar span { color:var(--text-muted); font-size:12px; }
 .team-current-card { margin-bottom:14px; border:2px solid var(--info); background:rgba(59,130,246,.1); }
 .team-current-card h2 { margin-bottom:5px; }
@@ -77,6 +89,8 @@
   .schedule-matrix-wrap { max-height:calc(100vh - 250px); }
   .schedule-savebar { padding:9px 10px; }
   .schedule-savebar span { max-width:36vw; }
+  .schedule-savebar .btn { padding:7px 8px; font-size:11px; }
+  .schedule-history-card { grid-template-columns:1fr; }
   .team-entry { grid-template-columns:62px 1fr; }
   .team-entry-intensity { grid-column:2; }
 }

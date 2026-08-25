@@ -19,13 +19,14 @@ function cleanContext(value) {
   return cleanText(value, 200);
 }
 
-export function buildIssueReportData({ draft, reporter, context, environment }) {
+export function buildIssueReportData({ draft, reporter, context, environment, eventId }) {
   const category = String(draft?.category ?? 'other');
   const description = cleanText(draft?.description, ISSUE_REPORT_MAX_DESCRIPTION);
   const steps = cleanText(draft?.steps, ISSUE_REPORT_MAX_STEPS);
   const reporterTeam = Number(reporter?.team);
   const reporterUid = cleanText(reporter?.uid, 128);
   const reporterRole = cleanText(reporter?.role, 32);
+  const formationEventId = cleanText(eventId, 128);
 
   if (!ISSUE_REPORT_CATEGORIES.includes(category)) {
     throw new Error('יש לבחור סוג תקלה תקין');
@@ -39,8 +40,12 @@ export function buildIssueReportData({ draft, reporter, context, environment }) 
   if (!Number.isInteger(reporterTeam) || reporterTeam < 1 || reporterTeam > 15) {
     throw new Error('לא ניתן לשלוח דיווח בלי צוות מזוהה');
   }
+  if (!formationEventId) {
+    throw new Error('לא ניתן לשלוח דיווח בלי אירוע גיבוש פעיל');
+  }
 
   return {
+    eventId: formationEventId,
     reporterUid,
     reporterName: cleanText(reporter?.name, 200),
     reporterRole,
@@ -71,6 +76,6 @@ export function buildIssueReportData({ draft, reporter, context, environment }) 
       viewport: cleanText(environment?.viewport, 50),
       userAgent: cleanText(environment?.userAgent, 500)
     },
-    schemaVersion: 1
+    schemaVersion: 2
   };
 }

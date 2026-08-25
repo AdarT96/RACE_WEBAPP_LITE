@@ -65,7 +65,21 @@
     .team-station-open small { color:var(--accent); font-size:9px; }
     .team-station-open:hover, .team-station-open:focus-visible { background:var(--surface); outline:1px solid var(--accent); }
     .empty-panel { color:var(--text-muted); padding:18px 8px; text-align:center; }
-    .formation-alert { padding:10px 12px; border-radius:10px; border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.09); color:#fca5a5; }
+    .formation-alert-center { margin-bottom:14px; }
+    .formation-alert-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .formation-alert-count { min-width:28px; padding:4px 8px; border-radius:999px; background:var(--surface); text-align:center; font-weight:900; }
+    .formation-alert { display:grid; gap:3px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface); }
+    .formation-alert span { color:var(--text-muted); font-size:11px; }
+    .formation-alert[data-severity="critical"] { border-color:rgba(239,68,68,.5); background:rgba(239,68,68,.09); }
+    .formation-alert[data-severity="warning"] { border-color:rgba(245,158,11,.5); background:rgba(245,158,11,.08); }
+    .formation-alert[data-severity="info"] { border-color:rgba(59,130,246,.45); background:rgba(59,130,246,.08); }
+    .formation-alert-empty { color:var(--text-muted); font-size:12px; }
+    .candidate-search-card { margin-bottom:14px; }
+    .candidate-search-card label { display:grid; gap:6px; color:var(--text-muted); font-size:12px; }
+    .candidate-search-results { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:7px; margin-top:10px; }
+    .candidate-search-result { display:grid; gap:3px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font:inherit; text-align:right; cursor:pointer; }
+    .candidate-search-result span { color:var(--text-muted); font-size:11px; }
+    .candidate-search-result:hover, .candidate-search-result:focus-visible { border-color:var(--accent); outline:none; }
     .updated-at { color:var(--text-muted); font-size:11px; }
     .modal-layer { position:fixed; inset:0; z-index:1000; display:grid; place-items:center; padding:14px; background:rgba(5,8,15,.8); }
     .modal-layer[hidden] { display:none; }
@@ -138,7 +152,18 @@
         <div class="formation-kpi"><strong id="kpi-running">0</strong><span>צוותים בתחנה פעילה</span></div>
       </section>
 
-      <div id="anomalies" class="anomaly-list" style="margin-bottom:14px"></div>
+      <section class="formation-card candidate-search-card">
+        <label>חיפוש מועמד
+          <input class="form-input" type="search" autocomplete="off" inputmode="search"
+                 placeholder="מספר מועמד, שם או תעודת זהות" oninput="updateCandidateSearch(this.value)">
+        </label>
+        <div id="candidate-search-results" class="candidate-search-results" hidden></div>
+      </section>
+
+      <section class="formation-card formation-alert-center">
+        <div class="formation-alert-head"><div><h2>מרכז חריגות</h2><p class="formation-card-help">תקלות ומצבים שדורשים תשומת לב תפעולית.</p></div><span id="alert-count" class="formation-alert-count">0</span></div>
+        <div id="anomalies" class="anomaly-list"></div>
+      </section>
 
       <div class="formation-grid">
         <div class="formation-stack">

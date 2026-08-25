@@ -11,6 +11,9 @@ import {
   INTENSITY_LABELS, analyzeScheduleLoad, stationIntensityFor
 } from './schedule-load-policy.js';
 import { ScheduleConflictError, createScheduleRepository } from './schedule-repository.js';
+import {
+  normalizeScheduleDraft, schedulePublicationLabel
+} from './schedule-publication-model.js';
 import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
 import './station-operational-dialog.js';
 import {
@@ -27,7 +30,10 @@ let eventTeams = {};
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 let repository = null;
 let unsubscribeSchedule = null;
-let remoteSchedule = null;
+let unsubscribeRevisions = null;
+let publishedSchedule = null;
+let remoteDraft = null;
+let publishedRevisions = [];
 let draftSchedule = null;
 let dirty = false;
 let saving = false;
@@ -151,7 +157,9 @@ function stationOperationalDialog() {
 
 function setSaveStatus(message) {
   document.getElementById('schedule-save-status').textContent = message;
-  document.getElementById('schedule-save-button').disabled = saving || !dirty || conflict;
+  document.getElementById('schedule-save-draft-button').disabled = saving || !dirty || conflict;
+  document.getElementById('schedule-publish-button').disabled = saving || dirty || conflict ||
+    !remoteDraft || !hasUnpublishedDraft();
 }
 
 window.markScheduleDirty = () => {
@@ -160,9 +168,25 @@ window.markScheduleDirty = () => {
 };
 
 function setDraft(next, { preserveReason = false } = {}) {
-  draftSchedule = normalizeSchedule(next, teamIds());
+  draftSchedule = normalizeScheduleDraft(next, teamIds(), Number(publishedSchedule?.revision || 0));
   if (!preserveReason) document.getElementById('load-override-reason').value = String(next?.overrideReason || '');
   renderManagerSchedule();
+}
+
+function scheduleContentSignature(value) {
+  if (!value) return '';
+  const normalized = normalizeScheduleDraft(value, teamIds(), Number(publishedSchedule?.revision || 0));
+  return JSON.stringify({
+    teamIds:normalized.teamIds,
+    commanderNames:normalized.commanderNames,
+    rows:normalized.rows,
+    loadWarnings:normalized.loadWarnings,
+    overrideReason:normalized.overrideReason
+  });
+}
+
+function hasUnpublishedDraft() {
+  return Boolean(remoteDraft && scheduleContentSignature(remoteDraft) !== scheduleContentSignature(publishedSchedule));
 }
 
 function currentRowId(entries) {
@@ -245,8 +269,10 @@ function renderManagerSchedule() {
   }).join('');
   renderLoadWarnings();
   applyCurrentRowHighlight();
-  document.getElementById('schedule-revision').textContent = draftSchedule.revision
-    ? `גרסה ${draftSchedule.revision}` : 'טרם נשמר';
+  const publishedRevision = Number(publishedSchedule?.revision || 0);
+  const draftRevision = Number(remoteDraft?.draftRevision || draftSchedule.draftRevision || 0);
+  document.getElementById('schedule-revision').textContent =
+    `פורסם: ${publishedRevision || 'טרם'} · טיוטה: ${draftRevision || 'חדשה'}`;
   setSaveStatus(dirty ? 'יש שינויים שלא נשמרו' : 'הלו״ז מעודכן');
 }
 
@@ -350,32 +376,37 @@ window.reloadScheduleDraft = () => {
   if (dirty && !confirm('לבטל את כל השינויים שלא נשמרו?')) return;
   dirty = false; conflict = false;
   document.getElementById('schedule-conflict').hidden = true;
-  setDraft(remoteSchedule || { teamIds: teamIds(), commanderNames:{}, rows:[], revision:0 });
+  setDraft(remoteDraft || publishedSchedule || { teamIds:teamIds(), commanderNames:{}, rows:[] });
 };
 
-window.saveSchedule = async () => {
+function stationIdsByTeam() {
+  return Object.fromEntries(draftSchedule.teamIds.map(team => [team, stationIdsForTeam(team)]));
+}
+
+window.saveScheduleDraft = async () => {
   if (saving || !dirty || conflict) return;
-  const stationIdsByTeam = Object.fromEntries(draftSchedule.teamIds
-    .map(team => [team, stationIdsForTeam(team)]));
-  const issues = scheduleIssues(draftSchedule, { stationIdsByTeam });
+  const allowedStations = stationIdsByTeam();
+  const issues = scheduleIssues(draftSchedule, { stationIdsByTeam:allowedStations });
   if (issues.length) { showToast(issues[0], 'error'); return; }
   const overrideReason = document.getElementById('load-override-reason').value;
   if (currentWarnings.length && !overrideReason.trim()) {
     showToast('יש לתעד סיבה לשמירת לו״ז עם אזהרות עומס', 'error'); return;
   }
-  saving = true; setSaveStatus('שומר את כל הצוותים…');
+  saving = true; setSaveStatus('שומר טיוטה…');
   try {
-    const revision = await repository.saveMaster({
+    const result = await repository.saveDraft({
       eventId: activeEvent.id, schedule: draftSchedule,
-      expectedRevision: draftSchedule.revision, warnings: currentWarnings,
-      overrideReason, stationIdsByTeam
+      expectedPublishedRevision:Number(publishedSchedule?.revision || 0),
+      expectedDraftRevision:Number(remoteDraft?.draftRevision || 0),
+      warnings:currentWarnings, overrideReason, stationIdsByTeam:allowedStations
     });
     dirty = false;
     conflict = false;
     document.getElementById('schedule-conflict').hidden = true;
-    draftSchedule.revision = revision;
-    setSaveStatus(`גרסה ${revision} נשמרה`);
-    showToast('הלו״ז נשמר לכל הצוותים ✓', 'success');
+    draftSchedule.draftRevision = result.draftRevision;
+    draftSchedule.baseRevision = result.baseRevision;
+    setSaveStatus(`טיוטה ${result.draftRevision} נשמרה`);
+    showToast('הטיוטה נשמרה. הלו״ז הצוותי טרם השתנה.', 'success');
   } catch (error) {
     if (error instanceof ScheduleConflictError) {
       conflict = true;
@@ -387,6 +418,101 @@ window.saveSchedule = async () => {
     saving = false;
     setSaveStatus(conflict ? 'נדרשת טעינת גרסה עדכנית' : dirty ? 'יש שינויים שלא נשמרו' : 'הלו״ז מעודכן');
   }
+};
+
+window.publishSchedule = async () => {
+  if (saving || dirty || conflict || !remoteDraft || !hasUnpublishedDraft()) return;
+  if (!confirm('לפרסם את הטיוטה לכל הצוותים עכשיו?')) return;
+  saving = true; setSaveStatus('מפרסם לכל הצוותים…');
+  try {
+    const revision = await repository.publishDraft({
+      eventId:activeEvent.id,
+      expectedPublishedRevision:Number(publishedSchedule?.revision || 0),
+      expectedDraftRevision:Number(remoteDraft.draftRevision || 0),
+      stationIdsByTeam:stationIdsByTeam()
+    });
+    showToast(`גרסה ${revision} פורסמה לכל הצוותים ✓`, 'success');
+    setSaveStatus(`גרסה ${revision} פורסמה`);
+  } catch (error) {
+    if (error instanceof ScheduleConflictError) {
+      conflict = true;
+      document.getElementById('schedule-conflict').hidden = false;
+    }
+    showToast(error.message || 'פרסום הלו״ז נכשל', 'error');
+  } finally {
+    saving = false;
+    setSaveStatus(conflict ? 'נדרשת טעינת גרסה עדכנית' : 'הלו״ז מעודכן');
+  }
+};
+
+window.restoreScheduleRevision = async revisionKey => {
+  if (saving || conflict) return;
+  if (dirty && !confirm('השחזור יבטל שינויים מקומיים שלא נשמרו. להמשיך?')) return;
+  const revision = publishedRevisions.find(item => item.revisionKey === String(revisionKey));
+  const draftWarning = hasUnpublishedDraft() ? ' הטיוטה השמורה הנוכחית תוחלף.' : '';
+  if (!revision || !confirm(`לשחזר את גרסה ${revision.revision}?${draftWarning} השחזור יפורסם כגרסה חדשה לכל הצוותים.`)) return;
+  saving = true; setSaveStatus('משחזר ומפרסם…');
+  try {
+    const nextRevision = await repository.restoreRevision({
+      eventId:activeEvent.id, revisionKey:revision.revisionKey,
+      expectedPublishedRevision:Number(publishedSchedule?.revision || 0),
+      expectedDraftRevision:Number(remoteDraft?.draftRevision || 0),
+      stationIdsByTeam:stationIdsByTeam()
+    });
+    dirty = false;
+    showToast(`גרסה ${revision.revision} שוחזרה ופורסמה כגרסה ${nextRevision} ✓`, 'success');
+  } catch (error) {
+    if (error instanceof ScheduleConflictError) {
+      conflict = true;
+      document.getElementById('schedule-conflict').hidden = false;
+    }
+    showToast(error.message || 'שחזור הגרסה נכשל', 'error');
+  } finally {
+    saving = false;
+    setSaveStatus(conflict ? 'נדרשת טעינת גרסה עדכנית' : 'הלו״ז מעודכן');
+  }
+};
+
+function renderScheduleHistory() {
+  const container = document.getElementById('schedule-history-list');
+  if (!publishedRevisions.length) {
+    container.innerHTML = '<div class="schedule-empty">עדיין לא פורסמה גרסה.</div>';
+    return;
+  }
+  container.innerHTML = publishedRevisions.map(revision => {
+    const current = Number(revision.revision) === Number(publishedSchedule?.revision || 0);
+    const time = revision.updatedAt?.toDate?.()?.toLocaleString('he-IL') || '';
+    return `<div class="schedule-history-entry"><div>
+      <strong>גרסה ${Number(revision.revision)}${current ? ' · פעילה' : ''}</strong>
+      <span>${escapeHtml(schedulePublicationLabel(revision))}${time ? ` · ${escapeHtml(time)}` : ''}</span>
+    </div>${current ? '' : `<button type="button" class="btn btn-ghost" onclick="restoreScheduleRevision('${escapeHtml(revision.revisionKey)}')">שחזר</button>`}</div>`;
+  }).join('');
+}
+
+window.renderSchedulePreview = () => {
+  const team = document.getElementById('schedule-preview-team').value;
+  if (!team || !draftSchedule) return;
+  const projection = buildTeamScheduleProjection(draftSchedule, team);
+  const byDate = projection.entries.reduce((map, entry) => {
+    (map[entry.date] ||= []).push(entry); return map;
+  }, {});
+  document.getElementById('schedule-preview-list').innerHTML = Object.entries(byDate).map(([date, entries]) => `
+    <section class="team-day"><h3 class="team-day-title">${escapeHtml(dateLabel(date))}</h3>${entries.map(entry => {
+      if (entry.kind === SCHEDULE_ROW_KINDS.GLOBAL) return `<div class="team-entry global"><strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong><div class="team-entry-main"><strong>${escapeHtml(entry.label)}</strong><span>פעילות משותפת</span></div></div>`;
+      return `<div class="team-entry"><strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong><div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}</strong><span>${entry.routeNumber ? `מסלול ${escapeHtml(entry.routeNumber)}` : 'ללא מספר מסלול'}</span></div></div>`;
+    }).join('')}</section>`).join('') || '<div class="schedule-empty">הטיוטה ריקה.</div>';
+};
+
+window.openSchedulePreview = () => {
+  if (!draftSchedule) return;
+  const select = document.getElementById('schedule-preview-team');
+  select.innerHTML = draftSchedule.teamIds.map(team => `<option value="${team}">צוות ${Number(team)}</option>`).join('');
+  window.renderSchedulePreview();
+  document.getElementById('schedule-preview-modal').hidden = false;
+};
+
+window.closeSchedulePreview = () => {
+  document.getElementById('schedule-preview-modal').hidden = true;
 };
 
 function renderTeamSchedule() {
@@ -443,22 +569,32 @@ function renderTeamSchedule() {
 
 function subscribeToSchedule() {
   unsubscribeSchedule?.();
+  unsubscribeRevisions?.();
   if (canManageSchedule(currentUser.role)) {
     document.getElementById('schedule-manager').hidden = false;
     document.getElementById('schedule-team').hidden = true;
-    unsubscribeSchedule = repository.subscribeMaster(activeEvent.id, value => {
-      remoteSchedule = value;
-      const revision = Number(value?.revision || 0);
+    unsubscribeSchedule = repository.subscribeWorkspace(activeEvent.id, workspace => {
+      const nextPublishedRevision = Number(workspace.published?.revision || 0);
+      const nextDraftRevision = Number(workspace.draft?.draftRevision || 0);
+      const workspaceChanged = nextPublishedRevision !== Number(publishedSchedule?.revision || 0) ||
+        nextDraftRevision !== Number(remoteDraft?.draftRevision || 0);
+      publishedSchedule = workspace.published;
+      remoteDraft = workspace.draft;
+      renderScheduleHistory();
       if (!dirty) {
         conflict = false;
         document.getElementById('schedule-conflict').hidden = true;
-        setDraft(value || { teamIds:teamIds(), commanderNames:{}, rows:[], revision:0 });
-      } else if (revision !== Number(draftSchedule?.revision || 0)) {
+        setDraft(remoteDraft || publishedSchedule || { teamIds:teamIds(), commanderNames:{}, rows:[] });
+      } else if (workspaceChanged) {
         conflict = true;
         document.getElementById('schedule-conflict').hidden = false;
         setSaveStatus('הלו״ז השתנה במכשיר אחר');
       }
     }, error => showBlocking('טעינת הלו״ז נכשלה: ' + error.message));
+    unsubscribeRevisions = repository.subscribeRevisions(activeEvent.id, values => {
+      publishedRevisions = values;
+      renderScheduleHistory();
+    }, error => showToast('היסטוריית הגרסאות אינה זמינה: ' + error.message, 'error'));
   } else {
     const team = pad2(currentUser.team);
     document.getElementById('schedule-manager').hidden = true;
@@ -507,6 +643,14 @@ window.logout = async () => { await signOut(auth); location.href = 'index.html';
 window.addEventListener('beforeunload', event => {
   if (!dirty) return;
   event.preventDefault(); event.returnValue = '';
+});
+document.getElementById('schedule-preview-modal').addEventListener('click', event => {
+  if (event.target.id === 'schedule-preview-modal') window.closeSchedulePreview();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !document.getElementById('schedule-preview-modal').hidden) {
+    window.closeSchedulePreview();
+  }
 });
 setInterval(() => {
   if (canManageSchedule(currentUser?.role)) applyCurrentRowHighlight();

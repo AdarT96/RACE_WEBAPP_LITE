@@ -4,6 +4,7 @@ import { buildIssueReportData } from '../frontend/js/issue-report.js';
 
 function validInput() {
   return {
+    eventId: 'event-1',
     draft: { category: 'timing', description: 'השעון נעצר', steps: 'לחצתי על התחלה' },
     reporter: { uid: 'user-1', name: 'מעריך א', role: 'evaluator', team: 3 },
     context: {
@@ -18,10 +19,11 @@ function validInput() {
 test('builds an allow-listed report without evaluation or participant data', () => {
   const report = buildIssueReportData(validInput());
   assert.deepEqual(Object.keys(report).sort(), [
-    'adminNote', 'category', 'context', 'description', 'environment', 'reporterName',
+    'adminNote', 'category', 'context', 'description', 'environment', 'eventId', 'reporterName',
     'reporterRole', 'reporterTeam', 'reporterUid', 'schemaVersion', 'status', 'steps'
   ].sort());
   assert.equal(report.status, 'open');
+  assert.equal(report.eventId, 'event-1');
   assert.equal(report.reporterTeam, 3);
   assert.equal(report.context.stationType, 'pullup');
   assert.equal('participantIds' in report.context, false);
@@ -41,6 +43,10 @@ test('requires a description and trusted reporter identity', () => {
   const noTeam = validInput();
   noTeam.reporter.team = '';
   assert.throws(() => buildIssueReportData(noTeam), /צוות/);
+
+  const noEvent = validInput();
+  noEvent.eventId = '';
+  assert.throws(() => buildIssueReportData(noEvent), /אירוע/);
 });
 
 test('normalizes numeric context and caps diagnostic text lengths', () => {

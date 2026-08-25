@@ -82,11 +82,21 @@
         </label>
       </section>
 
+      <section class="card schedule-history-card">
+        <div>
+          <h2>גרסאות שפורסמו</h2>
+          <p>מוצגות 50 הגרסאות האחרונות. שחזור מפרסם גרסה חדשה; הוא לעולם אינו מוחק או משנה גרסה היסטורית.</p>
+        </div>
+        <div id="schedule-history-list" class="schedule-history-list"></div>
+      </section>
+
       <div class="schedule-savebar">
         <span id="schedule-save-status" aria-live="polite">לא בוצעו שינויים</span>
         <div>
           <button type="button" class="btn btn-ghost" onclick="reloadScheduleDraft()">בטל שינויים</button>
-          <button id="schedule-save-button" type="button" class="btn btn-success" onclick="saveSchedule()">שמור לו״ז</button>
+          <button type="button" class="btn btn-ghost" onclick="openSchedulePreview()">תצוגה מקדימה</button>
+          <button id="schedule-save-draft-button" type="button" class="btn btn-primary" onclick="saveScheduleDraft()">שמור טיוטה</button>
+          <button id="schedule-publish-button" type="button" class="btn btn-success" onclick="publishSchedule()">פרסם לצוותים</button>
         </div>
       </div>
     </section>
@@ -99,6 +109,19 @@
       </div>
     </section>
   </main>
+
+  <div id="schedule-preview-modal" class="schedule-preview-layer" hidden role="dialog" aria-modal="true" aria-labelledby="schedule-preview-title">
+    <section class="schedule-preview-card card">
+      <div class="schedule-preview-head">
+        <div><h2 id="schedule-preview-title">תצוגה מקדימה לצוות</h2><p>כך תיראה הטיוטה לאחר הפרסום.</p></div>
+        <button type="button" class="btn btn-ghost" onclick="closeSchedulePreview()">סגור</button>
+      </div>
+      <label>צוות
+        <select id="schedule-preview-team" class="form-select" onchange="renderSchedulePreview()"></select>
+      </label>
+      <div id="schedule-preview-list" class="team-schedule-list"></div>
+    </section>
+  </div>
 
   <div id="toast-container"></div>
   <station-operational-dialog id="station-operational-dialog"></station-operational-dialog>

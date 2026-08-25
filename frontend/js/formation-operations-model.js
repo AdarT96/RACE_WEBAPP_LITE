@@ -314,3 +314,41 @@ export function buildFormationDashboardSnapshot({
       ? [`לצוות ${Number(team.team)} יש יותר מסבב פעיל אחד`] : [])
   };
 }
+
+function candidateSearchScore(candidate, query, digits) {
+  const participant = String(candidate.participantId || '');
+  const rawNationalId = String(candidate.nationalId || '');
+  const rawName = String(candidate.firstName || '').trim().toLocaleLowerCase('he');
+  const nationalId = rawNationalId === CANDIDATE_PROFILE_DEFAULTS.nationalId ? '' : rawNationalId;
+  const name = rawName === CANDIDATE_PROFILE_DEFAULTS.firstName ? '' : rawName;
+  if (participant === query) return 0;
+  if (digits && nationalId === digits) return 1;
+  if (participant.startsWith(query)) return 2;
+  if (name.startsWith(query)) return 3;
+  if (digits && nationalId.startsWith(digits)) return 4;
+  if (participant.includes(query)) return 5;
+  if (name.includes(query)) return 6;
+  if (digits && nationalId.includes(digits)) return 7;
+  return Number.POSITIVE_INFINITY;
+}
+
+export function searchFormationCandidates(dashboard, queryValue, limit = 20) {
+  const query = String(queryValue || '').trim().toLocaleLowerCase('he');
+  if (!query) return [];
+  const digits = query.replace(/\D+/g, '');
+  const candidates = (Array.isArray(dashboard?.teams) ? dashboard.teams : [])
+    .flatMap(team => team.candidates || []);
+  const seen = new Set();
+  return candidates.map(candidate => ({ candidate, score:candidateSearchScore(candidate, query, digits) }))
+    .filter(result => Number.isFinite(result.score))
+    .sort((left, right) => left.score - right.score ||
+      left.candidate.participantId.localeCompare(right.candidate.participantId, 'he', { numeric:true }))
+    .filter(result => {
+      const key = candidateKey(result.candidate.team, result.candidate.participantId);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, Math.max(1, Math.min(50, Number(limit) || 20)))
+    .map(result => result.candidate);
+}

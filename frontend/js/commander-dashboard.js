@@ -7,8 +7,9 @@ import { isSessionEffectivelyRunning } from './session-policy.js';
 import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
 import {
   CANDIDATE_STATUSES, DROPOUT_REASONS, buildFormationDashboardSnapshot,
-  clearanceStatusLabel, dropoutReasonLabel
+  clearanceStatusLabel, dropoutReasonLabel, searchFormationCandidates
 } from './formation-operations-model.js';
+import { buildFormationAlerts } from './formation-alerts-model.js';
 import { createFormationOperationsRepository } from './formation-operations-repository.js';
 import { ROLES, canManageFormation } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
@@ -26,6 +27,8 @@ let teams = [];
 let candidates = [];
 let recommendations = [];
 let races = [];
+let publishedSchedule = null;
+let issueReports = [];
 let eventSubscriptions = [];
 let activeEventSubscription = null;
 let stationTypesSubscription = null;
@@ -37,6 +40,7 @@ let openCandidateDetailsTarget = null;
 let latestDashboardSnapshot = null;
 let effectiveRaceSignature = '';
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
+let candidateSearchQuery = '';
 
 const text = (id, value) => {
   const element = document.getElementById(id);
@@ -54,6 +58,8 @@ function clearEventSubscriptions() {
   candidates = [];
   recommendations = [];
   races = [];
+  publishedSchedule = null;
+  issueReports = [];
 }
 
 function showBlocking(message) {
@@ -109,6 +115,21 @@ function attachEvent(nextEventId) {
     races = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
   }, fail('מצב התחנות')));
+  eventSubscriptions.push(onSnapshot(doc(db, 'events', eventId, 'schedule', 'master'), snapshot => {
+    publishedSchedule = snapshot.exists() ? { id:snapshot.id, ...snapshot.data() } : null;
+    renderDashboard();
+  }, () => {
+    publishedSchedule = null;
+    renderDashboard();
+  }));
+  eventSubscriptions.push(onSnapshot(query(collection(db, 'issue_reports'),
+    where('eventId', '==', eventId)), snapshot => {
+    issueReports = snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
+    renderDashboard();
+  }, () => {
+    issueReports = [];
+    renderDashboard();
+  }));
 }
 
 function stationName(teamRow) {
@@ -231,6 +252,43 @@ function closeCandidateDetails() {
 }
 window.closeCandidateDetails = closeCandidateDetails;
 
+function renderCandidateSearch(snapshot) {
+  const container = document.getElementById('candidate-search-results');
+  const results = searchFormationCandidates(snapshot, candidateSearchQuery, 20);
+  if (!candidateSearchQuery) {
+    container.hidden = true;
+    container.innerHTML = '';
+    return;
+  }
+  container.hidden = false;
+  if (!results.length) {
+    container.innerHTML = '<div class="empty-panel">לא נמצא מועמד מתאים.</div>';
+    return;
+  }
+  container.innerHTML = results.map(candidate => `<button type="button" class="candidate-search-result"
+    onclick="openCandidateDetails('${escapeHtml(candidate.team)}','${escapeHtml(candidate.participantId)}')">
+    <strong>מועמד ${escapeHtml(candidate.participantId)}</strong>
+    <span>${escapeHtml(candidate.firstName || 'שם לא הוזן')} · צוות ${Number(candidate.team)}</span>
+  </button>`).join('');
+}
+
+window.updateCandidateSearch = value => {
+  candidateSearchQuery = String(value || '').trim();
+  if (latestDashboardSnapshot) renderCandidateSearch(latestDashboardSnapshot);
+};
+
+function renderOperationalAlerts(snapshot) {
+  const alerts = buildFormationAlerts({
+    dashboard:snapshot, races, publishedSchedule, issueReports, now:new Date()
+  });
+  const container = document.getElementById('anomalies');
+  document.getElementById('alert-count').textContent = String(alerts.length);
+  container.innerHTML = alerts.length ? alerts.map(alert => `
+    <article class="formation-alert" data-severity="${escapeHtml(alert.severity)}">
+      <strong>${escapeHtml(alert.title)}</strong><span>${escapeHtml(alert.detail)}</span>
+    </article>`).join('') : '<div class="formation-alert-empty">אין חריגות פעילות.</div>';
+}
+
 function renderRecommendations(snapshot) {
   const container = document.getElementById('recommendations');
   if (!snapshot.openRecommendations.length) {
@@ -273,9 +331,9 @@ window.renderDashboard = () => {
   text('kpi-withdrawn', snapshot.totals.withdrawn);
   text('kpi-teams', snapshot.teams.length);
   text('kpi-running', snapshot.totals.teamsRunning);
-  const anomalies = document.getElementById('anomalies');
-  anomalies.innerHTML = snapshot.anomalies.map(message => `<div class="formation-alert">${escapeHtml(message)}</div>`).join('');
+  renderOperationalAlerts(snapshot);
   renderTeams(snapshot);
+  renderCandidateSearch(snapshot);
   renderRecommendations(snapshot);
   renderReasonBars(snapshot);
   renderCandidateDetails();
