@@ -52,25 +52,45 @@
     }
     .team-candidate-list { display:grid; gap:7px; }
     .team-candidate-row {
-      display:grid; grid-template-columns:minmax(150px,1.1fr) minmax(330px,2fr) 80px minmax(100px,.8fr) auto;
+      display:grid; grid-template-columns:minmax(170px,1.2fr) 80px minmax(100px,.8fr) auto;
       align-items:center; gap:10px; padding:10px 12px;
       border:1px solid var(--border); border-radius:10px; background:var(--surface);
     }
     .team-candidate-primary { display:grid; gap:3px; }
     .team-candidate-primary span { color:var(--text-muted); font-size:12px; }
-    .team-candidate-id { display:grid; gap:3px; direction:ltr; text-align:right; }
-    .team-candidate-id span { color:var(--text-muted); font-size:10px; direction:rtl; }
-    .team-candidate-profile { display:grid; grid-template-columns:repeat(3,minmax(100px,1fr)); gap:8px; }
-    .team-candidate-profile > div { display:grid; gap:3px; }
-    .team-candidate-profile span { color:var(--text-muted); font-size:10px; }
+    .team-candidate-open { padding:7px 9px; border:0; border-radius:8px; background:transparent; color:var(--text); font:inherit; text-align:right; cursor:pointer; }
+    .team-candidate-open small { color:var(--accent); font-size:10px; }
+    .team-candidate-open:hover, .team-candidate-open:focus-visible { background:var(--card); outline:1px solid var(--accent); }
+    .team-station-open { display:grid; gap:2px; padding:5px 7px; border:0; border-radius:7px; background:transparent; color:var(--text); font:inherit; text-align:right; cursor:pointer; }
+    .team-station-open small { color:var(--accent); font-size:9px; }
+    .team-station-open:hover, .team-station-open:focus-visible { background:var(--surface); outline:1px solid var(--accent); }
     .empty-panel { color:var(--text-muted); padding:18px 8px; text-align:center; }
-    .formation-alert { padding:10px 12px; border-radius:10px; border:1px solid rgba(239,68,68,.4); background:rgba(239,68,68,.09); color:#fca5a5; }
+    .formation-alert-center { margin-bottom:14px; }
+    .formation-alert-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .formation-alert-count { min-width:28px; padding:4px 8px; border-radius:999px; background:var(--surface); text-align:center; font-weight:900; }
+    .formation-alert { display:grid; gap:3px; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:var(--surface); }
+    .formation-alert span { color:var(--text-muted); font-size:11px; }
+    .formation-alert[data-severity="critical"] { border-color:rgba(239,68,68,.5); background:rgba(239,68,68,.09); }
+    .formation-alert[data-severity="warning"] { border-color:rgba(245,158,11,.5); background:rgba(245,158,11,.08); }
+    .formation-alert[data-severity="info"] { border-color:rgba(59,130,246,.45); background:rgba(59,130,246,.08); }
+    .formation-alert-empty { color:var(--text-muted); font-size:12px; }
+    .candidate-search-card { margin-bottom:14px; }
+    .candidate-search-card label { display:grid; gap:6px; color:var(--text-muted); font-size:12px; }
+    .candidate-search-results { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:7px; margin-top:10px; }
+    .candidate-search-result { display:grid; gap:3px; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text); font:inherit; text-align:right; cursor:pointer; }
+    .candidate-search-result span { color:var(--text-muted); font-size:11px; }
+    .candidate-search-result:hover, .candidate-search-result:focus-visible { border-color:var(--accent); outline:none; }
     .updated-at { color:var(--text-muted); font-size:11px; }
     .modal-layer { position:fixed; inset:0; z-index:1000; display:grid; place-items:center; padding:14px; background:rgba(5,8,15,.8); }
     .modal-layer[hidden] { display:none; }
     .modal-card { width:min(520px,100%); background:var(--card); border:1px solid var(--border); border-radius:16px; padding:20px; box-shadow:var(--shadow); }
     .modal-fields { display:grid; gap:10px; margin:15px 0; }
     .modal-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
+    .candidate-details-card { width:min(620px,100%); }
+    .candidate-details-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:9px; margin:16px 0; }
+    .candidate-details-grid > div { display:grid; gap:4px; padding:11px; border:1px solid var(--border); border-radius:10px; background:var(--surface); }
+    .candidate-details-grid span { color:var(--text-muted); font-size:10px; }
+    .candidate-details-grid a { color:var(--accent); font-weight:800; }
     @media (max-width:850px) {
       .formation-kpis { grid-template-columns:repeat(3,minmax(0,1fr)); }
       .formation-grid { grid-template-columns:1fr; }
@@ -93,12 +113,11 @@
       .formation-table td.team-details-cell { display:block; padding:0 0 14px !important; border:0; }
       .formation-table td.team-details-cell::before { display:none; }
       .team-candidate-row { grid-template-columns:1fr 1fr; }
-      .team-candidate-profile { grid-column:1 / -1; }
       .team-candidate-row .candidate-action { grid-column:1 / -1; }
     }
     @media (max-width:420px) {
-      .team-candidate-row, .team-candidate-profile { grid-template-columns:1fr; }
-      .team-candidate-profile, .team-candidate-row .candidate-action { grid-column:auto; }
+      .team-candidate-row, .candidate-details-grid { grid-template-columns:1fr; }
+      .team-candidate-row .candidate-action { grid-column:auto; }
     }
   </style>
 </head>
@@ -108,6 +127,7 @@
     <div class="navbar-actions">
       <span id="commander-user" class="user-name"></span>
       <span class="badge badge-info">תפעול</span>
+      <a href="schedule.html" class="btn btn-ghost" style="padding:6px 10px">לו״ז</a>
       <a id="admin-link" href="admin.html" class="btn btn-ghost" style="display:none; padding:6px 10px">ניהול</a>
       <button class="btn btn-ghost" style="padding:6px 10px" onclick="logout()">התנתק</button>
     </div>
@@ -132,7 +152,18 @@
         <div class="formation-kpi"><strong id="kpi-running">0</strong><span>צוותים בתחנה פעילה</span></div>
       </section>
 
-      <div id="anomalies" class="anomaly-list" style="margin-bottom:14px"></div>
+      <section class="formation-card candidate-search-card">
+        <label>חיפוש מועמד
+          <input class="form-input" type="search" autocomplete="off" inputmode="search"
+                 placeholder="מספר מועמד, שם או תעודת זהות" oninput="updateCandidateSearch(this.value)">
+        </label>
+        <div id="candidate-search-results" class="candidate-search-results" hidden></div>
+      </section>
+
+      <section class="formation-card formation-alert-center">
+        <div class="formation-alert-head"><div><h2>מרכז חריגות</h2><p class="formation-card-help">תקלות ומצבים שדורשים תשומת לב תפעולית.</p></div><span id="alert-count" class="formation-alert-count">0</span></div>
+        <div id="anomalies" class="anomaly-list"></div>
+      </section>
 
       <div class="formation-grid">
         <div class="formation-stack">
@@ -163,6 +194,18 @@
       </div>
     </div>
   </main>
+
+  <div id="candidate-details-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="candidate-details-title">
+    <section class="modal-card candidate-details-card">
+      <h2 id="candidate-details-title">פרטי מועמד</h2>
+      <p id="candidate-details-subtitle"></p>
+      <div id="candidate-details-content" class="candidate-details-grid"></div>
+      <div class="modal-actions">
+        <div id="candidate-details-actions" class="candidate-action"></div>
+        <button type="button" class="btn btn-ghost" onclick="closeCandidateDetails()">סגור</button>
+      </div>
+    </section>
+  </div>
 
   <div id="status-modal" class="modal-layer" hidden role="dialog" aria-modal="true" aria-labelledby="status-modal-title">
     <form id="status-form" class="modal-card" onsubmit="confirmCandidateStatus(event)">
@@ -215,6 +258,7 @@
     </form>
   </div>
 
+  <station-operational-dialog id="station-operational-dialog"></station-operational-dialog>
   <script src="js/firebase-config.js"></script>
   <script src="js/station-types.js"></script>
   <script type="module" src="js/commander-dashboard.js"></script>

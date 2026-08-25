@@ -8,7 +8,9 @@ import {
   collection, doc, getDoc, getDocs, query, where,
   setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
 } from 'firebase/firestore';
-import { buildIssueReportData } from '../frontend/js/issue-report.js';
+import {
+  buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
+} from '../frontend/js/issue-report.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
 let testEnv;
@@ -92,6 +94,7 @@ function recommendationPayload() {
 
 function issuePayload(overrides = {}) {
   const report = buildIssueReportData({
+    eventId: 'event-1',
     draft: { category: 'timing', description: 'השעון לא מגיב', steps: '' },
     reporter: { uid: 'evaluator1', name: 'מעריך 1', role: 'evaluator', team: 1 },
     context: {
@@ -123,6 +126,50 @@ function privateNotesPayload(uid = 'evaluator1') {
     authorUid: uid, team: '01', participantId: '100',
     notes: [{ id: 'general-1', text: 'הערה אישית', authorUid: uid, authorName: 'מעריך', createdAt: 1, updatedAt: 1 }],
     schemaVersion: 2, createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  };
+}
+
+function masterSchedulePayload(uid = 'formation1', revision = 1) {
+  return {
+    eventId: 'event-1', teamIds: ['01', '02'],
+    commanderNames: { '01': 'שחר', '02': 'ברוס' },
+    rows: [{
+      id: 'row-1', date: '2026-08-24', startMinute: 190, kind: 'rotation', label: '',
+      assignments: {
+        '01': { stationId: '04', routeNumber: '1' },
+        '02': { stationId: '02', routeNumber: '3' }
+      }
+    }],
+    loadPolicy: { windowMinutes: 120, maxWindowLoad: 6, highIntensity: 3, maxConsecutiveHigh: 1 },
+    loadWarnings: [], overrideReason: '', revision,
+    revisionKey: `r-${String(revision).padStart(6, '0')}`, schemaVersion: 1,
+    publicationType: 'publish', restoredFromRevisionKey: '',
+    timeZone: 'Asia/Jerusalem', createdAt: serverTimestamp(), createdBy: uid,
+    updatedAt: serverTimestamp(), updatedBy: uid
+  };
+}
+
+function draftSchedulePayload(uid = 'formation1', draftRevision = 1, baseRevision = 0) {
+  const master = masterSchedulePayload(uid, Math.max(1, baseRevision));
+  return {
+    eventId:master.eventId, teamIds:master.teamIds, commanderNames:master.commanderNames,
+    rows:master.rows, loadPolicy:master.loadPolicy, loadWarnings:master.loadWarnings,
+    overrideReason:master.overrideReason, baseRevision, draftRevision,
+    schemaVersion:1, timeZone:'Asia/Jerusalem',
+    createdAt:serverTimestamp(), createdBy:uid, updatedAt:serverTimestamp(), updatedBy:uid
+  };
+}
+
+function teamSchedulePayload(team, uid = 'formation1', revision = 1) {
+  const stationId = team === '01' ? '04' : '02';
+  return {
+    eventId: 'event-1', team, commanderName: team === '01' ? 'שחר' : 'ברוס',
+    entries: [{
+      id: 'row-1', date: '2026-08-24', startMinute: 190, kind: 'rotation',
+      label: '', stationId, routeNumber: team === '01' ? '1' : '3'
+    }],
+    sourceRevision: revision, schemaVersion: 1, timeZone: 'Asia/Jerusalem',
+    updatedAt: serverTimestamp(), updatedBy: uid
   };
 }
 
@@ -243,6 +290,217 @@ test('the formation commander sees operations across teams but never private eva
     'general_notes', '01_100', 'authors', 'operator1')));
   await assertFails(updateDoc(doc(commander, 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'formation1'
+  }));
+});
+
+test('schedule writes are atomic, versioned and projected by team', async () => {
+  const commander = userDb('formation1');
+  const masterRef = doc(commander, 'events', 'event-1', 'schedule', 'master');
+  const draftRef = doc(commander, 'events', 'event-1', 'schedule', 'draft');
+  const revisionRef = doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001');
+
+  // A client cannot bypass the durable audit trail by writing only the master.
+  await assertFails(setDoc(masterRef, masterSchedulePayload()));
+
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(masterRef);
+    transaction.set(masterRef, masterSchedulePayload());
+    transaction.set(draftRef, draftSchedulePayload('formation1', 1, 1));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '01'), teamSchedulePayload('01'));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '02'), teamSchedulePayload('02'));
+    transaction.set(revisionRef, masterSchedulePayload());
+  }));
+
+  await assertSucceeds(getDoc(masterRef));
+  await assertSucceeds(getDoc(draftRef));
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '02')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'schedule', 'master')));
+  await assertSucceeds(getDoc(doc(userDb('formation1'), 'events', 'event-1', 'teamSchedules', '02')));
+  await assertFails(updateDoc(doc(userDb('operator1'), 'events', 'event-1', 'teamSchedules', '01'), {
+    commanderName: 'ניסיון שינוי'
+  }));
+  await assertFails(updateDoc(masterRef, {
+    ...masterSchedulePayload('formation1', 1), createdAt: Timestamp.now()
+  }));
+  await assertFails(updateDoc(revisionRef, { overrideReason: 'שינוי היסטוריה' }));
+});
+
+test('saving a schedule draft never changes the published team projection', async () => {
+  const commander = userDb('formation1');
+  const masterRef = doc(commander, 'events', 'event-1', 'schedule', 'master');
+  const draftRef = doc(commander, 'events', 'event-1', 'schedule', 'draft');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(masterRef);
+    transaction.set(masterRef, masterSchedulePayload());
+    transaction.set(draftRef, draftSchedulePayload('formation1', 1, 1));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '01'), teamSchedulePayload('01'));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '02'), teamSchedulePayload('02'));
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001'), masterSchedulePayload());
+  }));
+  const before = await getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01'));
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const currentDraft = await transaction.get(draftRef);
+    transaction.set(draftRef, {
+      ...draftSchedulePayload('formation1', 2, 1),
+      rows:[{
+        id:'row-1', date:'2026-08-24', startMinute:240, kind:'rotation', label:'',
+        assignments:{
+          '01':{ stationId:'07', routeNumber:'2' },
+          '02':{ stationId:'02', routeNumber:'3' }
+        }
+      }],
+      createdAt:currentDraft.data().createdAt
+    });
+  }));
+  const after = await getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01'));
+  assert.equal(before.data().sourceRevision, 1);
+  assert.equal(after.data().sourceRevision, before.data().sourceRevision);
+  assert.deepEqual(after.data().entries, before.data().entries);
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'schedule', 'draft')));
+});
+
+test('draft, publish and restore advance every public projection atomically', async () => {
+  const commander = userDb('formation1');
+  const masterRef = doc(commander, 'events', 'event-1', 'schedule', 'master');
+  const draftRef = doc(commander, 'events', 'event-1', 'schedule', 'draft');
+  const teamOneRef = doc(commander, 'events', 'event-1', 'teamSchedules', '01');
+  const teamTwoRef = doc(commander, 'events', 'event-1', 'teamSchedules', '02');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(masterRef);
+    transaction.set(masterRef, masterSchedulePayload());
+    transaction.set(draftRef, draftSchedulePayload('formation1', 1, 1));
+    transaction.set(teamOneRef, teamSchedulePayload('01'));
+    transaction.set(teamTwoRef, teamSchedulePayload('02'));
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001'), masterSchedulePayload());
+  }));
+
+  const changedRows = [{
+    id:'row-1', date:'2026-08-24', startMinute:240, kind:'rotation', label:'',
+    assignments:{
+      '01':{ stationId:'07', routeNumber:'2' },
+      '02':{ stationId:'02', routeNumber:'3' }
+    }
+  }];
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const currentDraft = await transaction.get(draftRef);
+    transaction.set(draftRef, {
+      ...draftSchedulePayload('formation1', 2, 1), rows:changedRows,
+      createdAt:currentDraft.data().createdAt
+    });
+  }));
+
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const [currentMaster, currentDraft] = await Promise.all([
+      transaction.get(masterRef), transaction.get(draftRef)
+    ]);
+    const release = {
+      ...masterSchedulePayload('formation1', 2), rows:changedRows,
+      createdAt:currentMaster.data().createdAt,
+      createdBy:currentMaster.data().createdBy
+    };
+    transaction.set(masterRef, release);
+    transaction.set(draftRef, {
+      ...draftSchedulePayload('formation1', 3, 2), rows:changedRows,
+      createdAt:currentDraft.data().createdAt,
+      createdBy:currentDraft.data().createdBy
+    });
+    transaction.set(teamOneRef, {
+      ...teamSchedulePayload('01', 'formation1', 2),
+      entries:[{
+        id:'row-1', date:'2026-08-24', startMinute:240, kind:'rotation', label:'',
+        stationId:'07', routeNumber:'2'
+      }]
+    });
+    transaction.set(teamTwoRef, {
+      ...teamSchedulePayload('02', 'formation1', 2),
+      entries:[{
+        id:'row-1', date:'2026-08-24', startMinute:240, kind:'rotation', label:'',
+        stationId:'02', routeNumber:'3'
+      }]
+    });
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000002'), {
+      ...release, createdAt:serverTimestamp(), createdBy:'formation1'
+    });
+  }));
+
+  const projection = await assertSucceeds(getDoc(
+    doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01')
+  ));
+  assert.equal(projection.data().sourceRevision, 2);
+  assert.equal(projection.data().entries[0].stationId, '07');
+
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const [currentMaster, currentDraft] = await Promise.all([
+      transaction.get(masterRef), transaction.get(draftRef)
+    ]);
+    const restored = {
+      ...masterSchedulePayload('formation1', 3),
+      publicationType:'restore', restoredFromRevisionKey:'r-000001',
+      createdAt:currentMaster.data().createdAt,
+      createdBy:currentMaster.data().createdBy
+    };
+    transaction.set(masterRef, restored);
+    transaction.set(draftRef, {
+      ...draftSchedulePayload('formation1', 4, 3),
+      createdAt:currentDraft.data().createdAt,
+      createdBy:currentDraft.data().createdBy
+    });
+    transaction.set(teamOneRef, teamSchedulePayload('01', 'formation1', 3));
+    transaction.set(teamTwoRef, teamSchedulePayload('02', 'formation1', 3));
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000003'), {
+      ...restored, createdAt:serverTimestamp(), createdBy:'formation1'
+    });
+  }));
+
+  const restoredProjection = await assertSucceeds(getDoc(
+    doc(userDb('evaluator1'), 'events', 'event-1', 'teamSchedules', '01')
+  ));
+  const restoredMaster = await assertSucceeds(getDoc(masterRef));
+  const originalRevision = await assertSucceeds(getDoc(
+    doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001')
+  ));
+  assert.equal(restoredProjection.data().sourceRevision, 3);
+  assert.equal(restoredProjection.data().entries[0].stationId, '04');
+  assert.equal(restoredMaster.data().publicationType, 'restore');
+  assert.equal(restoredMaster.data().restoredFromRevisionKey, 'r-000001');
+  assert.equal(originalRevision.data().revision, 1);
+});
+
+test('a restore publication must reference an existing immutable revision', async () => {
+  const commander = userDb('formation1');
+  const masterRef = doc(commander, 'events', 'event-1', 'schedule', 'master');
+  const draftRef = doc(commander, 'events', 'event-1', 'schedule', 'draft');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    await transaction.get(masterRef);
+    transaction.set(masterRef, masterSchedulePayload());
+    transaction.set(draftRef, draftSchedulePayload('formation1', 1, 1));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '01'), teamSchedulePayload('01'));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '02'), teamSchedulePayload('02'));
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000001'), masterSchedulePayload());
+  }));
+
+  await assertFails(runTransaction(commander, async transaction => {
+    const [currentMaster, currentDraft] = await Promise.all([
+      transaction.get(masterRef), transaction.get(draftRef)
+    ]);
+    const forged = {
+      ...masterSchedulePayload('formation1', 2),
+      publicationType:'restore', restoredFromRevisionKey:'r-999999',
+      createdAt:currentMaster.data().createdAt,
+      createdBy:currentMaster.data().createdBy
+    };
+    transaction.set(masterRef, forged);
+    transaction.set(draftRef, {
+      ...draftSchedulePayload('formation1', 2, 2),
+      createdAt:currentDraft.data().createdAt,
+      createdBy:currentDraft.data().createdBy
+    });
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '01'), teamSchedulePayload('01', 'formation1', 2));
+    transaction.set(doc(commander, 'events', 'event-1', 'teamSchedules', '02'), teamSchedulePayload('02', 'formation1', 2));
+    transaction.set(doc(commander, 'events', 'event-1', 'scheduleRevisions', 'r-000002'), {
+      ...forged, createdAt:serverTimestamp(), createdBy:'formation1'
+    });
   }));
 });
 
@@ -397,6 +655,12 @@ test('a reporter can create only an allow-listed own-team issue report', async (
   const evaluator = userDb('evaluator1');
   await assertSucceeds(setDoc(doc(evaluator, 'issue_reports', 'report-1'), issuePayload()));
   await assertFails(getDoc(doc(evaluator, 'issue_reports', 'report-1')));
+  await assertSucceeds(getDoc(doc(userDb('formation1'), 'issue_reports', 'report-1')));
+  await assertSucceeds(getDocs(query(collection(userDb('formation1'), 'issue_reports'),
+    where('eventId', '==', 'event-1'),
+    where('schemaVersion', '==', ISSUE_REPORT_SCHEMA_VERSION))));
+  await assertFails(getDocs(query(collection(userDb('formation1'), 'issue_reports'),
+    where('eventId', '==', 'event-1'))));
   await assertFails(updateDoc(doc(evaluator, 'issue_reports', 'report-1'), { status: 'resolved' }));
 
   await assertFails(setDoc(doc(evaluator, 'issue_reports', 'report-spoofed-team'),

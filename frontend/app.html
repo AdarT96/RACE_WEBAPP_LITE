@@ -694,6 +694,7 @@
               aria-controls="app-menu" aria-label="פתח תפריט">☰</button>
       <div class="app-menu" id="app-menu" role="menu" hidden>
         <button type="button" class="app-menu-item" role="menuitem" onclick="openCandidateDashboard()">👤 מועמדים</button>
+        <a class="app-menu-item" role="menuitem" href="schedule.html">🗓️ לו״ז צוותי</a>
         <button type="button" class="app-menu-item" role="menuitem" onclick="openIssueReport()">⚠️ דיווח תקלה</button>
         <button type="button" class="app-menu-item" role="menuitem" id="outdoor-btn" onclick="toggleOutdoorMode(); closeAppMenu()">☀️ מצב חוץ</button>
         <button type="button" class="app-menu-item" role="menuitem" onclick="logout()">↪ התנתק</button>
@@ -1119,6 +1120,10 @@
     activeParticipantIds, clearanceStatusLabel, dropoutReasonLabel, normalizeCandidateRecord
   } from "./js/formation-operations-model.js";
   import { createFormationOperationsRepository } from "./js/formation-operations-repository.js";
+  import { evaluationTargetFromSearch, resolveInitialStation } from "./js/app-navigation-model.js";
+  import {
+    arrivalEntriesInOrder, arrivalOrderSignature, arrivalWithOrder, moveParticipantInOrder
+  } from "./js/arrival-order-model.js";
   import { ROLES, roleLabel } from "./js/roles.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
@@ -1383,46 +1388,6 @@
     };
   }
 
-  function arrivalEntriesInOrder(arrival) {
-    return (arrival?.order || []).map((participantId, index) => ({
-      participantId: String(participantId),
-      place: index + 1,
-      finishedAt: arrival?.slotTimes?.[String(index + 1)] ?? null
-    }));
-  }
-
-  function arrivalOrderSignature(arrival) {
-    return arrivalEntriesInOrder(arrival).map(entry => {
-      const time = tsToMs(entry.finishedAt);
-      return `${entry.participantId}:${entry.place}:${time == null ? '' : time}`;
-    }).join('|');
-  }
-
-  function moveParticipantInOrder(order, participantId, targetIndex) {
-    const result = (Array.isArray(order) ? order : []).map(String);
-    const from = result.indexOf(String(participantId));
-    if (from < 0 || result.length < 2) return result;
-    const to = Math.max(0, Math.min(result.length - 1, Number(targetIndex)));
-    if (from === to) return result;
-    const [moved] = result.splice(from, 1);
-    result.splice(to, 0, moved);
-    return result;
-  }
-
-  function arrivalWithOrder(arrival, orderedParticipantIds) {
-    const currentOrder = uniqueParticipantIds(arrival?.order);
-    const order = uniqueParticipantIds(orderedParticipantIds);
-    const placedIds = currentOrder.map(String);
-    const orderSet = new Set(order);
-    const placedSet = new Set(placedIds);
-
-    if (order.length !== currentOrder.length || orderSet.size !== order.length || placedSet.size !== placedIds.length ||
-        order.some(pid => !placedSet.has(pid))) {
-      throw new Error('רשימת סדר ההגעה אינה תואמת לנתונים העדכניים');
-    }
-    return { ...arrival, order };
-  }
-
   function arrivalElapsedMs(race, markedAt) {
     return measuredElapsedMs(race, markedAt);
   }
@@ -1601,6 +1566,7 @@
       const data = buildIssueReportData({
         draft,
         reporter: { ...currentUser, team },
+        eventId: activeFormationEvent?.id || '',
         context: currentIssueContext(),
         environment: {
           appVersion: APP_CONFIG.appVersion || '',
@@ -1712,6 +1678,8 @@
       stationSel.appendChild(opt);
     }
 
+    const evaluationTarget = evaluationTargetFromSearch(location.search);
+
     // Team selection
     if (currentUser.role === 'admin') {
       // admin picks any team
@@ -1730,10 +1698,15 @@
         teamSel.appendChild(opt);
       }
       // Restore last selection
+      const requestedTeam = /^\d{1,2}$/.test(evaluationTarget.team)
+        ? pad2(evaluationTarget.team) : '';
       const saved = localStorage.getItem('lite:lastTeam');
-      if (saved) {
-        teamSel.value = saved;
-        selectedTeam = saved;
+      const initialTeam = requestedTeam || saved;
+      if (initialTeam) {
+        teamSel.value = initialTeam;
+        selectedTeam = teamSel.value || null;
+      }
+      if (selectedTeam) {
         await loadTeamData(selectedTeam);
       }
     } else {
@@ -1748,13 +1721,25 @@
       await loadTeamData(selectedTeam);
     }
 
-    // Restore last station
-    const savedStation = localStorage.getItem('lite:lastStation') || '01';
-    stationSel.value = savedStation;
-    selectedStation = savedStation;
-
     // Update station labels using teamData if loaded
     refreshStationDropdownLabels();
+
+    // The schedule recommends the initial station only. Once this page is open,
+    // manual station changes remain under the user's control.
+    const availableStations = Array.from(stationSel.options).map(option => option.value);
+    const [scheduleProjection, runningStation] = selectedTeam
+      ? await Promise.all([loadTeamScheduleProjection(selectedTeam), findRunningStationForTeam(selectedTeam)])
+      : [null, ''];
+    const initialStation = resolveInitialStation({
+      explicitStation: evaluationTarget.station,
+      runningStation,
+      scheduleProjection,
+      savedStation: localStorage.getItem('lite:lastStation') || '',
+      availableStations
+    });
+    selectedStation = initialStation.stationId || availableStations[0] || null;
+    stationSel.value = selectedStation || '';
+    if (selectedStation) localStorage.setItem('lite:lastStation', selectedStation);
 
     if (selectedTeam) {
       await loadCurrentSession();
@@ -1765,6 +1750,34 @@
     // הערות כלליות זמינות תמיד לצד התחנה
     initGeneralNotes();
     applyAppRoute();
+  }
+
+  async function loadTeamScheduleProjection(team) {
+    if (!activeFormationEvent || !team) return null;
+    try {
+      const snapshot = await getDoc(doc(db, 'events', activeFormationEvent.id, 'teamSchedules', team));
+      return snapshot.exists() ? snapshot.data() : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function findRunningStationForTeam(team) {
+    if (!activeFormationEvent || !team) return '';
+    try {
+      const constraints = [
+        where('eventId', '==', activeFormationEvent.id), where('team', '==', team)
+      ];
+      if (privacyMigrationComplete) {
+        constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
+      }
+      const snapshot = await getDocs(query(collection(db, 'races'), ...constraints));
+      return snapshot.docs.map(item => ({ id:item.id, ...item.data() }))
+        .filter(race => isSessionEffectivelyRunning(race))
+        .sort((left, right) => tsToMs(right.startedAt) - tsToMs(left.startedAt))[0]?.station || '';
+    } catch (error) {
+      return '';
+    }
   }
 
   function applyRoleVisibility() {

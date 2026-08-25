@@ -4,7 +4,7 @@ import {
   CANDIDATE_STATUSES, buildFormationDashboardSnapshot, activeParticipantIds,
   candidateKey, candidateRosterIssues, isValidIsraeliNationalId,
   isValidEmergencyContactPhone, normalizeCandidateProfile, normalizeCandidateRecord, normalizeCandidateRoster,
-  normalizeEmergencyContactPhone, normalizeNationalId
+  normalizeEmergencyContactPhone, normalizeNationalId, searchFormationCandidates
 } from '../frontend/js/formation-operations-model.js';
 
 const teams = [
@@ -137,4 +137,19 @@ test('only open recommendations appear in the action queue', () => {
   });
   assert.deepEqual(snapshot.openRecommendations.map(item => item.participantId), ['100']);
   assert.equal(snapshot.openRecommendations[0].candidate.firstName, 'נועה');
+});
+
+test('candidate search uses the shared roster and prioritizes exact stable identifiers', () => {
+  const snapshot = buildFormationDashboardSnapshot({
+    teams,
+    candidates:[
+      { team:'01', participantId:'100', firstName:'נועה', nationalId:'000000018' },
+      { team:'01', participantId:'101', firstName:'נועם', nationalId:'123456782' },
+      { team:'02', participantId:'200', firstName:'יובל', nationalId:'039284765' }
+    ]
+  });
+  assert.deepEqual(searchFormationCandidates(snapshot, '100').map(item => item.participantId), ['100']);
+  assert.deepEqual(searchFormationCandidates(snapshot, 'נוע').map(item => item.participantId), ['100', '101']);
+  assert.deepEqual(searchFormationCandidates(snapshot, '039284765').map(item => item.participantId), ['200']);
+  assert.deepEqual(searchFormationCandidates(snapshot, 'לא קיים'), []);
 });

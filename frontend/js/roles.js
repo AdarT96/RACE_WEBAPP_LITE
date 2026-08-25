@@ -40,6 +40,15 @@ export function canManageFormation(role) {
   return [ROLES.FORMATION_COMMANDER, ROLES.ADMIN].includes(String(role || ''));
 }
 
+export function canViewSchedule(role) {
+  return [ROLES.ADMIN, ROLES.FORMATION_COMMANDER, ROLES.OPERATOR, ROLES.EVALUATOR]
+    .includes(String(role || ''));
+}
+
+export function canManageSchedule(role) {
+  return [ROLES.ADMIN, ROLES.FORMATION_COMMANDER].includes(String(role || ''));
+}
+
 export function destinationForRole(role) {
   if (role === ROLES.ADMIN) return 'admin.html';
   if (role === ROLES.FORMATION_COMMANDER) return 'commander.html';

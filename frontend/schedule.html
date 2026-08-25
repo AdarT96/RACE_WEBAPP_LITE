@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>לו״ז גיבוש</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/schedule.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand"><span class="logo">🗓️</span><span>לו״ז גיבוש</span></div>
+    <div class="navbar-actions">
+      <span id="schedule-user" class="schedule-user"></span>
+      <a id="schedule-back" class="btn btn-ghost schedule-nav-button" href="app.html">חזרה</a>
+      <button class="btn btn-ghost schedule-nav-button" type="button" onclick="logout()">התנתק</button>
+    </div>
+  </nav>
+
+  <main class="schedule-shell">
+    <header class="schedule-heading">
+      <div>
+        <h1 id="schedule-title">לו״ז גיבוש</h1>
+        <p id="schedule-subtitle">טוען את האירוע הפעיל…</p>
+      </div>
+      <div id="schedule-revision" class="schedule-revision"></div>
+    </header>
+
+    <div id="schedule-blocking" class="alert alert-warning" hidden></div>
+
+    <section id="schedule-manager" hidden>
+      <div id="schedule-conflict" class="alert alert-danger" hidden>
+        הלו״ז השתנה במכשיר אחר בזמן העריכה. יש לטעון את הגרסה העדכנית לפני שמירה.
+        <button type="button" class="btn btn-ghost" onclick="reloadScheduleDraft()">טען גרסה עדכנית</button>
+      </div>
+
+      <div class="schedule-toolbar card">
+        <div class="schedule-toolbar-title">
+          <h2>הוספת שורה</h2>
+          <p>שורה משותפת מוצגת לכל הצוותים; שורת תחנות מאפשרת שיבוץ נפרד לכל צוות.</p>
+        </div>
+        <label>תאריך<input id="new-row-date" class="form-input" type="date"></label>
+        <label>שעה<input id="new-row-time" class="form-input" type="time" step="300"></label>
+        <label>סוג
+          <select id="new-row-kind" class="form-select" onchange="toggleNewRowLabel()">
+            <option value="rotation">תחנות</option>
+            <option value="global">פעילות משותפת</option>
+          </select>
+        </label>
+        <label id="new-row-label-wrap" hidden>שם הפעילות
+          <input id="new-row-label" class="form-input" maxlength="160" placeholder="למשל: חימום והכנה">
+        </label>
+        <button type="button" class="btn btn-primary" onclick="addScheduleRow()">+ הוסף שורה</button>
+      </div>
+
+      <div class="schedule-legend" aria-label="מקרא עצימות">
+        <span><i class="intensity-dot intensity-0"></i>ללא עומס</span>
+        <span><i class="intensity-dot intensity-1"></i>נמוכה</span>
+        <span><i class="intensity-dot intensity-2"></i>בינונית</span>
+        <span><i class="intensity-dot intensity-3"></i>גבוהה</span>
+      </div>
+
+      <section class="schedule-matrix-card card">
+        <div id="schedule-matrix-empty" class="schedule-empty" hidden>
+          הלו״ז עדיין ריק. הוסף את השורה הראשונה באמצעות הטופס למעלה.
+        </div>
+        <div id="schedule-matrix-wrap" class="schedule-matrix-wrap">
+          <table class="schedule-table" aria-label="מטריצת לו״ז לכל הצוותים">
+            <thead id="schedule-matrix-head"></thead>
+            <tbody id="schedule-matrix-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="load-warning-card" class="card load-warning-card" hidden>
+        <h2>אזהרות עומס</h2>
+        <p>האזהרות אינן חוסמות החלטה מבצעית, אבל שמירה שלהן מחייבת תיעוד הסיבה.</p>
+        <ul id="load-warning-list"></ul>
+        <label>סיבת החריגה
+          <textarea id="load-override-reason" class="form-input" maxlength="500" rows="3"
+                    oninput="markScheduleDirty()" placeholder="מדוע נכון לשמור את השיבוץ למרות האזהרה?"></textarea>
+        </label>
+      </section>
+
+      <section class="card schedule-history-card">
+        <div>
+          <h2>גרסאות שפורסמו</h2>
+          <p>מוצגות 50 הגרסאות האחרונות. שחזור מפרסם גרסה חדשה; הוא לעולם אינו מוחק או משנה גרסה היסטורית.</p>
+        </div>
+        <div id="schedule-history-list" class="schedule-history-list"></div>
+      </section>
+
+      <div class="schedule-savebar">
+        <span id="schedule-save-status" aria-live="polite">לא בוצעו שינויים</span>
+        <div>
+          <button type="button" class="btn btn-ghost" onclick="reloadScheduleDraft()">בטל שינויים</button>
+          <button type="button" class="btn btn-ghost" onclick="openSchedulePreview()">תצוגה מקדימה</button>
+          <button id="schedule-save-draft-button" type="button" class="btn btn-primary" onclick="saveScheduleDraft()">שמור טיוטה</button>
+          <button id="schedule-publish-button" type="button" class="btn btn-success" onclick="publishSchedule()">פרסם לצוותים</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="schedule-team" hidden>
+      <div id="team-current-card" class="team-current-card card" hidden></div>
+      <div id="team-schedule-list" class="team-schedule-list"></div>
+      <div id="team-schedule-empty" class="card schedule-empty" hidden>
+        עדיין לא פורסם לו״ז לצוות שלך.
+      </div>
+    </section>
+  </main>
+
+  <div id="schedule-preview-modal" class="schedule-preview-layer" hidden role="dialog" aria-modal="true" aria-labelledby="schedule-preview-title">
+    <section class="schedule-preview-card card">
+      <div class="schedule-preview-head">
+        <div><h2 id="schedule-preview-title">תצוגה מקדימה לצוות</h2><p>כך תיראה הטיוטה לאחר הפרסום.</p></div>
+        <button type="button" class="btn btn-ghost" onclick="closeSchedulePreview()">סגור</button>
+      </div>
+      <label>צוות
+        <select id="schedule-preview-team" class="form-select" onchange="renderSchedulePreview()"></select>
+      </label>
+      <div id="schedule-preview-list" class="team-schedule-list"></div>
+    </section>
+  </div>
+
+  <div id="toast-container"></div>
+  <station-operational-dialog id="station-operational-dialog"></station-operational-dialog>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/station-types.js"></script>
+  <script type="module" src="js/schedule-page.js"></script>
+</body>
+</html>

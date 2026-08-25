@@ -233,6 +233,231 @@ service cloud.firestore {
         allow delete: if false;
       }
 
+      // The master schedule is visible only to formation management. Team staff
+      // read a projection containing their own column, so the full formation
+      // movement plan is never exposed as a side effect of opening the team view.
+      function validMasterSchedule() {
+        return request.resource.data.keys().hasAll([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'publicationType', 'restoredFromRevisionKey',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'publicationType', 'restoredFromRevisionKey',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.eventId == eventId &&
+          request.resource.data.teamIds is list && request.resource.data.teamIds.size() > 0 &&
+          request.resource.data.teamIds.size() <= 15 &&
+          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 15 &&
+          request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
+          request.resource.data.loadPolicy is map &&
+          request.resource.data.loadPolicy.keys().hasAll([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.keys().hasOnly([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.windowMinutes is int &&
+          request.resource.data.loadPolicy.windowMinutes >= 30 &&
+          request.resource.data.loadPolicy.maxWindowLoad is int &&
+          request.resource.data.loadPolicy.maxWindowLoad > 0 &&
+          request.resource.data.loadPolicy.highIntensity is int &&
+          request.resource.data.loadPolicy.highIntensity in [1, 2, 3] &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh is int &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh > 0 &&
+          request.resource.data.loadWarnings is list && request.resource.data.loadWarnings.size() <= 100 &&
+          request.resource.data.overrideReason is string &&
+          request.resource.data.overrideReason.size() <= 500 &&
+          (request.resource.data.loadWarnings.size() == 0 || request.resource.data.overrideReason.size() > 0) &&
+          request.resource.data.revision is int && request.resource.data.revision > 0 &&
+          request.resource.data.revisionKey is string &&
+          request.resource.data.revisionKey.matches('^r-[0-9]{6,12}$') &&
+          request.resource.data.publicationType in ['publish', 'restore'] &&
+          request.resource.data.restoredFromRevisionKey is string &&
+          ((request.resource.data.publicationType == 'publish' &&
+            request.resource.data.restoredFromRevisionKey == '') ||
+           (request.resource.data.publicationType == 'restore' &&
+            request.resource.data.restoredFromRevisionKey.matches('^r-[0-9]{6,12}$'))) &&
+          request.resource.data.schemaVersion == 1 &&
+          request.resource.data.timeZone == 'Asia/Jerusalem' &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdBy is string &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      function validDraftSchedule() {
+        return request.resource.data.keys().hasAll([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'baseRevision', 'draftRevision',
+            'schemaVersion', 'timeZone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
+            'loadWarnings', 'overrideReason', 'baseRevision', 'draftRevision',
+            'schemaVersion', 'timeZone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.eventId == eventId &&
+          request.resource.data.teamIds is list && request.resource.data.teamIds.size() > 0 &&
+          request.resource.data.teamIds.size() <= 15 &&
+          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 15 &&
+          request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
+          request.resource.data.loadPolicy is map &&
+          request.resource.data.loadPolicy.keys().hasAll([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.keys().hasOnly([
+            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
+          ]) &&
+          request.resource.data.loadPolicy.windowMinutes is int &&
+          request.resource.data.loadPolicy.windowMinutes >= 30 &&
+          request.resource.data.loadPolicy.maxWindowLoad is int &&
+          request.resource.data.loadPolicy.maxWindowLoad > 0 &&
+          request.resource.data.loadPolicy.highIntensity is int &&
+          request.resource.data.loadPolicy.highIntensity in [1, 2, 3] &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh is int &&
+          request.resource.data.loadPolicy.maxConsecutiveHigh > 0 &&
+          request.resource.data.loadWarnings is list && request.resource.data.loadWarnings.size() <= 100 &&
+          request.resource.data.overrideReason is string &&
+          request.resource.data.overrideReason.size() <= 500 &&
+          (request.resource.data.loadWarnings.size() == 0 || request.resource.data.overrideReason.size() > 0) &&
+          request.resource.data.baseRevision is int && request.resource.data.baseRevision >= 0 &&
+          request.resource.data.draftRevision is int && request.resource.data.draftRevision > 0 &&
+          request.resource.data.schemaVersion == 1 &&
+          request.resource.data.timeZone == 'Asia/Jerusalem' &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.createdBy is string &&
+          request.resource.data.updatedAt == request.time &&
+          request.resource.data.updatedBy == request.auth.uid;
+      }
+
+      function mayManageSchedule() {
+        return (isAdmin() || isFormationCommander()) && isActiveEvent(eventId);
+      }
+
+      function publishedRevisionAfter() {
+        return existsAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master)
+          ? getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revision
+          : 0;
+      }
+
+      function draftMatchesMasterAfter() {
+        let master = getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data;
+        let draft = getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/draft).data;
+        return draft.baseRevision == master.revision &&
+          draft.teamIds == master.teamIds &&
+          draft.commanderNames == master.commanderNames &&
+          draft.rows == master.rows &&
+          draft.loadPolicy == master.loadPolicy &&
+          draft.loadWarnings == master.loadWarnings &&
+          draft.overrideReason == master.overrideReason;
+      }
+
+      function validPublicationSource() {
+        return request.resource.data.publicationType == 'publish' ||
+          (request.resource.data.restoredFromRevisionKey != request.resource.data.revisionKey &&
+           exists(/databases/$(database)/documents/events/$(eventId)/scheduleRevisions/$(request.resource.data.restoredFromRevisionKey)));
+      }
+
+      match /schedule/{scheduleId} {
+        allow read: if scheduleId in ['master', 'draft'] && (isAdmin() || isFormationCommander());
+        allow create: if scheduleId == 'master' && mayManageSchedule() &&
+          validMasterSchedule() && request.resource.data.revision == 1 &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid &&
+          validPublicationSource() &&
+          draftMatchesMasterAfter() &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/scheduleRevisions/$(request.resource.data.revisionKey)).data.revision ==
+            request.resource.data.revision;
+        allow update: if scheduleId == 'master' && mayManageSchedule() &&
+          validMasterSchedule() &&
+          request.resource.data.revision == resource.data.revision + 1 &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.createdBy == resource.data.createdBy &&
+          validPublicationSource() &&
+          draftMatchesMasterAfter() &&
+          getAfter(/databases/$(database)/documents/events/$(eventId)/scheduleRevisions/$(request.resource.data.revisionKey)).data.revision ==
+            request.resource.data.revision;
+        allow create: if scheduleId == 'draft' && mayManageSchedule() &&
+          validDraftSchedule() && request.resource.data.draftRevision == 1 &&
+          request.resource.data.baseRevision == publishedRevisionAfter() &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid;
+        allow update: if scheduleId == 'draft' && mayManageSchedule() &&
+          validDraftSchedule() &&
+          request.resource.data.draftRevision == resource.data.draftRevision + 1 &&
+          request.resource.data.baseRevision == publishedRevisionAfter() &&
+          request.resource.data.createdAt == resource.data.createdAt &&
+          request.resource.data.createdBy == resource.data.createdBy;
+        allow delete: if false;
+      }
+
+      match /teamSchedules/{teamNumber} {
+        function validTeamSchedule() {
+          return request.resource.data.keys().hasAll([
+              'eventId', 'team', 'commanderName', 'entries', 'sourceRevision',
+              'schemaVersion', 'timeZone', 'updatedAt', 'updatedBy'
+            ]) &&
+            request.resource.data.keys().hasOnly([
+              'eventId', 'team', 'commanderName', 'entries', 'sourceRevision',
+              'schemaVersion', 'timeZone', 'updatedAt', 'updatedBy'
+            ]) &&
+            request.resource.data.eventId == eventId &&
+            request.resource.data.team == teamNumber &&
+            request.resource.data.commanderName is string &&
+            request.resource.data.commanderName.size() <= 80 &&
+            request.resource.data.entries is list && request.resource.data.entries.size() <= 100 &&
+            request.resource.data.sourceRevision is int && request.resource.data.sourceRevision > 0 &&
+            request.resource.data.schemaVersion == 1 &&
+            request.resource.data.timeZone == 'Asia/Jerusalem' &&
+            request.resource.data.updatedAt == request.time &&
+            request.resource.data.updatedBy == request.auth.uid &&
+            teamNumber in getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.teamIds &&
+            request.resource.data.sourceRevision ==
+              getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revision;
+        }
+
+        allow read: if isAdmin() || isFormationCommander() ||
+          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+        allow create, update: if mayManageSchedule() && validTeamSchedule();
+        allow delete: if false;
+      }
+
+      // Every successful save appends the complete approved snapshot. Revisions
+      // can be audited but never rewritten or removed.
+      match /scheduleRevisions/{revisionId} {
+        allow read: if isAdmin() || isFormationCommander();
+        allow create: if mayManageSchedule() && validMasterSchedule() &&
+          revisionId == request.resource.data.revisionKey &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.revision ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revision &&
+          request.resource.data.teamIds ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.teamIds &&
+          request.resource.data.commanderNames ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.commanderNames &&
+          request.resource.data.rows ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.rows &&
+          request.resource.data.loadPolicy ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.loadPolicy &&
+          request.resource.data.loadWarnings ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.loadWarnings &&
+          request.resource.data.overrideReason ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.overrideReason &&
+          request.resource.data.revisionKey ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revisionKey &&
+          request.resource.data.publicationType ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.publicationType &&
+          request.resource.data.restoredFromRevisionKey ==
+            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.restoredFromRevisionKey;
+        allow update, delete: if false;
+      }
+
       match /candidates/{candidateId} {
         function validDropoutReason(reasonCode, reasonLabel) {
           return (reasonCode == 'voluntary' && reasonLabel == 'פרישה') ||
@@ -532,8 +757,9 @@ service cloud.firestore {
     }
 
     // Operational issue reports contain only an allow-listed diagnostic context.
-    // Reporters may create a report but cannot read or alter reports afterward;
-    // administrators own triage and status updates.
+    // Reporters may create a report but cannot read or alter reports afterward.
+    // The formation commander can monitor active-event reports; administrators
+    // alone own triage and status updates.
     match /issue_reports/{reportId} {
       function validIssueContext() {
         return request.resource.data.context is map &&
@@ -583,15 +809,19 @@ service cloud.firestore {
 
       function validNewIssueReport() {
         return request.resource.data.keys().hasAll([
-            'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
+            'eventId', 'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
             'category', 'description', 'steps', 'status', 'adminNote',
             'context', 'environment', 'schemaVersion', 'createdAt', 'updatedAt'
           ]) &&
           request.resource.data.keys().hasOnly([
-            'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
+            'eventId', 'reporterUid', 'reporterName', 'reporterRole', 'reporterTeam',
             'category', 'description', 'steps', 'status', 'adminNote',
             'context', 'environment', 'schemaVersion', 'createdAt', 'updatedAt'
           ]) &&
+          request.resource.data.eventId is string &&
+          request.resource.data.eventId.size() > 0 &&
+          request.resource.data.eventId.size() <= 128 &&
+          isActiveEvent(request.resource.data.eventId) &&
           request.resource.data.reporterUid == request.auth.uid &&
           request.resource.data.reporterName is string &&
           request.resource.data.reporterName.size() <= 200 &&
@@ -607,7 +837,7 @@ service cloud.firestore {
           request.resource.data.steps is string && request.resource.data.steps.size() <= 2000 &&
           request.resource.data.status == 'open' &&
           request.resource.data.adminNote == '' &&
-          request.resource.data.schemaVersion == 1 &&
+          request.resource.data.schemaVersion == 2 &&
           request.resource.data.createdAt == request.time &&
           request.resource.data.updatedAt == request.time &&
           validIssueContext() && validIssueEnvironment();
@@ -616,7 +846,9 @@ service cloud.firestore {
       allow create: if signedIn() &&
         (isAdmin() || (caller().approved == true && caller().role in ['operator', 'evaluator'])) &&
         validNewIssueReport();
-      allow read: if isAdmin();
+      allow read: if isAdmin() ||
+        (isFormationCommander() && resource.data.schemaVersion == 2 &&
+         resource.data.eventId is string && isActiveEvent(resource.data.eventId));
       allow update: if isAdmin() &&
         request.resource.data.diff(resource.data).affectedKeys()
           .hasOnly(['status', 'adminNote', 'updatedAt', 'handledAt', 'handledBy']) &&

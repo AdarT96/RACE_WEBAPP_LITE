@@ -1,3 +1,7 @@
+import {
+  buildTeamOperationalStatus, operationalTimestampMs
+} from './station-operational-status.js';
+
 export const FORMATION_EVENT_SCHEMA_VERSION = 3;
 export const TEAM_ROSTER_SCHEMA_VERSION = 3;
 export const CANDIDATE_SCHEMA_VERSION = 3;
@@ -234,34 +238,6 @@ export function activeParticipantIds(teamData, candidates = []) {
     records.get(participantId)?.status !== CANDIDATE_STATUSES.WITHDRAWN);
 }
 
-function timestampMs(value) {
-  if (typeof value?.toMillis === 'function') return value.toMillis();
-  if (value instanceof Date) return value.getTime();
-  const number = Number(value);
-  return Number.isFinite(number) ? number : null;
-}
-
-function raceActivityMs(race) {
-  return timestampMs(race?.endedAt) ?? timestampMs(race?.startedAt) ?? 0;
-}
-
-function stationSnapshotForTeam(team, races, nowMs, isRaceRunning) {
-  const teamRaces = races.filter(race => padTeam(race.team) === team);
-  const sorted = teamRaces.slice().sort((a, b) => raceActivityMs(b) - raceActivityMs(a));
-  const running = sorted.filter(race => isRaceRunning(race, nowMs));
-  const current = running[0] || sorted[0] || null;
-  return {
-    activeRaceCount: running.length,
-    currentRace: current,
-    station: String(current?.station || ''),
-    round: Math.max(0, Math.floor(Number(current?.round) || 0)),
-    raceStatus: running.length ? 'running' : current ? 'stopped' : 'not_started',
-    lastActivityAt: current ? raceActivityMs(current) : null,
-    hasConcurrentRaces: running.length > 1,
-    stationIdsVisited: [...new Set(teamRaces.map(race => String(race.station || '')).filter(Boolean))]
-  };
-}
-
 export function buildFormationDashboardSnapshot({
   event = null,
   teams = [],
@@ -269,7 +245,7 @@ export function buildFormationDashboardSnapshot({
   recommendations = [],
   races = [],
   nowMs = Date.now(),
-  isRaceRunning = race => race?.status === 'running'
+  isRaceRunning
 } = {}) {
   const normalizedCandidates = (Array.isArray(candidates) ? candidates : [])
     .map(value => normalizeCandidateRecord(value));
@@ -295,7 +271,7 @@ export function buildFormationDashboardSnapshot({
     });
     const active = teamCandidates.filter(candidate => candidate.status === CANDIDATE_STATUSES.ACTIVE).length;
     const withdrawn = teamCandidates.filter(candidate => candidate.status === CANDIDATE_STATUSES.WITHDRAWN).length;
-    const station = stationSnapshotForTeam(team, races, nowMs, isRaceRunning);
+    const station = buildTeamOperationalStatus({ team, races, nowMs, isRaceRunning });
     return {
       team,
       total: participantIds.length,
@@ -332,8 +308,47 @@ export function buildFormationDashboardSnapshot({
         candidate: candidateByKey.get(candidateKey(item.team, item.participantId)) ||
           normalizeCandidateRecord(null, { team: item.team, participantId: item.participantId })
       }))
-      .sort((a, b) => (timestampMs(a.createdAt) || 0) - (timestampMs(b.createdAt) || 0)),
+      .sort((a, b) => (operationalTimestampMs(a.createdAt) || 0) -
+        (operationalTimestampMs(b.createdAt) || 0)),
     anomalies: teamRows.flatMap(team => team.hasConcurrentRaces
       ? [`לצוות ${Number(team.team)} יש יותר מסבב פעיל אחד`] : [])
   };
+}
+
+function candidateSearchScore(candidate, query, digits) {
+  const participant = String(candidate.participantId || '');
+  const rawNationalId = String(candidate.nationalId || '');
+  const rawName = String(candidate.firstName || '').trim().toLocaleLowerCase('he');
+  const nationalId = rawNationalId === CANDIDATE_PROFILE_DEFAULTS.nationalId ? '' : rawNationalId;
+  const name = rawName === CANDIDATE_PROFILE_DEFAULTS.firstName ? '' : rawName;
+  if (participant === query) return 0;
+  if (digits && nationalId === digits) return 1;
+  if (participant.startsWith(query)) return 2;
+  if (name.startsWith(query)) return 3;
+  if (digits && nationalId.startsWith(digits)) return 4;
+  if (participant.includes(query)) return 5;
+  if (name.includes(query)) return 6;
+  if (digits && nationalId.includes(digits)) return 7;
+  return Number.POSITIVE_INFINITY;
+}
+
+export function searchFormationCandidates(dashboard, queryValue, limit = 20) {
+  const query = String(queryValue || '').trim().toLocaleLowerCase('he');
+  if (!query) return [];
+  const digits = query.replace(/\D+/g, '');
+  const candidates = (Array.isArray(dashboard?.teams) ? dashboard.teams : [])
+    .flatMap(team => team.candidates || []);
+  const seen = new Set();
+  return candidates.map(candidate => ({ candidate, score:candidateSearchScore(candidate, query, digits) }))
+    .filter(result => Number.isFinite(result.score))
+    .sort((left, right) => left.score - right.score ||
+      left.candidate.participantId.localeCompare(right.candidate.participantId, 'he', { numeric:true }))
+    .filter(result => {
+      const key = candidateKey(result.candidate.team, result.candidate.participantId);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, Math.max(1, Math.min(50, Number(limit) || 20)))
+    .map(result => result.candidate);
 }

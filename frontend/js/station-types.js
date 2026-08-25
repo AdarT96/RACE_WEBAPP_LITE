@@ -388,7 +388,18 @@ const TRAIT_IDS_BY_NAME = Object.freeze({
   "ניתוח מידע ושיקול דעת": "analysis_judgment"
 });
 
-Object.values(DEFAULT_STATION_TYPES).forEach(type => {
+// Physical load is operational schedule metadata, independent from evaluation.
+// Administrators can override each value in settings/stationTypes.
+const DEFAULT_STATION_INTENSITY = Object.freeze({
+  jerrycans: 3, stretcher: 3, crawls: 3, sprints: 3, ironNerves: 0,
+  magen: 3, dynamicFitness: 2, tent: 1, checkers: 0, spiderWeb: 1,
+  pullup: 2, minefield: 1, sackFill: 2, ladder: 1, puzzleA: 1,
+  debate: 0, discussion: 0
+});
+
+Object.entries(DEFAULT_STATION_TYPES).forEach(([typeId, type]) => {
+  type.intensity = Number.isInteger(type.intensity) && type.intensity >= 0 && type.intensity <= 3
+    ? type.intensity : (DEFAULT_STATION_INTENSITY[typeId] || 0);
   type.params = (Array.isArray(type.params) ? type.params : []).map(param => ({
     ...param,
     id: param.id || TRAIT_IDS_BY_NAME[param.name] || param.name
@@ -400,4 +411,5 @@ if (typeof window !== "undefined") {
   window.DEFAULT_STATION_TYPES = DEFAULT_STATION_TYPES;
   window.DEFAULT_STATION_ORDER = DEFAULT_STATION_ORDER;
   window.TRAIT_IDS_BY_NAME = TRAIT_IDS_BY_NAME;
+  window.DEFAULT_STATION_INTENSITY = DEFAULT_STATION_INTENSITY;
 }

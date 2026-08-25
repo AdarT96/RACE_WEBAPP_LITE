@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ROLES, canControlSession, canEvaluate, canManageFormation,
-  canRecommendDropout, destinationForRole, roleNeedsTeam
+  canManageSchedule, canRecommendDropout, canViewSchedule, destinationForRole, roleNeedsTeam
 } from '../frontend/js/roles.js';
 
 test('formation commander is global and routes only to the operational dashboard', () => {
@@ -12,6 +12,8 @@ test('formation commander is global and routes only to the operational dashboard
   assert.equal(canControlSession(ROLES.FORMATION_COMMANDER), false);
   assert.equal(canEvaluate(ROLES.FORMATION_COMMANDER), false);
   assert.equal(canRecommendDropout(ROLES.FORMATION_COMMANDER), false);
+  assert.equal(canManageSchedule(ROLES.FORMATION_COMMANDER), true);
+  assert.equal(canViewSchedule(ROLES.FORMATION_COMMANDER), true);
 });
 
 test('team commander and evaluator keep separate capabilities', () => {
@@ -21,4 +23,7 @@ test('team commander and evaluator keep separate capabilities', () => {
   assert.equal(canRecommendDropout(ROLES.OPERATOR), true);
   assert.equal(canEvaluate(ROLES.EVALUATOR), true);
   assert.equal(canManageFormation(ROLES.OPERATOR), false);
+  assert.equal(canManageSchedule(ROLES.OPERATOR), false);
+  assert.equal(canViewSchedule(ROLES.OPERATOR), true);
+  assert.equal(canViewSchedule(ROLES.EVALUATOR), true);
 });
