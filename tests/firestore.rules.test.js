@@ -8,7 +8,9 @@ import {
   collection, doc, getDoc, getDocs, query, where,
   setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
 } from 'firebase/firestore';
-import { buildIssueReportData } from '../frontend/js/issue-report.js';
+import {
+  buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
+} from '../frontend/js/issue-report.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
 let testEnv;
@@ -655,6 +657,9 @@ test('a reporter can create only an allow-listed own-team issue report', async (
   await assertFails(getDoc(doc(evaluator, 'issue_reports', 'report-1')));
   await assertSucceeds(getDoc(doc(userDb('formation1'), 'issue_reports', 'report-1')));
   await assertSucceeds(getDocs(query(collection(userDb('formation1'), 'issue_reports'),
+    where('eventId', '==', 'event-1'),
+    where('schemaVersion', '==', ISSUE_REPORT_SCHEMA_VERSION))));
+  await assertFails(getDocs(query(collection(userDb('formation1'), 'issue_reports'),
     where('eventId', '==', 'event-1'))));
   await assertFails(updateDoc(doc(evaluator, 'issue_reports', 'report-1'), { status: 'resolved' }));
 

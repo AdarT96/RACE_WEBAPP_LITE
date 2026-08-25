@@ -11,6 +11,7 @@ import {
 } from './formation-operations-model.js';
 import { buildFormationAlerts } from './formation-alerts-model.js';
 import { createFormationOperationsRepository } from './formation-operations-repository.js';
+import { ISSUE_REPORT_SCHEMA_VERSION } from './issue-report.js';
 import { ROLES, canManageFormation } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
@@ -123,7 +124,8 @@ function attachEvent(nextEventId) {
     renderDashboard();
   }));
   eventSubscriptions.push(onSnapshot(query(collection(db, 'issue_reports'),
-    where('eventId', '==', eventId)), snapshot => {
+    where('eventId', '==', eventId),
+    where('schemaVersion', '==', ISSUE_REPORT_SCHEMA_VERSION)), snapshot => {
     issueReports = snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
     renderDashboard();
   }, () => {

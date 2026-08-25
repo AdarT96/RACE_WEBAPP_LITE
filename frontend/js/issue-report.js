@@ -10,6 +10,7 @@ export const ISSUE_REPORT_CATEGORIES = Object.freeze([
 
 export const ISSUE_REPORT_MAX_DESCRIPTION = 2000;
 export const ISSUE_REPORT_MAX_STEPS = 2000;
+export const ISSUE_REPORT_SCHEMA_VERSION = 2;
 
 function cleanText(value, maxLength) {
   return String(value ?? '').trim().slice(0, maxLength);
@@ -76,6 +77,6 @@ export function buildIssueReportData({ draft, reporter, context, environment, ev
       viewport: cleanText(environment?.viewport, 50),
       userAgent: cleanText(environment?.userAgent, 500)
     },
-    schemaVersion: 2
+    schemaVersion: ISSUE_REPORT_SCHEMA_VERSION
   };
 }
