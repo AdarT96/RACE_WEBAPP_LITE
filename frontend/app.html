@@ -877,6 +877,10 @@
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
+      <button class="btn btn-primary admin-only" onclick="doSyncAllSheets()" style="padding:12px 20px"
+              title="מסנכרן את כל האירוע: כל הצוותים, כל התחנות וכל המעריכים">
+        🗂 סנכרן הכל
+      </button>
     </div>
   </div>
 
@@ -3424,6 +3428,43 @@
     return rows;
   }
 
+  // כל הסבבים של האירוע הפעיל — בלי סינון צוות/תחנה. משמש את "סנכרן הכל".
+  // מוגבל ל-eventId כדי שגיבושים קודמים לא ייסחבו לתוך הסנכרון.
+  async function gatherAllRacesForEvent() {
+    if (!activeFormationEvent) return [];
+    const constraints = [where('eventId', '==', activeFormationEvent.id)];
+    if (privacyMigrationComplete) {
+      constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
+    }
+    const snap = await getDocs(query(collection(db, 'races'), ...constraints));
+    const list = [];
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    return list;
+  }
+
+  // בניית השורות משותפת לשני הכפתורים — ההבדל היחיד הוא היקף הסבבים
+  // והצוותים שנכנסים אליה, לא הלוגיקה.
+  async function buildSyncPayload(races, teams) {
+    await loadEvaluatorDirectory();
+    const [arrivalsByRace, assessmentsByRace] = await Promise.all([
+      gatherEvaluatorArrivalsForRaces(races),
+      gatherEvaluatorAssessmentsByUidForRaces(races)
+    ]);
+
+    let stationRows = [];
+    for (const race of races) {
+      stationRows = stationRows.concat(buildSyncRowsForRace(
+        race,
+        arrivalsByRace.get(race.id) || new Map(),
+        assessmentsByRace.get(race.id) || new Map()
+      ));
+    }
+
+    const teamList = [...new Set((teams || []).filter(Boolean))];
+    const noteGroups = await Promise.all(teamList.map(team => collectTeamNoteRows(team)));
+    return { stationRows, noteRows: noteGroups.flat() };
+  }
+
   async function gatherRacesForCurrentContext() {
     if (!activeFormationEvent || !selectedTeam || !selectedStation) return [];
     const constraints = [
@@ -3547,24 +3588,8 @@
     try {
       if (!await commitPendingReps()) return; // לא מסנכרנים צילום חלקי
 
-      // תוצאות התחנה (הסבבים של הצוות+התחנה הנוכחיים)
-      await loadEvaluatorDirectory();
-      const races = await gatherRacesForCurrentContext();
-      const [arrivalsByRace, assessmentsByRace] = await Promise.all([
-        gatherEvaluatorArrivalsForRaces(races),
-        gatherEvaluatorAssessmentsByUidForRaces(races)
-      ]);
-      let stationRows = [];
-      for (const r of races) {
-        stationRows = stationRows.concat(buildSyncRowsForRace(
-          r,
-          arrivalsByRace.get(r.id) || new Map(),
-          assessmentsByRace.get(r.id) || new Map()
-        ));
-      }
-
-      // הערות כלליות של הצוות הנוכחי בלבד
-      const noteRows = await collectTeamNoteRows(selectedTeam);
+      const { stationRows, noteRows } = await buildSyncPayload(
+        await gatherRacesForCurrentContext(), [selectedTeam]);
 
       const allRows = stationRows.concat(noteRows);
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
@@ -3597,6 +3622,62 @@
         const head = ok === 0 ? `הסנכרון נכשל (${fail})` : `סונכרנו ${ok}/${allRows.length}`;
         showToast(`${head} — ${detail}`, ok === 0 ? 'error' : 'info');
         console.warn('[sync] problems:', problems);
+      }
+    } catch (e) {
+      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+    } finally {
+      sheetsSyncInProgress = false;
+      if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
+    }
+  };
+
+  // סנכרון כל האירוע — כל הצוותים, כל התחנות, כל המעריכים, בלחיצה אחת.
+  // הצוותים נגזרים מהסבבים שנמצאו ולא מרשימה קבועה, כדי שלא נבקש הערות
+  // של צוותים שלא רצו בכלל.
+  window.doSyncAllSheets = async () => {
+    if (!isAdmin()) { showToast('סנכרון מלא זמין למנהל בלבד', 'error'); return; }
+    if (sheetsSyncInProgress) { showToast('סנכרון פועל, אנא המתן', 'info'); return; }
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה ב-firebase-config.js', 'error'); return;
+    }
+    if (!activeFormationEvent) { showToast('אין אירוע פעיל', 'error'); return; }
+    if (!confirm('לסנכרן את כל האירוע — כל הצוותים, התחנות והמעריכים?')) return;
+
+    sheetsSyncInProgress = true;
+    const btn = document.querySelector('button[onclick="doSyncAllSheets()"]');
+    const origHtml = btn ? btn.innerHTML : null;
+    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ אוסף נתונים…'; }
+
+    try {
+      const races = await gatherAllRacesForEvent();
+      if (races.length === 0) { showToast('אין סבבים באירוע הפעיל', 'error'); return; }
+
+      const teams = [...new Set(races.map(race => race.team).filter(Boolean))];
+      const { stationRows, noteRows } = await buildSyncPayload(races, teams);
+      const allRows = stationRows.concat(noteRows);
+      if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
+
+      if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const prep = await ensureFilesExist(allRows, (done, total) => {
+        if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
+      });
+      if (prep.problems.length) {
+        showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
+        console.warn('[sync-all] stage 1 failed:', prep.problems);
+        return;
+      }
+
+      const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
+        if (btn) btn.innerHTML = `⏳ מסנכרן צוות ${done}/${total}…`;
+      });
+      const summary = `${teams.length} צוותים · ${races.length} סבבים · הערות ${noteRows.length}`;
+
+      if (problems.length === 0 && ok === allRows.length) {
+        showToast(`✓ סונכרן האירוע כולו — ${ok} רשומות (${summary})`, 'success');
+      } else {
+        const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
+        showToast(`סונכרנו ${ok}/${allRows.length} (${summary}) — ${detail}`, ok === 0 ? 'error' : 'info');
+        console.warn('[sync-all] problems:', problems);
       }
     } catch (e) {
       showToast('שגיאה בסנכרון: ' + e.message, 'error');
