@@ -78,6 +78,8 @@ function doPost(e) {
     if (type === "audit_files")            return handleAuditFiles_(ss, payload);
     if (type === "sync_batch")             return handleSyncBatch_(ss, payload);
     if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
+    if (type === "set_drive_target")       return handleSetDriveTarget_(payload);
+    if (type === "get_drive_target")       return handleGetDriveTarget_();
     return handleRaceRow_(ss, payload);
 
   } catch (err) {
@@ -94,12 +96,13 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-f";
+var CODE_VERSION = "2026-08-23-g";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
 // היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
-var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries", "sync_batch"];
+var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries", "sync_batch",
+                "set_drive_target", "get_drive_target"];
 
 function doGet(e) {
   return buildDataResponse_(true, "Gibush sync alive", {
@@ -410,7 +413,7 @@ function findTeamFile_(ss, team) {
 // לעולם לא מנתיב הסנכרון.
 function createTeamFile_(ss, team) {
   var newSs = SpreadsheetApp.create("צוות " + team + " — גיבוש");
-  try { DriveApp.getFileById(newSs.getId()).moveTo(teamFolder_()); } catch (moveErr) {}
+  var placement = placeCreatedFile_(newSs.getId(), teamFolder_());
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
@@ -421,7 +424,7 @@ function createTeamFile_(ss, team) {
   var reg = getTeamRegistrySheet_(ss);
   reg.appendRow([String(team), newSs.getId(), newSs.getUrl(),
                  Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
-  return newSs;
+  return { ss: newSs, placement: placement };
 }
 
 // הקצאה יזומה מהפאנל. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
@@ -434,8 +437,10 @@ function handleEnsureTeamSheet_(ss, payload) {
     return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
-  var newSs = createTeamFile_(ss, team);
-  return buildDataResponse_(true, "Team sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
+  var created = createTeamFile_(ss, team);
+  return buildDataResponse_(true, "Team sheet created", {
+    url: created.ss.getUrl(), fileId: created.ss.getId(), warning: created.placement
+  });
 }
 
 function findTeamEntry_(ss, team) {
@@ -470,11 +475,113 @@ function eventFolder_() {
   return getOrCreateFolderIn_(driveParent_(), name);
 }
 
+// ההורה של תיקיית האירוע: היעד שהמנהל בחר, ואם לא נבחר — התיקייה שבה
+// יושב הקובץ הראשי, כמו קודם.
 function driveParent_() {
+  var target = getDriveTarget_();
+  if (target.folderId) {
+    return DriveApp.getFolderById(target.folderId); // נכשל ברעש אם אין גישה
+  }
   try {
     var parents = DriveApp.getFileById(SHEET_ID).getParents();
     return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
   } catch (e) { return DriveApp.getRootFolder(); }
+}
+
+// ---------- יעד ב-Drive (נבחר מהפאנל) ----------
+// נשמר ב-Script Properties: זה מאפיין של שכבת הסנכרון, לא של האפליקציה,
+// ולכן אינו נשלח בכל בקשה.
+var DRIVE_TARGET_PROP = "DRIVE_TARGET";
+
+function getDriveTarget_() {
+  try {
+    var raw = PropertiesService.getScriptProperties().getProperty(DRIVE_TARGET_PROP);
+    if (!raw) return { folderId: "", shareWith: [] };
+    var parsed = JSON.parse(raw);
+    return {
+      folderId: String(parsed.folderId || ""),
+      shareWith: Array.isArray(parsed.shareWith) ? parsed.shareWith : []
+    };
+  } catch (err) {
+    return { folderId: "", shareWith: [] };
+  }
+}
+
+// מקבל מזהה תיקייה או כתובת Drive מלאה. מאמת גישה בפועל לפני שמירה —
+// יעד שאי אפשר לפתוח היה מפיל כל יצירת קובץ בהמשך, ורחוק מהסיבה.
+function handleSetDriveTarget_(payload) {
+  var folderId = extractFolderId_(String(payload.folderId || payload.folderUrl || "").trim());
+  var shareWith = normalizeEmails_(payload.shareWith);
+
+  if (!folderId) {
+    PropertiesService.getScriptProperties().deleteProperty(DRIVE_TARGET_PROP);
+    return buildDataResponse_(true, "יעד אופס — קבצים חדשים ייווצרו לצד הקובץ הראשי",
+                              { folderId: "", folderName: "", shareWith: [] });
+  }
+
+  var folder;
+  try {
+    folder = DriveApp.getFolderById(folderId);
+  } catch (err) {
+    return buildResponse(false,
+      "אין גישה לתיקייה " + folderId + " — ודא שהיא משותפת עם החשבון שמריץ את הסקריפט [" +
+      err.message + "]");
+  }
+
+  PropertiesService.getScriptProperties().setProperty(DRIVE_TARGET_PROP,
+    JSON.stringify({ folderId: folderId, shareWith: shareWith }));
+
+  return buildDataResponse_(true, "יעד נשמר", {
+    folderId: folderId, folderName: folder.getName(), shareWith: shareWith
+  });
+}
+
+function handleGetDriveTarget_() {
+  var target = getDriveTarget_();
+  var name = "", reachable = true, error = "";
+  if (target.folderId) {
+    try { name = DriveApp.getFolderById(target.folderId).getName(); }
+    catch (err) { reachable = false; error = err.message; }
+  }
+  return buildDataResponse_(true, "Drive target", {
+    folderId: target.folderId, folderName: name,
+    shareWith: target.shareWith, reachable: reachable, error: error
+  });
+}
+
+// מקבל גם מזהה נקי וגם כתובת מלאה: .../folders/<id>?usp=...
+function extractFolderId_(value) {
+  if (!value) return "";
+  var m = value.match(/[-\w]{25,}/);
+  return m ? m[0] : "";
+}
+
+function normalizeEmails_(list) {
+  var arr = Array.isArray(list) ? list
+          : String(list || "").split(/[,;\s]+/);
+  var out = [];
+  for (var i = 0; i < arr.length; i++) {
+    var e = String(arr[i] || "").trim();
+    if (e && e.indexOf("@") > 0 && out.indexOf(e) === -1) out.push(e);
+  }
+  return out;
+}
+
+// העברה ליעד ושיתוף. מחזירה תיאור תקלה או "" — כשל כאן משאיר את הקובץ
+// ב-My Drive של בעל הסקריפט במקום ביעד, וזה חייב להיראות.
+function placeCreatedFile_(fileId, folder) {
+  var problems = [];
+  try {
+    DriveApp.getFileById(fileId).moveTo(folder);
+  } catch (err) {
+    problems.push("העברה ליעד נכשלה: " + err.message);
+  }
+  var emails = getDriveTarget_().shareWith;
+  for (var i = 0; i < emails.length; i++) {
+    try { DriveApp.getFileById(fileId).addEditor(emails[i]); }
+    catch (err2) { problems.push("שיתוף עם " + emails[i] + " נכשל: " + err2.message); }
+  }
+  return problems.join(" · ");
 }
 
 function getOrCreateFolderIn_(parent, name) {
@@ -501,7 +608,7 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   }
 
   var newSs = SpreadsheetApp.create("שיט מעריך — " + (name || uid));
-  try { DriveApp.getFileById(newSs.getId()).moveTo(evaluatorFolder_()); } catch (moveErr) {}
+  var placement = placeCreatedFile_(newSs.getId(), evaluatorFolder_());
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
@@ -513,7 +620,9 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   reg.appendRow([uid, name, String(payload.team || ""), newSs.getId(), newSs.getUrl(),
                  Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
 
-  return buildDataResponse_(true, "Evaluator sheet created", { url: newSs.getUrl(), fileId: newSs.getId() });
+  return buildDataResponse_(true, "Evaluator sheet created", {
+    url: newSs.getUrl(), fileId: newSs.getId(), warning: placement
+  });
 }
 
 function getEvalRegistrySheet_(ss) {
