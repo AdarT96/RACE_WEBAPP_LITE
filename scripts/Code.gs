@@ -75,7 +75,7 @@ function doPost(e) {
     if (type === "general_note")           return handleGeneralNote_(ss, payload);
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
     if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
-    if (type === "audit_files")            return handleAuditFiles_(ss);
+    if (type === "audit_files")            return handleAuditFiles_(ss, payload);
     if (type === "sync_batch")             return handleSyncBatch_(ss, payload);
     if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
     return handleRaceRow_(ss, payload);
@@ -94,7 +94,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-e";
+var CODE_VERSION = "2026-08-23-f";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -797,15 +797,27 @@ function noteRowKey_(row) {              // מועמד | מעריך | הערה
 // מדווח מה באמת קיים: כמה רשומות יש לכל צוות/מעריך, מה מצב כל קובץ,
 // וכמה נתונים יש בו. לא יוצר, לא מוחק, לא משנה — רק מדווח.
 // שימוש: POST { type: "audit_files" }
-function handleAuditFiles_(ss) {
+// פתיחת כל קובץ רשום חוצה את מגבלת 6 הדקות ברגע שהרישום גדל (80 קבצים
+// הספיקו), והבקשה חוזרת ריקה — כלי האבחון הפך למכשול. לכן פתיחת הקבצים
+// מתרחשת רק כשמבקשים קבוצה מסוימת; בלי מסנן מוחזר סיכום הרישום בלבד.
+//
+//   { type:"audit_files" }                    → מהיר, בלי פתיחת קבצים
+//   { type:"audit_files", team:"99" }         → בדיקה מלאה לצוות אחד
+//   { type:"audit_files", evaluator:"שם" }    → בדיקה מלאה למעריך אחד
+function handleAuditFiles_(ss, payload) {
+  var teamKey = String((payload && payload.team) || "").trim();
+  var evalKey = String((payload && payload.evaluator) || "").trim();
+
   return buildDataResponse_(true, "Audit complete", {
-    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1, 0),
-    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3, 1)
+    inspected:  !!(teamKey || evalKey),
+    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1, 0, teamKey),
+    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3, 1, evalKey)
   });
 }
 
-// keyCol/fileCol הם אינדקסים מבוססי-0 בתוך שורת הרישום
-function auditRegistry_(ss, tabName, width, fileCol, keyCol) {
+// keyCol/fileCol הם אינדקסים מבוססי-0 בתוך שורת הרישום.
+// filterKey ריק = לא פותחים קבצים, רק סופרים רשומות.
+function auditRegistry_(ss, tabName, width, fileCol, keyCol, filterKey) {
   var sheet = ss.getSheetByName(tabName);
   if (!sheet || sheet.getLastRow() < 2) return [];
 
@@ -817,15 +829,18 @@ function auditRegistry_(ss, tabName, width, fileCol, keyCol) {
     var key    = String(vals[i][keyCol] || "").trim();
     var fileId = String(vals[i][fileCol] || "").trim();
     if (!key && !fileId) continue;
+    if (filterKey && key !== filterKey) continue;
     if (!byKey[key]) { byKey[key] = { key: key, rows: [] }; order.push(key); }
     byKey[key].rows.push({ registryRow: i + 2, fileId: fileId, state: "", tabs: 0, dataRows: 0 });
   }
 
   for (var k = 0; k < order.length; k++) {
     var group = byKey[order[k]];
-    for (var r = 0; r < group.rows.length; r++) inspectFile_(group.rows[r]);
+    if (filterKey) {
+      for (var r = 0; r < group.rows.length; r++) inspectFile_(group.rows[r]);
+      group.withData = group.rows.filter(function (x) { return x.dataRows > 0; }).length;
+    }
     group.duplicateRows = group.rows.length;
-    group.withData = group.rows.filter(function (x) { return x.dataRows > 0; }).length;
   }
 
   return order.map(function (key) { return byKey[key]; });
