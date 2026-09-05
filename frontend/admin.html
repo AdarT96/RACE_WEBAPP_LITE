@@ -7,6 +7,13 @@
   <link rel="stylesheet" href="css/main.css">
   <style>
     .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    /* כרטיס מתקפל — היסטוריית המרוצים ארוכה ודוחפת את שאר הפאנל למטה */
+    .collapsible-card > summary { list-style: none; cursor: pointer; user-select: none; }
+    .collapsible-card > summary::-webkit-details-marker { display: none; }
+    .collapsible-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .collapsible-summary h2 { margin: 0; }
+    .collapsible-chevron { color: var(--text-muted); transition: transform .15s ease; }
+    .collapsible-card[open] .collapsible-chevron { transform: rotate(180deg); }
     .user-row .badge { cursor: default; }
     .empty-state { text-align:center; padding: 40px 20px; color: var(--text-muted); }
     .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
@@ -358,15 +365,19 @@
     <div id="privacy-migration-status" class="section" style="font-size:13px" aria-live="polite">בודק סטטוס…</div>
   </div>
 
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>🏁 היסטוריית מרוצים</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="margin-top:12px">
+      <span style="font-size:12px; color:var(--text-muted)">מונה המרוצים בראש הפאנל מתעדכן גם כשהקטע סגור.</span>
       <button class="btn btn-ghost" onclick="loadRaces()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
     </div>
     <div id="races-list">
       <div class="empty-state"><div class="spinner"></div></div>
     </div>
-  </div>
+  </details>
 
   <!-- הגדרות מערכת -->
   <div class="card">
