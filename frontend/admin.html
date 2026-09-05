@@ -308,6 +308,25 @@
         📁 צור קבצי צוותים
       </button>
     </div>
+
+    <!-- יעד ב-Drive -->
+    <div class="section" style="margin-top:14px">
+      <h3 class="mb-8">📂 יעד השמירה ב-Drive</h3>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
+        תיקייה שבתוכה ייווצרו קבצי הצוותים והמעריכים. אפשר להדביק קישור לתיקייה או את המזהה שלה,
+        כולל תיקייה ב־Shared Drive — צריך רק שתהיה משותפת לחשבון שמריץ את הסקריפט.
+        ריק = לצד הקובץ הראשי, כמו קודם. <strong>חל על קבצים חדשים בלבד.</strong>
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:8px">
+        <input id="drive-target-folder" class="form-input" type="text" dir="ltr"
+               style="flex:2; min-width:240px" placeholder="קישור לתיקייה או מזהה">
+        <input id="drive-target-share" class="form-input" type="text" dir="ltr"
+               style="flex:1; min-width:200px" placeholder="שיתוף עם (אימיילים, מופרדים בפסיק)">
+        <button class="btn btn-primary" onclick="saveDriveTarget()">💾 שמור יעד</button>
+      </div>
+      <div id="drive-target-status" style="font-size:13px; color:var(--text-muted)"></div>
+    </div>
+
     <div id="sheets-audit" style="margin-top:12px; font-size:13px"></div>
   </div>
 
@@ -424,6 +443,7 @@
     loadQuickTags();
     loadPrivacyMigrationStatus();
     loadFormationEventStatus();
+    loadDriveTarget();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -826,6 +846,55 @@
       showToast('שגיאה: ' + e.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; if (orig) btn.innerHTML = orig; }
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  //  יעד השמירה ב-Drive
+  // ═══════════════════════════════════════════════════════════
+  function renderDriveTarget(data) {
+    const box = document.getElementById('drive-target-status');
+    if (!box) return;
+    if (!data.folderId) {
+      box.textContent = 'לא הוגדר יעד — קבצים נוצרים לצד הקובץ הראשי.';
+      box.style.color = 'var(--text-muted)';
+      return;
+    }
+    if (data.reachable === false) {
+      box.innerHTML = `<span style="color:var(--danger)">⚠ היעד השמור אינו נגיש: ${data.error || ''}</span>`;
+      return;
+    }
+    const shared = (data.shareWith || []).length ? ` · משותף עם: ${data.shareWith.join(', ')}` : '';
+    box.innerHTML = `✓ היעד: <strong>${data.folderName || data.folderId}</strong>${shared}`;
+    box.style.color = 'var(--text-muted)';
+  }
+
+  window.loadDriveTarget = async () => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) return;
+    try {
+      const data = await postToSheets({ type: 'get_drive_target' });
+      document.getElementById('drive-target-folder').value = data.folderId || '';
+      document.getElementById('drive-target-share').value = (data.shareWith || []).join(', ');
+      renderDriveTarget(data);
+    } catch (e) {
+      const box = document.getElementById('drive-target-status');
+      if (box) box.textContent = 'לא ניתן לקרוא את היעד: ' + e.message;
+    }
+  };
+
+  window.saveDriveTarget = async () => {
+    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
+      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
+    }
+    const folderUrl = document.getElementById('drive-target-folder').value.trim();
+    const shareWith = document.getElementById('drive-target-share').value.trim();
+    try {
+      // הסקריפט מאמת גישה בפועל לפני שמירה, ולכן שגיאה כאן אמיתית ולא ניחוש
+      const data = await postToSheets({ type: 'set_drive_target', folderUrl, shareWith });
+      renderDriveTarget({ ...data, reachable: true });
+      showToast(folderUrl ? `היעד נשמר: ${data.folderName}` : 'היעד אופס', 'success');
+    } catch (e) {
+      showToast('שמירת היעד נכשלה: ' + e.message, 'error');
     }
   };
 
