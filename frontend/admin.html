@@ -853,6 +853,11 @@
         try {
           const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t), force });
           if (/created/i.test(data.message || '')) created++; else existed++;
+          // הצלחה עם אזהרה היא עדיין בעיה: הקובץ נוצר אבל לא בהכרח היכן
+          // שביקשת. בליעת האזהרה כאן הסתירה כשל הרשאות שלם.
+          for (const warning of [data.warning, ...(data.warnings || [])].filter(Boolean)) {
+            reasons.set(warning, (reasons.get(warning) || 0) + 1);
+          }
         } catch (e) {
           failed++;
           reasons.set(e.message, (reasons.get(e.message) || 0) + 1);
@@ -860,11 +865,12 @@
         }
       }
       let msg = `נוצרו ${created} · קיימים ${existed}`;
-      if (failed) {
-        msg += ` · נכשלו ${failed} — ` +
-               [...reasons].map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
+      if (failed) msg += ` · נכשלו ${failed}`;
+      if (reasons.size) {
+        msg += ' — ' + [...reasons]
+          .map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
       }
-      showToast(msg, failed ? 'error' : 'success');
+      showToast(msg, (failed || reasons.size) ? 'error' : 'success');
     } catch (e) {
       showToast('שגיאה: ' + e.message, 'error');
     } finally {
