@@ -154,6 +154,11 @@
                 style="font-size:13px; padding:6px 12px" title="יוצר קובץ שיט לכל מעריך שאין לו עדיין">
           📄 צור קבצי שיט לכל המעריכים
         </button>
+        <button id="btn-recreate-all-sheets" class="btn btn-warning" onclick="createAllEvaluatorSheets(true)"
+                style="font-size:13px; padding:6px 12px"
+                title="יוצר קבצים חדשים בתיקיית היעד לכל המעריכים, גם למי שכבר יש לו">
+          🆕 קבצי מעריכים חדשים ביעד
+        </button>
         <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
       </div>
     </div>
@@ -760,22 +765,21 @@
   // וגם ה-Apps Script עצמו לא יוצר כפילות (מחזיר את הקובץ הקיים).
   // מחזיר: 'created' | 'skipped' | 'not-evaluator' | 'error'
   async function ensureSheetForUser(uid, u, force = false) {
-    if (u.role !== 'evaluator') return 'not-evaluator';
-    if (u.sheetUrl && !force) return 'skipped'; // כבר יש קובץ (אלא אם ביקשו יצירה מחדש)
-    const body = {
+    if (u.role !== 'evaluator') return { status: 'not-evaluator', warning: '' };
+    if (u.sheetUrl && !force) return { status: 'skipped', warning: '' }; // כבר יש קובץ
+    // force חייב לעבור גם לשרת: דילוג מקומי לפי sheetUrl אינו מספיק —
+    // בלעדיו השרת מחזיר את הקובץ הקיים והיצירה מחדש ביעד לא קורית.
+    const data = await postToSheets({
       type: 'ensure_evaluator_sheet',
       uid:  uid,
       name: u.name || '',
-      team: String(u.team || '')
-    };
-    if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
-      body.key = APP_CONFIG.sheetsApiKey;
-    }
-    const res  = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(body) });
-    const data = await res.json();
-    if (!data.success || !data.url) throw new Error(data.message || 'יצירת הקובץ נכשלה');
+      team: String(u.team || ''),
+      force
+    });
+    if (!data.url) throw new Error(data.message || 'יצירת הקובץ נכשלה');
     await updateDoc(doc(db, 'users', uid), { sheetUrl: data.url, sheetFileId: data.fileId || '' });
-    return 'created';
+    if (data.warning) console.warn(`[evaluator sheet ${uid}]`, data.warning);
+    return { status: 'created', warning: data.warning || '' };
   }
 
   // יצירה למעריך יחיד (כפתור ליד השם / אוטומטית באישור)
@@ -788,7 +792,10 @@
       if (u.role !== 'evaluator' || u.sheetUrl) return; // לא מעריך / כבר יש קובץ
       showToast('יוצר קובץ שיט למעריך…', 'info');
       const result = await ensureSheetForUser(uid, u);
-      if (result === 'created') { showToast('קובץ שיט נוצר למעריך ✓', 'success'); loadUsers(); }
+      if (result.status === 'created') {
+        showToast(result.warning || 'קובץ שיט נוצר למעריך ✓', result.warning ? 'error' : 'success');
+        loadUsers();
+      }
     } catch (e) {
       showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
     }
@@ -807,7 +814,10 @@
       const u = snap.data();
       showToast('יוצר קובץ שיט חדש…', 'info');
       const result = await ensureSheetForUser(uid, u, true); // force
-      if (result === 'created') { showToast('נוצר קובץ שיט חדש ✓', 'success'); loadUsers(); }
+      if (result.status === 'created') {
+        showToast(result.warning || 'נוצר קובץ שיט חדש ✓', result.warning ? 'error' : 'success');
+        loadUsers();
+      }
     } catch (e) {
       showToast('שגיאה ביצירת קובץ שיט: ' + e.message, 'error');
     }
@@ -962,12 +972,17 @@
     return `<div style="margin-bottom:14px"><strong>${title}</strong>${rows}</div>`;
   }
 
-  // יצירה לכל המעריכים הקיימים בבת אחת. מדלג על מי שכבר יש לו קובץ.
-  window.createAllEvaluatorSheets = async () => {
+  // יצירה לכל המעריכים הקיימים בבת אחת.
+  // force=true יוצר קבצים חדשים ביעד הנוכחי גם למי שכבר יש לו קובץ,
+  // במקביל ל"צור קבצים חדשים ביעד" של הצוותים.
+  window.createAllEvaluatorSheets = async (force = false) => {
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
       showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
     }
-    const btn = document.getElementById('btn-create-all-sheets');
+    if (force && !confirm('ליצור קבצי מעריכים חדשים בתיקיית היעד?\n\n' +
+        'הסנכרון יופנה אליהם. הקבצים הקיימים לא יימחקו — הם יישארו כארכיון.')) return;
+
+    const btn = document.getElementById(force ? 'btn-recreate-all-sheets' : 'btn-create-all-sheets');
     const orig = btn ? btn.innerHTML : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
     try {
@@ -977,18 +992,26 @@
       if (evaluators.length === 0) { showToast('אין מעריכים במערכת', 'info'); return; }
 
       let created = 0, skipped = 0, failed = 0;
+      const reasons = new Map();
       // רציף בכוונה — כל יצירת קובץ תופסת נעילת סקריפט ולוקחת כמה שניות
       for (const u of evaluators) {
         try {
-          const r = await ensureSheetForUser(u.uid, u);
-          if (r === 'created') created++;
-          else if (r === 'skipped') skipped++;
-        } catch (e) { failed++; }
+          const r = await ensureSheetForUser(u.uid, u, force);
+          if (r.status === 'created') created++;
+          else if (r.status === 'skipped') skipped++;
+          if (r.warning) reasons.set(r.warning, (reasons.get(r.warning) || 0) + 1);
+        } catch (e) {
+          failed++;
+          reasons.set(e.message, (reasons.get(e.message) || 0) + 1);
+        }
       }
       loadUsers();
       let msg = `נוצרו ${created} · דילוג (כבר קיים) ${skipped}`;
       if (failed) msg += ` · נכשלו ${failed}`;
-      showToast(msg, failed ? 'error' : 'success');
+      if (reasons.size) {
+        msg += ' — ' + [...reasons].map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
+      }
+      showToast(msg, (failed || reasons.size) ? 'error' : 'success');
     } catch (e) {
       showToast('שגיאה: ' + e.message, 'error');
     } finally {
