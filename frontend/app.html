@@ -3292,34 +3292,40 @@
   // ── שלב 2: כתיבת הנתונים ──────────────────────────────────
   // ה-Apps Script מחזיר 200 גם כשהפעולה נכשלה, עם { success:false, message }.
   // לכן חובה לקרוא את הגוף — בדיקת res.ok בלבד ספרה כשלונות כהצלחות.
-  async function sendRow(row) {
-    try {
-      const res = await fetch(APP_CONFIG.sheetsApiUrl, { method: 'POST', body: JSON.stringify(row) });
-      if (!res.ok) return { ok: false, message: `HTTP ${res.status}` };
-      const data = await res.json();
-      return { ok: data.success === true, message: data.message || '', warning: data.warning || '' };
-    } catch (e) {
-      return { ok: false, message: e.message };
+  // אצווה אחת לכל צוות. לא אצווה אחת גלובלית: כל בקשה נשארת הרבה מתחת
+  // לתקרת 6 הדקות של Apps Script, כישלון בצוות אחד אינו מפיל את השאר,
+  // ויש התקדמות אמיתית להציג.
+  function groupRowsByTeam(rows) {
+    const byTeam = new Map();
+    for (const row of rows) {
+      const team = String(row.team ?? row.team_id ?? '').replace(/\D+/g, '') || '?';
+      if (!byTeam.has(team)) byTeam.set(team, []);
+      byTeam.get(team).push(row);
     }
+    return byTeam;
   }
 
-  // הראשונה לבדה ואז השאר במקביל: כשהראשונה נכשלת (למשל אין קובץ לצוות),
-  // רואים את הסיבה מיד במקום להציף את הסקריפט ב-90 בקשות שכולן ייכשלו.
-  async function sendRowsFirstThenRest(rows) {
+  async function sendRowsBatched(rows, onProgress) {
     if (rows.length === 0) return { ok: 0, problems: [] };
-    const results = [await sendRow(rows[0])];
-    if (rows.length > 1) {
-      const rest = await Promise.all(rows.slice(1).map(sendRow));
-      results.push(...rest);
-    }
-    // הודעות זהות מתקבצות — 90 שורות עם אותה תקלה הן תקלה אחת
+
+    const byTeam = groupRowsByTeam(rows);
     const problems = new Map();
-    for (const r of results) {
-      const msg = !r.ok ? (r.message || 'שגיאה לא ידועה') : (r.warning || '');
-      if (msg) problems.set(msg, (problems.get(msg) || 0) + 1);
+    let ok = 0, done = 0;
+
+    for (const [team, teamRows] of byTeam) {
+      onProgress?.(++done, byTeam.size);
+      try {
+        const data = await postToSheets({ type: 'sync_batch', rows: teamRows });
+        ok += Number(data.written || 0);
+        for (const warning of (data.warnings || [])) {
+          problems.set(warning, (problems.get(warning) || 0) + 1);
+        }
+      } catch (e) {
+        problems.set(`צוות ${team}: ${e.message}`, teamRows.length);
+      }
     }
     return {
-      ok: results.filter(r => r.ok).length,
+      ok,
       problems: [...problems].map(([message, count]) => ({ message, count }))
     };
   }
@@ -3577,7 +3583,9 @@
 
       // ── שלב 2: כתיבת הנתונים ──
       if (btn) btn.innerHTML = '⏳ מסנכרן…';
-      const { ok, problems } = await sendRowsFirstThenRest(allRows);
+      const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
+        if (btn) btn.innerHTML = total > 1 ? `⏳ מסנכרן ${done}/${total}…` : '⏳ מסנכרן…';
+      });
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
 

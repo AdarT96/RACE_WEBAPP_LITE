@@ -76,6 +76,7 @@ function doPost(e) {
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
     if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
     if (type === "audit_files")            return handleAuditFiles_(ss);
+    if (type === "sync_batch")             return handleSyncBatch_(ss, payload);
     if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
     return handleRaceRow_(ss, payload);
 
@@ -93,12 +94,12 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-d";
+var CODE_VERSION = "2026-08-23-e";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
 // היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
-var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries"];
+var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries", "sync_batch"];
 
 function doGet(e) {
   return buildDataResponse_(true, "Gibush sync alive", {
@@ -591,6 +592,205 @@ function fileState_(id) {
     if (/not found|no item with the given id|נמצא/i.test(msg)) return "missing";
     throw err;
   }
+}
+
+// ============================================================
+//  סנכרון אצווה — כל השורות בבקשה אחת
+// ============================================================
+// הנתיב הישן שלח בקשת HTTP לכל שורה, וכל אחת תפסה את נעילת הסקריפט,
+// פתחה את הקבצים וקראה את הטאב מחדש. באצווה כל זה קורה פעם אחת:
+// פתיחה אחת לקובץ, קריאה אחת לטאב, setValues אחד, מיון אחד.
+//
+// שימוש: POST { type: "sync_batch", rows: [ <אותן שורות כמו בנתיב הישן> ] }
+function handleSyncBatch_(ss, payload) {
+  var rows = Array.isArray(payload.rows) ? payload.rows : [];
+  if (!rows.length) return buildResponse(false, "Empty batch");
+
+  var warnings = [];
+  var written  = 0;
+
+  var byTeam = {};
+  for (var i = 0; i < rows.length; i++) {
+    var team = batchRowTeam_(rows[i]);
+    if (!team) { warnings.push("שורה ללא צוות — דולגה"); continue; }
+    (byTeam[team] = byTeam[team] || []).push(rows[i]);
+  }
+
+  for (var teamKey in byTeam) {
+    var teamSs;
+    try {
+      teamSs = findTeamFile_(ss, teamKey);
+    } catch (err) {
+      warnings.push(err.message);
+      continue;
+    }
+    if (!teamSs) { warnings.push(missingTeamFileMsg_(teamKey)); continue; }
+    written += writeTeamBatch_(teamSs, byTeam[teamKey], warnings);
+  }
+
+  mirrorEvaluatorBatches_(ss, rows, warnings);
+
+  return buildDataResponse_(true, "Batch written", {
+    rows: rows.length, written: written, warnings: warnings
+  });
+}
+
+function batchRowTeam_(row) {
+  if (String(row.type || "") === "general_note") {
+    return parseInt(String(row.team_id || "").replace(/\D+/g, ""), 10) || 0;
+  }
+  return teamId_(row);
+}
+
+// ---------- אצווה: קובץ צוות ----------
+function writeTeamBatch_(teamSs, rows, warnings) {
+  var byTab = {}, notes = [];
+
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (String(row.type || "") === "general_note") { notes.push(row); continue; }
+
+    var t = resolveType_(row);
+    if (!t) { warnings.push("תחנה לא מזוהה — שורה דולגה"); continue; }
+    var pid = participantId_(row);
+    if (!pid) { warnings.push("שורה ללא מספר מועמד — דולגה"); continue; }
+
+    var def = effectiveDef_(row, t.def);
+    var tab = String(def.name);
+    (byTab[tab] = byTab[tab] || []).push(
+      buildStationRow_(row, def, Number(row.round || 0), String(row.evaluator_name || ""), pid));
+  }
+
+  var count = 0;
+  for (var tabName in byTab) {
+    var sheet = getOrCreateSheet_(teamSs, tabName);
+    ensureHeaders_(sheet, STATION_HEADERS, "#0f766e");
+    count += mergeRows_(sheet, STATION_HEADERS, stationRowKey_, byTab[tabName]);
+    sortStationTab_(sheet);   // פעם אחת לטאב, לא אחרי כל שורה
+  }
+
+  if (notes.length) count += writeTeamNotesBatch_(teamSs, notes);
+  return count;
+}
+
+function writeTeamNotesBatch_(teamSs, notes) {
+  var vals = [];
+  for (var i = 0; i < notes.length; i++) {
+    var pid  = parseInt(notes[i].participant_id, 10);
+    var note = String(notes[i].note || "");
+    if (!pid || !note) continue;
+    vals.push([pid, String(notes[i].evaluator_name || ""), note]);
+  }
+  if (!vals.length) return 0;
+
+  var sheet = getOrCreateSheet_(teamSs, GENERAL_NOTES_TAB);
+  ensureHeaders_(sheet, GENERAL_NOTES_HEADERS, "#9333ea");
+  return mergeRows_(sheet, GENERAL_NOTES_HEADERS, noteRowKey_, vals);
+}
+
+// ---------- אצווה: קבצי מעריכים ----------
+function mirrorEvaluatorBatches_(ss, rows, warnings) {
+  var byEval = {};
+  for (var i = 0; i < rows.length; i++) {
+    var key = String(rows[i].evaluator_uid || "").trim() ||
+              String(rows[i].evaluator_name || "").trim();
+    if (!key) continue;
+    (byEval[key] = byEval[key] || []).push(rows[i]);
+  }
+
+  for (var evalKey in byEval) {
+    var group = byEval[evalKey];
+    var name  = String(group[0].evaluator_name || "").trim();
+    var uid   = String(group[0].evaluator_uid || "").trim();
+
+    var entry = findEvaluatorEntry_(ss, uid, name);
+    if (!entry || !entry.fileId) {
+      warnings.push("אין קובץ רשום למעריך " + (name || evalKey) + " — צור אותו בפאנל המנהל");
+      continue;
+    }
+    try {
+      writeEvaluatorBatch_(openSpreadsheet_(entry.fileId,
+        "קובץ המעריך " + (name || evalKey) + " רשום אבל לא נגיש"), group);
+    } catch (err) {
+      warnings.push(err.message);
+    }
+  }
+}
+
+function writeEvaluatorBatch_(evalSs, rows) {
+  var byPid = {};
+
+  for (var i = 0; i < rows.length; i++) {
+    var row    = rows[i];
+    var isNote = String(row.type || "") === "general_note";
+    var pid    = isNote ? parseInt(row.participant_id, 10) : participantId_(row);
+    if (!pid) continue;
+
+    var vals;
+    if (isNote) {
+      var note = String(row.note || "");
+      if (!note) continue;
+      vals = [];
+      for (var z = 0; z < PARTICIPANT_HEADERS.length; z++) vals.push("");
+      vals[0] = GENERAL_STATION_LABEL;
+      vals[8] = String(row.evaluator_name || "");
+      vals[9] = note;
+    } else {
+      var t = resolveType_(row);
+      if (!t) continue;
+      var def = effectiveDef_(row, t.def);
+      vals = buildParticipantRow_(row, def, Number(row.round || 0), String(row.evaluator_name || ""));
+    }
+    (byPid[pid] = byPid[pid] || []).push(vals);
+  }
+
+  for (var p in byPid) {
+    var sheet = getOrCreateSheet_(evalSs, String(p));
+    ensureHeaders_(sheet, PARTICIPANT_HEADERS, "#4a86e8");
+    mergeRows_(sheet, PARTICIPANT_HEADERS, participantRowKey_, byPid[p]);
+  }
+}
+
+// ---------- מיזוג אצווה לתוך טאב ----------
+// קורא את הטאב פעם אחת, ממזג בזיכרון לפי מפתח, וכותב פעם אחת.
+// מוסיף או מחליף בלבד — לעולם אינו מקצר את הטבלה, כדי ששורות שאינן
+// באצווה (סבב אחר, מעריך אחר, סנכרון קודם) לא יימחקו בטעות.
+function mergeRows_(sheet, headers, keyOf, newRows) {
+  if (!newRows.length) return 0;
+
+  var last = sheet.getLastRow();
+  var existing = (last >= 2)
+    ? sheet.getRange(2, 1, last - 1, headers.length).getValues()
+    : [];
+
+  var index = {};
+  for (var i = 0; i < existing.length; i++) index[keyOf(existing[i])] = i;
+
+  for (var j = 0; j < newRows.length; j++) {
+    var key = keyOf(newRows[j]);
+    if (index[key] !== undefined) existing[index[key]] = newRows[j];
+    else { existing.push(newRows[j]); index[key] = existing.length - 1; }
+  }
+
+  sheet.getRange(2, 1, existing.length, headers.length).setValues(existing);
+  return newRows.length;
+}
+
+// המפתחות זהים לאלה שהנתיב הישן חיפש לפיהם, כדי שסנכרון חוזר ידרוס
+// את אותה שורה בדיוק ולא ייצור כפילות.
+function stationRowKey_(row) {           // סבב | מועמד | מעריך
+  return [row[0], row[2], row[9]].join(" ");
+}
+
+function participantRowKey_(row) {       // תחנה | סבב | מעריך
+  if (String(row[0]) === GENERAL_STATION_LABEL) {
+    return ["GN", row[8], row[9]].join(" ");  // הערה כללית: מעריך | טקסט
+  }
+  return [row[0], row[1], row[8]].join(" ");
+}
+
+function noteRowKey_(row) {              // מועמד | מעריך | הערה
+  return [row[0], row[1], row[2]].join(" ");
 }
 
 // ---------- ביקורת קבצים (קריאה בלבד) ----------
