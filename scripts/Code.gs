@@ -104,7 +104,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-h";
+var CODE_VERSION = "2026-08-23-i";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -447,8 +447,13 @@ function handleEnsureTeamSheet_(ss, payload) {
   var team = parseInt(String(payload.team || "").replace(/\D+/g, ""), 10);
   if (!team) return buildResponse(false, "Missing team");
 
+  // force: יוצר קובץ חדש ביעד הנוכחי גם כשקיים קובץ במקום אחר. הרישום
+  // מכריע לפי השורה האחרונה, ולכן הקובץ החדש הופך למקור מרגע זה.
+  // הישן נשאר בשלמותו כארכיון של האירוע הקודם.
+  var force = payload.force === true || String(payload.force) === "true";
+
   var entry = findTeamEntry_(ss, team);
-  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
+  if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
@@ -627,8 +632,9 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   var name = String(payload.name || "").trim();
   if (!uid && !name) return buildResponse(false, "Missing uid/name");
 
+  var force = payload.force === true || String(payload.force) === "true";
   var entry = findEvaluatorEntry_(ss, uid, name);
-  if (entry && entry.fileId && fileState_(entry.fileId) === "alive") {
+  if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 

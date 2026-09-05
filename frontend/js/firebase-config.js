@@ -19,7 +19,7 @@ const APP_CONFIG = {
   appVersion: "lite-v1.1-schedule",
 
   // Google Apps Script endpoint (same Sheet as the full ESP32 app; irrelevant fields sent empty).
-  // פריסת 23.08.2026. הפריסה הקודמת (AKfycbyb…) עדיין קיימת ומריצה קוד ישן —
+  // פריסת 23.08.2026. הפריסה הקודמת (AKfycbwctfnIiKlonwevxWfG6X4H_dL-BxBwUb4cIpJtVPCGnT3CWALBpDkmdufgDn8-xgCTFg…) עדיין קיימת ומריצה קוד ישן —
   // כל עוד הכתובת כאן לא מצביעה על הפריסה הפעילה, הקוד החדש לא מגיע לאפליקציה.
   sheetsApiUrl: "https://script.google.com/macros/s/AKfycbwctfnIiKlonwevxWfG6X4H_dL-BxBwUb4cIpJtVPCGnT3CWALBpDkmdufgDn8-xgCTFg/exec",
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",

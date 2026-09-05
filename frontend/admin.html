@@ -314,7 +314,14 @@
       <button id="btn-create-team-sheets" class="btn btn-primary" onclick="createAllTeamSheets()">
         📁 צור קבצי צוותים
       </button>
+      <button id="btn-recreate-team-sheets" class="btn btn-warning" onclick="createAllTeamSheets(true)">
+        🆕 צור קבצים חדשים ביעד
+      </button>
     </div>
+    <p style="font-size:12px; color:var(--text-muted); margin-top:8px">
+      "צור קבצים חדשים ביעד" מייצר קבצים חדשים בתיקיית היעד גם כשקיימים קבצים במקום אחר,
+      ומפנה את הסנכרון אליהם. הקבצים הישנים נשארים שלמים כארכיון. מיועד לתחילת אירוע.
+    </p>
 
     <!-- יעד ב-Drive -->
     <div class="section" style="margin-top:14px">
@@ -822,14 +829,19 @@
     return data;
   }
 
-  window.createAllTeamSheets = async () => {
+  window.createAllTeamSheets = async (force = false) => {
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
       showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
     }
     const max = APP_CONFIG.maxTeamNumber || 15;
-    if (!confirm(`ליצור קבצי גיליון לצוותים 1–${max}? (צוות שכבר יש לו קובץ יידלג)`)) return;
+    const question = force
+      ? `ליצור קבצים חדשים בתיקיית היעד לצוותים 1–${max}?\n\n` +
+        `הסנכרון יופנה אליהם מרגע זה. הקבצים הקיימים לא יימחקו — הם יישארו כארכיון ` +
+        `ולא יקבלו עוד נתונים.`
+      : `ליצור קבצי גיליון לצוותים 1–${max}? (צוות שכבר יש לו קובץ יידלג)`;
+    if (!confirm(question)) return;
 
-    const btn = document.getElementById('btn-create-team-sheets');
+    const btn = document.getElementById(force ? 'btn-recreate-team-sheets' : 'btn-create-team-sheets');
     const orig = btn ? btn.innerHTML : null;
     if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
     try {
@@ -839,7 +851,7 @@
       for (let t = 1; t <= max; t++) {
         if (btn) btn.innerHTML = `⏳ צוות ${t}/${max}…`;
         try {
-          const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t) });
+          const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t), force });
           if (/created/i.test(data.message || '')) created++; else existed++;
         } catch (e) {
           failed++;
