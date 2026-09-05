@@ -57,8 +57,16 @@ var STATION_TYPES = {
 var STATION_ORDER = ["jerrycans", "stretcher", "crawls", "sprints", "ironNerves", "magen", "dynamicFitness", "tent", "checkers", "spiderWeb", "pullup", "minefield", "sackFill", "ladder", "puzzleA", "debate", "discussion"];
 
 // ---------- Router ----------
+// נאסף במהלך הבקשה ומצורף לתשובה. Apps Script מאתחל גלובלים בכל הרצה,
+// כך שאין דליפה בין בקשות.
+var REQUEST_WARNINGS = [];
+function addRequestWarning_(message) {
+  if (REQUEST_WARNINGS.indexOf(message) === -1) REQUEST_WARNINGS.push(message);
+}
+
 function doPost(e) {
   var lock = LockService.getScriptLock();
+  REQUEST_WARNINGS = [];
   try {
     lock.waitLock(20000);
     var payload = JSON.parse(e.postData.contents || "{}");
@@ -96,7 +104,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-g";
+var CODE_VERSION = "2026-08-23-h";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -124,8 +132,15 @@ function doGet(e) {
 function authorizeDrive() {
   var root = DriveApp.getRootFolder().getName();
   var main = DriveApp.getFileById(SHEET_ID).getName();
-  Logger.log("Drive OK — root: %s | main sheet: %s", root, main);
-  return "Drive OK — " + main;
+
+  // חייב להפעיל createFolder בפועל: היא דורשת הרשאת Drive מלאה, רחבה
+  // יותר מקריאה. בלי הקריאה הזו מסך ההרשאות מבקש רק את הצר — וזה בדיוק
+  // מה שהפיל את יצירת הקבצים ביעד החדש.
+  var probe = DriveApp.getRootFolder().createFolder("gibush-permission-probe");
+  probe.setTrashed(true);
+
+  Logger.log("Drive OK — root: %s | main sheet: %s | createFolder: OK", root, main);
+  return "Drive OK (כולל יצירת תיקיות) — " + main;
 }
 
 // בודקת אם לסקריפט באמת יש הרשאת Drive פעילה. זו החשודה המרכזית
@@ -584,9 +599,19 @@ function placeCreatedFile_(fileId, folder) {
   return problems.join(" · ");
 }
 
+// יצירת תיקייה דורשת הרשאת Drive מלאה, רחבה יותר ממה שנדרש לכתיבה
+// לקבצים קיימים. אם ההרשאה חסרה, עדיף לשים את הקובץ ישירות ביעד מאשר
+// להפיל את ההקצאה כולה — הארגון בתיקיות הוא נוחות, לא תנאי לנכונות.
 function getOrCreateFolderIn_(parent, name) {
   var it = parent.getFoldersByName(name);
-  return it.hasNext() ? it.next() : parent.createFolder(name);
+  if (it.hasNext()) return it.next();
+  try {
+    return parent.createFolder(name);
+  } catch (err) {
+    addRequestWarning_("לא ניתן ליצור את התיקייה \"" + name + "\" — הקובץ נשמר ישירות ביעד. " +
+                       "להרשאה מלאה: הרץ authorizeDrive בעורך ואשר מחדש [" + err.message + "]");
+    return parent;
+  }
 }
 
 function hebMonth_() {
@@ -1084,6 +1109,9 @@ function buildResponse(success, message) {
 function buildDataResponse_(success, message, data) {
   var out = { success: success, message: message };
   for (var k in data) out[k] = data[k];
+  if (REQUEST_WARNINGS.length) {
+    out.warnings = (out.warnings || []).concat(REQUEST_WARNINGS);
+  }
   return ContentService.createTextOutput(JSON.stringify(out))
                        .setMimeType(ContentService.MimeType.JSON);
 }
