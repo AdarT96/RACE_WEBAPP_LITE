@@ -15,6 +15,7 @@ import { ISSUE_REPORT_SCHEMA_VERSION } from './issue-report.js';
 import { ROLES, canManageFormation } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
+import { resolveActiveUserContext } from './active-user-context.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -472,10 +473,15 @@ onAuthStateChanged(auth, async user => {
   }
   try {
     const snapshot = await getDoc(doc(db, 'users', user.uid));
-    const profile = snapshot.exists() ? snapshot.data() : null;
+    const rawProfile = snapshot.exists() ? snapshot.data() : null;
+    const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile) : null;
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canManageFormation(profile.role)) {
       await signOut(auth);
       location.href = 'index.html';
+      return;
+    }
+    if (profile.eventAccess === false) {
+      showBlocking('המשתמש אינו משובץ בסגל האירוע הפעיל. פנה למנהל.');
       return;
     }
     currentUser = { ...profile, uid: user.uid };

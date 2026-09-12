@@ -5,6 +5,8 @@ export const ROLES = Object.freeze({
   FORMATION_COMMANDER: 'formation_commander'
 });
 
+export const EVENT_STAFFING_SCHEMA_VERSION = 1;
+
 export const ROLE_LABELS = Object.freeze({
   [ROLES.ADMIN]: 'מנהל',
   [ROLES.OPERATOR]: 'מפק״צ',
@@ -54,4 +56,21 @@ export function destinationForRole(role) {
   if (role === ROLES.FORMATION_COMMANDER) return 'commander.html';
   if ([ROLES.OPERATOR, ROLES.EVALUATOR].includes(role)) return 'app.html';
   return 'index.html';
+}
+
+export function profileForActiveEvent(profile = {}, pointer = {}, staff = null) {
+  const activeEventId = pointer?.status === 'active' ? String(pointer.eventId || '') : '';
+  if (profile.role === ROLES.ADMIN || !activeEventId ||
+      Number(pointer.eventStaffingSchemaVersion || 0) !== EVENT_STAFFING_SCHEMA_VERSION) {
+    return { ...profile, activeEventId, eventAccess:true };
+  }
+
+  const role = String(staff?.role || '');
+  const team = roleNeedsTeam(role) ? Number(staff?.team) : null;
+  const validAssignment = staff?.active === true &&
+    [ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(role) &&
+    (!roleNeedsTeam(role) || (Number.isInteger(team) && team >= 1 && team <= 15));
+  if (!validAssignment) return { ...profile, activeEventId, eventAccess:false };
+
+  return { ...profile, role, team, activeEventId, eventAccess:true };
 }

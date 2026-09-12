@@ -42,10 +42,10 @@ export function createScheduleRepository(db, user) {
   const revisionRef = (eventId, revisionKey) =>
     doc(db, 'events', String(eventId), 'scheduleRevisions', String(revisionKey));
 
-  function assertActiveEvent(snapshot) {
-    if (!snapshot.exists() || snapshot.data().status !== 'active') {
-      throw new Error('האירוע אינו פעיל ולכן הלו״ז נעול לעריכה.');
-    }
+  function assertEditableEvent(snapshot) {
+    const status = snapshot.exists() ? snapshot.data().status : '';
+    const editable = status === 'active' || (status === 'draft' && user.role === 'admin');
+    if (!editable) throw new Error('האירוע אינו זמין לעריכת לו״ז.');
   }
 
   function assertWorkspaceRevisions({ masterSnapshot, draftSnapshot, expectedPublishedRevision, expectedDraftRevision }) {
@@ -188,7 +188,7 @@ export function createScheduleRepository(db, user) {
         const [eventSnapshot, masterSnapshot, draftSnapshot] = await Promise.all([
           transaction.get(eventRef(eventId)), transaction.get(masterRef(eventId)), transaction.get(draftRef(eventId))
         ]);
-        assertActiveEvent(eventSnapshot);
+        assertEditableEvent(eventSnapshot);
         const revisions = assertWorkspaceRevisions({
           masterSnapshot, draftSnapshot, expectedPublishedRevision, expectedDraftRevision
         });
@@ -209,7 +209,7 @@ export function createScheduleRepository(db, user) {
         const [eventSnapshot, masterSnapshot, draftSnapshot] = await Promise.all([
           transaction.get(eventRef(eventId)), transaction.get(masterRef(eventId)), transaction.get(draftRef(eventId))
         ]);
-        assertActiveEvent(eventSnapshot);
+        assertEditableEvent(eventSnapshot);
         const revisions = assertWorkspaceRevisions({
           masterSnapshot, draftSnapshot, expectedPublishedRevision, expectedDraftRevision
         });
@@ -236,7 +236,7 @@ export function createScheduleRepository(db, user) {
           transaction.get(eventRef(eventId)), transaction.get(masterRef(eventId)),
           transaction.get(draftRef(eventId)), transaction.get(sourceReference)
         ]);
-        assertActiveEvent(eventSnapshot);
+        assertEditableEvent(eventSnapshot);
         const revisions = assertWorkspaceRevisions({
           masterSnapshot, draftSnapshot, expectedPublishedRevision, expectedDraftRevision
         });

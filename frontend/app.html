@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>מערכת תזמון גיבוש</title>
-  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     /* ── Station header ────────────────────────────────── */
@@ -1129,6 +1129,7 @@
     arrivalEntriesInOrder, arrivalOrderSignature, arrivalWithOrder, moveParticipantInOrder
   } from "./js/arrival-order-model.js";
   import { ROLES, roleLabel } from "./js/roles.js";
+  import { resolveActiveUserContext } from "./js/active-user-context.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
@@ -1626,9 +1627,14 @@
     if (!user) { window.location.href = 'index.html'; return; }
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (!snap.exists()) { await signOut(auth); window.location.href = 'index.html'; return; }
-    const data = snap.data();
+    const data = await resolveActiveUserContext(db, user.uid, snap.data());
     if (!data.approved && data.role !== 'admin') {
       showToast('החשבון ממתין לאישור מנהל.', 'error');
+      setTimeout(() => { signOut(auth); window.location.href = 'index.html'; }, 2500);
+      return;
+    }
+    if (data.eventAccess === false) {
+      showToast('המשתמש אינו משובץ בסגל האירוע הפעיל. פנה למנהל.', 'error');
       setTimeout(() => { signOut(auth); window.location.href = 'index.html'; }, 2500);
       return;
     }
@@ -3273,10 +3279,16 @@
     };
 
     for (const team of teams) {
-      await step({ type: 'ensure_team_sheet', team }, `קובץ צוות ${team}`);
+      await step({
+        type:'ensure_team_sheet', team,
+        eventId:activeFormationEvent?.id || '', eventName:activeFormationEvent?.name || ''
+      }, `קובץ צוות ${team}`);
     }
     for (const ev of evaluators) {
-      await step({ type: 'ensure_evaluator_sheet', uid: ev.uid, name: ev.name, team: ev.team },
+      await step({
+        type:'ensure_evaluator_sheet', uid:ev.uid, name:ev.name, team:ev.team,
+        eventId:activeFormationEvent?.id || '', eventName:activeFormationEvent?.name || ''
+      },
                  `קובץ מעריך ${ev.name || ev.uid}`);
     }
     return { checked: total, problems };
@@ -3402,6 +3414,7 @@
       if (!hasData) continue;
 
       const row = {
+        eventId:        String(race.eventId || activeFormationEvent?.id || ''),
         id:             pidRaw,
         team:           String(race.team || ''),
         round:          Number(race.round || 0),
@@ -3902,6 +3915,7 @@
       for (const n of notes) {
         const body = {
           type:           'general_note',
+          eventId:        activeFormationEvent?.id || '',
           participant_id: pid,
           team_id:        team,
           note:           n.text || '',

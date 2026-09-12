@@ -10,6 +10,7 @@ import { getAuth, createUserWithEmailAndPassword,
 import { getFirestore, doc, setDoc,
          getDoc, serverTimestamp }     from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 import { ROLES, destinationForRole, isKnownRole, roleNeedsTeam } from './roles.js';
+import { resolveActiveUserContext } from './active-user-context.js';
 
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
@@ -114,7 +115,12 @@ async function loginUser() {
       return showMsg('login-msg', '⏳ החשבון ממתין לאישור מנהל.', 'warning');
     }
 
-    window.location.href = destinationForRole(data.role);
+    const context = await resolveActiveUserContext(db, cred.user.uid, data);
+    if (context.eventAccess === false) {
+      await signOut(auth);
+      return showMsg('login-msg', 'החשבון מאושר, אך אינו משובץ בסגל האירוע הפעיל. פנה למנהל.', 'warning');
+    }
+    window.location.href = destinationForRole(context.role);
   } catch(err) {
     showMsg('login-msg', firebaseErrMsg(err.code));
   } finally {

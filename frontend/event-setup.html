@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>הגדרת אירוע גיבוש</title>
+  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
+  <link rel="stylesheet" href="css/event-setup.css?v=1.3-event-setup">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand"><span class="logo">🧭</span><span>הגדרת אירוע</span></div>
+    <div class="navbar-actions">
+      <span id="setup-user" class="setup-user"></span>
+      <a class="btn btn-ghost" href="admin.html">פאנל מנהל</a>
+      <button class="btn btn-ghost" type="button" id="logout-button">התנתק</button>
+    </div>
+  </nav>
+
+  <main class="setup-shell">
+    <header class="setup-heading">
+      <div><h1>הקמת אירוע גיבוש</h1><p>מגדירים טיוטה, שומרים כל שלב, ומפעילים רק בסיום.</p></div>
+      <span id="event-status" class="setup-status">טיוטה חדשה</span>
+    </header>
+
+    <div id="page-alert" class="alert" hidden></div>
+
+    <section id="event-picker" class="card setup-start-card">
+      <div>
+        <h2>אירוע חדש</h2>
+        <p>האירוע לא ישפיע על העבודה בשטח עד שתפעיל אותו בשלב האחרון.</p>
+      </div>
+      <div class="setup-inline-form">
+        <input id="new-event-name" class="form-input" maxlength="120" placeholder="למשל: גיבוש ספטמבר 2026">
+        <button id="create-event-button" class="btn btn-success" type="button">צור טיוטה</button>
+      </div>
+      <div id="existing-events-wrap" hidden>
+        <label for="existing-events">או המשך אירוע קיים</label>
+        <select id="existing-events" class="form-select"></select>
+      </div>
+    </section>
+
+    <div id="setup-workspace" hidden>
+      <nav class="setup-steps" aria-label="שלבי הגדרת האירוע">
+        <a href="#details-card"><span>1</span>פרטי אירוע</a>
+        <a href="#schedule-card"><span>2</span>לו״ז וצוותים</a>
+        <a href="#candidates-card"><span>3</span>מועמדים</a>
+        <a href="#staff-card"><span>4</span>אנשי צוות</a>
+        <a href="#drive-card"><span>5</span>קבצים והפעלה</a>
+      </nav>
+
+      <section id="details-card" class="card setup-card">
+        <div class="setup-card-head"><span class="setup-step-number">1</span><div><h2>פרטי האירוע</h2><p>אפשר לשנות את השם גם לאחר ההפעלה.</p></div></div>
+        <div class="setup-inline-form">
+          <input id="event-name" class="form-input" maxlength="120">
+          <button id="save-details-button" class="btn btn-primary" type="button">שמור שם</button>
+        </div>
+      </section>
+
+      <section id="schedule-card" class="card setup-card">
+        <div class="setup-card-head"><span class="setup-step-number">2</span><div><h2>לו״ז וצוותים</h2><p>עמודות הצוותים בלו״ז הן המקור לרשימת הצוותים באירוע.</p></div></div>
+        <div class="setup-grid-two">
+          <div class="setup-subsection">
+            <h3>הגדרה ידנית</h3>
+            <label>מספרי צוותים, מופרדים בפסיק
+              <input id="team-numbers" class="form-input" dir="ltr" placeholder="1, 2, 3">
+            </label>
+            <div class="setup-actions">
+              <button id="save-teams-button" class="btn btn-primary" type="button">שמור צוותים</button>
+              <a id="open-schedule-button" class="btn btn-ghost" href="#">פתח עורך לו״ז</a>
+            </div>
+          </div>
+          <div class="setup-subsection">
+            <h3>ייבוא Excel</h3>
+            <p>עמודות חובה: תאריך, שעה, ועמודה לכל צוות. תא תחנה נכתב למשל: <b>ספרינטים | 2</b>.</p>
+            <input id="schedule-file" class="form-input" type="file" accept=".xlsx,.xls,.csv">
+            <label>סיבת חריגת עומס (נדרש רק אם הייבוא יוצר אזהרה)
+              <input id="schedule-import-reason" class="form-input" maxlength="500">
+            </label>
+            <div class="setup-actions">
+              <button id="import-schedule-button" class="btn btn-primary" type="button">ייבא ושמור טיוטה</button>
+              <button id="download-schedule-template" class="btn btn-ghost" type="button">הורד תבנית CSV</button>
+            </div>
+          </div>
+        </div>
+        <div id="schedule-summary" class="setup-summary"></div>
+      </section>
+
+      <section id="candidates-card" class="card setup-card">
+        <div class="setup-card-head"><span class="setup-step-number">3</span><div><h2>מועמדים</h2><p>מספר מועמד נדרש. שאר הפרטים יכולים להיות 0 ולהושלם מאוחר יותר.</p></div></div>
+        <div class="setup-actions setup-toolbar">
+          <label>צוות<select id="candidate-team" class="form-select"></select></label>
+          <button id="add-candidate-button" class="btn btn-ghost" type="button">+ הוסף מועמד</button>
+          <button id="save-candidates-button" class="btn btn-primary" type="button">שמור צוות</button>
+        </div>
+        <div id="candidate-table" class="candidate-setup-table"></div>
+        <details class="setup-import-panel">
+          <summary>ייבוא מועמדים מ־Excel</summary>
+          <p>כותרות נתמכות: צוות, מספר מועמד, שם פרטי, תעודת זהות, טלפון איש קשר חירום, כשירות רופא, כשירות חובש.</p>
+          <input id="candidate-file" class="form-input" type="file" accept=".xlsx,.xls,.csv">
+          <button id="import-candidates-button" class="btn btn-primary" type="button">ייבא לכל הצוותים</button>
+        </details>
+      </section>
+
+      <section id="staff-card" class="card setup-card">
+        <div class="setup-card-head"><span class="setup-step-number">4</span><div><h2>אנשי צוות</h2><p>לכל צוות מומלץ מפק״צ אחד ולפחות שני מעריכים. חוסר יוצג כאזהרה בלבד.</p></div></div>
+        <div id="staff-list" class="staff-setup-list"></div>
+        <button id="save-staff-button" class="btn btn-primary" type="button">שמור שיבוץ</button>
+      </section>
+
+      <section id="drive-card" class="card setup-card">
+        <div class="setup-card-head"><span class="setup-step-number">5</span><div><h2>קבצי Drive והפעלה</h2><p>נוצרים רק הקבצים ששייכים לאירוע. הפעולה בטוחה להרצה חוזרת.</p></div></div>
+        <div class="setup-actions">
+          <button id="create-drive-files-button" class="btn btn-primary" type="button">צור/בדוק קבצי אירוע</button>
+          <button id="refresh-readiness-button" class="btn btn-ghost" type="button">רענן בדיקה</button>
+        </div>
+        <div id="drive-progress" class="setup-summary"></div>
+        <div class="readiness-grid">
+          <div class="readiness-panel blockers"><h3>חובה לפני הפעלה</h3><ul id="readiness-blockers"></ul></div>
+          <div class="readiness-panel warnings"><h3>אזהרות שאינן חוסמות</h3><ul id="readiness-warnings"></ul></div>
+        </div>
+        <div class="activation-bar">
+          <span id="activation-summary"></span>
+          <button id="activate-event-button" class="btn btn-success" type="button">פרסם לו״ז והפעל אירוע</button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <div id="toast-container"></div>
+  <script src="js/firebase-config.js"></script>
+  <script src="js/station-types.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script type="module" src="js/event-setup-page.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>פאנל מנהל — מערכת תזמון גיבוש</title>
-  <link rel="stylesheet" href="css/main.css">
+  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
   <style>
     .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
     /* כרטיס מתקפל — היסטוריית המרוצים ארוכה ודוחפת את שאר הפאנל למטה */
@@ -114,20 +114,17 @@
         <p id="formation-event-summary" style="font-size:13px; color:var(--text-muted); margin-top:5px">טוען…</p>
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap">
+        <a href="event-setup.html" class="btn btn-success">צור או ערוך אירוע</a>
         <a id="formation-schedule-link" href="schedule.html" class="btn btn-primary" style="display:none">פתח לו״ז</a>
         <a id="formation-dashboard-link" href="commander.html" class="btn btn-info" style="display:none">פתח דשבורד</a>
       </div>
     </div>
     <div id="formation-event-create" class="section" style="display:none">
       <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
-        יצירת אירוע מצלמת את רשימות הצוותים והתחנות ומאתחלת את כל המועמדים כפעילים.
-        נתוני הניסוי הישנים נשארים ללא שינוי ואינם משויכים לאירוע החדש.
+        אירוע חדש נבנה כטיוטה מסודרת: לו״ז, צוותים, מועמדים, סגל וקבצי Drive.
+        הטיוטה אינה משפיעה על העבודה בשטח עד להפעלה.
       </p>
-      <div class="flex gap-8" style="flex-wrap:wrap">
-        <input id="formation-event-name" class="form-input" maxlength="120" style="flex:1; min-width:220px"
-               placeholder="שם האירוע, למשל גיבוש אוגוסט 2026">
-        <button id="formation-event-create-btn" class="btn btn-success" onclick="createFormationEvent()">צור והפעל אירוע</button>
-      </div>
+      <a href="event-setup.html" class="btn btn-success">פתח הגדרת אירוע</a>
     </div>
     <div id="formation-event-active-actions" style="display:none">
       <button class="btn btn-danger" onclick="closeFormationEvent()" style="padding:7px 12px">סגור אירוע פעיל</button>
@@ -430,9 +427,9 @@
     normalizeAssessment, normalizeNotes
   } from "./js/evaluation-model.js";
   import {
-    CANDIDATE_SCHEMA_VERSION, CLEARANCE_LABELS, CLEARANCE_STATUSES,
+    CLEARANCE_LABELS, CLEARANCE_STATUSES,
     FORMATION_EVENT_SCHEMA_VERSION, TEAM_ROSTER_SCHEMA_VERSION,
-    candidateKey, candidateRosterIssues, normalizeCandidateRoster,
+    candidateRosterIssues, normalizeCandidateRoster,
     normalizeEmergencyContactPhone, normalizeNationalId, padTeam
   } from "./js/formation-operations-model.js";
   import { ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam } from "./js/roles.js";
@@ -509,97 +506,6 @@
       actions.style.display = 'none';
       link.style.display = 'none';
       scheduleLink.style.display = 'none';
-    }
-  };
-
-  window.createFormationEvent = async () => {
-    const name = String(document.getElementById('formation-event-name')?.value || '').trim().slice(0, 120);
-    if (!name) { showToast('יש להזין שם לאירוע', 'error'); return; }
-    const button = document.getElementById('formation-event-create-btn');
-    button.disabled = true;
-    try {
-      if (await activeFormationEvent()) throw new Error('כבר קיים אירוע פעיל');
-      const teamsSnapshot = await getDocs(collection(db, 'teams'));
-      const teams = teamsSnapshot.docs.map(teamDocument => {
-        const data = teamDocument.data();
-        return {
-          team: padTeam(teamDocument.id),
-          candidates: normalizeCandidateRoster(data),
-          stationMap: data.stationMap && typeof data.stationMap === 'object' ? data.stationMap : {},
-          rosterSource: data.rosterSource && typeof data.rosterSource === 'object'
-            ? data.rosterSource : { type: 'manual', sourceId: 'legacy-admin-ui', fileName: '' }
-        };
-      }).filter(team => team.team && team.candidates.length > 0);
-      if (teams.length === 0) throw new Error('לא נמצאו צוותים עם מועמדים');
-      for (const team of teams) {
-        const issues = candidateRosterIssues(team.candidates);
-        if (issues.length) throw new Error(`צוות ${Number(team.team)}: ${issues[0]}`);
-      }
-      const nationalIdOwners = new Map();
-      teams.forEach(team => team.candidates.forEach(candidate => {
-        const existing = nationalIdOwners.get(candidate.nationalId);
-        if (existing) {
-          throw new Error(`תעודת הזהות ${candidate.nationalId} משויכת גם למועמד ${existing.participantId} בצוות ${Number(existing.team)} וגם למועמד ${candidate.participantId} בצוות ${Number(team.team)}`);
-        }
-        nationalIdOwners.set(candidate.nationalId, { team: team.team, participantId: candidate.participantId });
-      }));
-
-      const candidateCount = teams.reduce((total, team) => total + team.candidates.length, 0);
-      if (candidateCount + teams.length + 2 > 500) {
-        throw new Error('האירוע גדול ממגבלת האתחול. יש לפצל את יצירת הנתונים.');
-      }
-
-      const eventReference = doc(collection(db, 'events'));
-      await runTransaction(db, async transaction => {
-        const pointerReference = activeEventPointerRef();
-        const pointerSnapshot = await transaction.get(pointerReference);
-        if (pointerSnapshot.exists() && pointerSnapshot.data().status === 'active' && pointerSnapshot.data().eventId) {
-          const pointedEvent = await transaction.get(doc(db, 'events', pointerSnapshot.data().eventId));
-          if (pointedEvent.exists() && pointedEvent.data().status === 'active') {
-            throw new Error('כבר קיים אירוע פעיל');
-          }
-        }
-        transaction.set(eventReference, {
-          name, status: 'active', teamCount: teams.length, candidateCount,
-          schemaVersion: FORMATION_EVENT_SCHEMA_VERSION,
-          createdAt: serverTimestamp(), createdBy: currentAdmin.uid,
-          closedAt: null, closedBy: ''
-        });
-        teams.forEach(team => {
-          const participantIds = team.candidates.map(candidate => candidate.participantId);
-          transaction.set(doc(db, 'events', eventReference.id, 'teams', team.team), {
-            teamNumber: team.team, participantIds, stationMap: team.stationMap,
-            rosterSource: team.rosterSource,
-            schemaVersion: TEAM_ROSTER_SCHEMA_VERSION,
-            createdAt: serverTimestamp(), updatedAt: serverTimestamp()
-          });
-          team.candidates.forEach(candidate => {
-            transaction.set(doc(db, 'events', eventReference.id, 'candidates', candidateKey(team.team, candidate.participantId)), {
-              participantId: candidate.participantId, team: team.team,
-              firstName: candidate.firstName, nationalId: candidate.nationalId,
-              emergencyContactPhone: candidate.emergencyContactPhone,
-              doctorClearance: candidate.doctorClearance,
-              medicClearance: candidate.medicClearance,
-              status: 'active', reasonCode: '', reasonLabel: '', statusRevision: 0,
-              profileRevision: 0, lastTransitionId: '',
-              statusChangedAt: serverTimestamp(), statusChangedBy: currentAdmin.uid,
-              profileUpdatedAt: serverTimestamp(), profileUpdatedBy: currentAdmin.uid,
-              schemaVersion: CANDIDATE_SCHEMA_VERSION
-            });
-          });
-        });
-        transaction.set(pointerReference, {
-          eventId: eventReference.id, status: 'active', schemaVersion: FORMATION_EVENT_SCHEMA_VERSION,
-          updatedAt: serverTimestamp(), updatedBy: currentAdmin.uid
-        });
-      });
-      document.getElementById('formation-event-name').value = '';
-      showToast(`האירוע נוצר: ${candidateCount} מועמדים ב־${teams.length} צוותים`, 'success');
-      await loadFormationEventStatus();
-    } catch (error) {
-      showToast('יצירת האירוע נכשלה: ' + error.message, 'error');
-    } finally {
-      button.disabled = false;
     }
   };
 
@@ -738,7 +644,6 @@
       await updateDoc(doc(db,'users',uid),{approved:true});
       showToast('המשתמש אושר ✓','success');
       loadUsers();
-      await createEvaluatorSheetFor(uid); // יוצר קובץ שיט אוטומטית אם זה מעריך
     }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
@@ -752,14 +657,13 @@
       const patch = roleNeedsTeam(newRole) ? { role:newRole } : { role:newRole, team:null };
       await updateDoc(doc(db,'users',uid),patch);
       showToast('תפקיד עודכן: '+roleLabel(newRole),'success');
-      if (newRole === 'evaluator') await createEvaluatorSheetFor(uid);
       loadUsers();
     }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
 
   // ═══════════════════════════════════════════════════════════
-  //  קובץ שיט אישי לכל מעריך — נוצר אוטומטית דרך Apps Script
+  //  כלי תאימות לקובץ מעריך ישן ללא שיוך אירוע
   // ═══════════════════════════════════════════════════════════
   // מבטיח קובץ שיט למעריך יחיד. idempotent: מדלג אם כבר יש קישור שמור,
   // וגם ה-Apps Script עצמו לא יוצר כפילות (מחזיר את הקובץ הקיים).
@@ -782,7 +686,8 @@
     return { status: 'created', warning: data.warning || '' };
   }
 
-  // יצירה למעריך יחיד (כפתור ליד השם / אוטומטית באישור)
+  // יצירה למעריך יחיד דרך כפתור התאימות בלבד. אירועים חדשים מקצים
+  // קבצים משלב הקבצים במסך הקמת האירוע, לעולם לא בזמן אישור משתמש.
   async function createEvaluatorSheetFor(uid) {
     if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) return;
     try {

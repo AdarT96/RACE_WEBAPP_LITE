@@ -14,10 +14,10 @@ var TIMEZONE         = "Asia/Jerusalem";
 // רישומים בקובץ הראשי (מרכזייה בלבד — לא מחזיק נתוני הערכה)
 var EVAL_REGISTRY_TAB     = "קבצי מעריכים";
 var EVAL_FOLDER_NAME      = "קבצי מעריכים";
-var EVAL_REGISTRY_HEADERS = ["UID", "שם מעריך", "צוות", "File ID", "קישור", "נוצר"];
+var EVAL_REGISTRY_HEADERS = ["UID", "שם מעריך", "צוות", "File ID", "קישור", "נוצר", "Event ID"];
 var TEAM_REGISTRY_TAB     = "קבצי צוותים";
 var TEAM_FOLDER_NAME      = "קבצי צוותים";
-var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר"];
+var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר", "Event ID"];
 
 // תיקיית האירוע ב-Drive — אחת לכל האירוע (2–4 ימים). ריק = מחושב אוטומטית
 // "גיבוש <חודש> <שנה>" מהתאריך הנוכחי (אירוע אחד בחודש). אפשר לקבע שם ידני.
@@ -104,13 +104,13 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-08-23-i";
+var CODE_VERSION = "2026-09-11-event-files";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
 // היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
 var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries", "sync_batch",
-                "set_drive_target", "get_drive_target"];
+                "set_drive_target", "get_drive_target", "event_scoped_files"];
 
 function doGet(e) {
   return buildDataResponse_(true, "Gibush sync alive", {
@@ -182,7 +182,7 @@ function handleRaceRow_(ss, payload) {
   if (!team) return buildResponse(false, "Missing team");
 
   // נתיב חם — כתיבה בלבד. קובץ חסר הוא שגיאה, לא טריגר ליצירה.
-  var teamSs = findTeamFile_(ss, team);
+  var teamSs = findTeamFile_(ss, team, eventId_(payload));
   if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
   writeStationRow_(teamSs, payload, def);   // קובץ צוות — טאב לפי תחנה
 
@@ -374,7 +374,7 @@ function handleGeneralNote_(ss, payload) {
   var team = parseInt(String(payload.team_id || "").replace(/\D+/g, ""), 10);
   if (!team) return buildResponse(false, "Missing team");
 
-  var teamSs = findTeamFile_(ss, team);
+  var teamSs = findTeamFile_(ss, team, eventId_(payload));
   if (!teamSs) return buildResponse(false, missingTeamFileMsg_(team));
   writeTeamGeneralNoteRow_(teamSs, payload);  // טאב ייעודי — הערה כללית אינה שייכת לתחנה
 
@@ -416,8 +416,8 @@ function writeGeneralNoteRow_(ss, payload) {
 // חיפוש בלבד — ללא יצירה וללא DriveApp. זהו הנתיב שרץ בכל שורת סנכרון.
 // אם הקובץ הרשום נמחק או שאין אליו גישה, openById נכשל ברעש — וזה רצוי:
 // הגרסה הקודמת בלעה את הכשל וייצרה קובץ חדש בכל בקשה.
-function findTeamFile_(ss, team) {
-  var entry = findTeamEntry_(ss, team);
+function findTeamFile_(ss, team, eventId) {
+  var entry = findTeamEntry_(ss, team, eventId);
   if (!entry || !entry.fileId) return null;
   return openSpreadsheet_(entry.fileId,
     "קובץ הצוות " + team + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
@@ -426,9 +426,10 @@ function findTeamFile_(ss, team) {
 
 // יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהפאנל),
 // לעולם לא מנתיב הסנכרון.
-function createTeamFile_(ss, team) {
-  var newSs = SpreadsheetApp.create("צוות " + team + " — גיבוש");
-  var placement = placeCreatedFile_(newSs.getId(), teamFolder_());
+function createTeamFile_(ss, team, eventId, eventName) {
+  var suffix = eventName || eventId || "גיבוש";
+  var newSs = SpreadsheetApp.create("צוות " + team + " — " + safeDriveName_(suffix));
+  var placement = placeCreatedFile_(newSs.getId(), teamFolder_(eventId, eventName));
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
@@ -438,7 +439,7 @@ function createTeamFile_(ss, team) {
 
   var reg = getTeamRegistrySheet_(ss);
   reg.appendRow([String(team), newSs.getId(), newSs.getUrl(),
-                 Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
+                 Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT), String(eventId || "")]);
   return { ss: newSs, placement: placement };
 }
 
@@ -452,24 +453,29 @@ function handleEnsureTeamSheet_(ss, payload) {
   // הישן נשאר בשלמותו כארכיון של האירוע הקודם.
   var force = payload.force === true || String(payload.force) === "true";
 
-  var entry = findTeamEntry_(ss, team);
+  var eventId = eventId_(payload);
+  var eventName = String(payload.eventName || "").trim();
+  var entry = findTeamEntry_(ss, team, eventId);
   if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
-  var created = createTeamFile_(ss, team);
+  var created = createTeamFile_(ss, team, eventId, eventName);
   return buildDataResponse_(true, "Team sheet created", {
     url: created.ss.getUrl(), fileId: created.ss.getId(), warning: created.placement
   });
 }
 
-function findTeamEntry_(ss, team) {
+function findTeamEntry_(ss, team, eventId) {
   var sheet = ss.getSheetByName(TEAM_REGISTRY_TAB);
   if (!sheet || sheet.getLastRow() < 2) return null;
-  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
   var found = null;
   for (var i = 0; i < vals.length; i++) {
-    if (Number(vals[i][0]) === Number(team)) found = { fileId: String(vals[i][1] || ""), url: String(vals[i][2] || "") };
+    var rowEventId = String(vals[i][4] || "").trim();
+    if (Number(vals[i][0]) === Number(team) && rowEventId === String(eventId || "")) {
+      found = { fileId: String(vals[i][1] || ""), url: String(vals[i][2] || "") };
+    }
   }
   return found;
 }
@@ -481,18 +487,25 @@ function getTeamRegistrySheet_(ss) {
     sheet.getRange(1, 1, 1, TEAM_REGISTRY_HEADERS.length)
          .setFontWeight("bold").setBackground("#0f766e").setFontColor("white");
     sheet.setFrozenRows(1);
+  } else {
+    sheet.getRange(1, 1, 1, TEAM_REGISTRY_HEADERS.length).setValues([TEAM_REGISTRY_HEADERS]);
   }
   return sheet;
 }
 
-function teamFolder_()      { return getOrCreateFolderIn_(eventFolder_(), TEAM_FOLDER_NAME); }
-function evaluatorFolder_() { return getOrCreateFolderIn_(eventFolder_(), EVAL_FOLDER_NAME); }
+function teamFolder_(eventId, eventName)      { return getOrCreateFolderIn_(eventFolder_(eventId, eventName), TEAM_FOLDER_NAME); }
+function evaluatorFolder_(eventId, eventName) { return getOrCreateFolderIn_(eventFolder_(eventId, eventName), EVAL_FOLDER_NAME); }
 
 // תיקיית האירוע — לצד הקובץ הראשי, כל קבצי הצוותים והמעריכים בתוכה
-function eventFolder_() {
-  var name = EVENT_FOLDER_NAME ||
+function eventFolder_(eventId, eventName) {
+  var scopedName = eventId ? (safeDriveName_(eventName || "אירוע") + " — " + safeDriveName_(eventId)) : "";
+  var name = scopedName || EVENT_FOLDER_NAME ||
              ("גיבוש " + hebMonth_() + " " + Utilities.formatDate(new Date(), TIMEZONE, "yyyy"));
   return getOrCreateFolderIn_(driveParent_(), name);
+}
+
+function safeDriveName_(value) {
+  return String(value || "").replace(/[\\/:*?\"<>|]/g, "-").trim().slice(0, 120) || "אירוע";
 }
 
 // ההורה של תיקיית האירוע: היעד שהמנהל בחר, ואם לא נבחר — התיקייה שבה
@@ -630,16 +643,19 @@ function hebMonth_() {
 function handleEnsureEvaluatorSheet_(ss, payload) {
   var uid  = String(payload.uid || "").trim();
   var name = String(payload.name || "").trim();
+  var eventId = eventId_(payload);
+  var eventName = String(payload.eventName || "").trim();
   if (!uid && !name) return buildResponse(false, "Missing uid/name");
 
   var force = payload.force === true || String(payload.force) === "true";
-  var entry = findEvaluatorEntry_(ss, uid, name);
+  var entry = findEvaluatorEntry_(ss, uid, name, eventId);
   if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
     return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
   }
 
-  var newSs = SpreadsheetApp.create("שיט מעריך — " + (name || uid));
-  var placement = placeCreatedFile_(newSs.getId(), evaluatorFolder_());
+  var newSs = SpreadsheetApp.create("שיט מעריך — " + (name || uid) +
+    (eventId ? " — " + safeDriveName_(eventName || eventId) : ""));
+  var placement = placeCreatedFile_(newSs.getId(), evaluatorFolder_(eventId, eventName));
 
   var first = newSs.getSheets()[0];
   first.setName("אודות");
@@ -649,7 +665,7 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
 
   var reg = getEvalRegistrySheet_(ss);
   reg.appendRow([uid, name, String(payload.team || ""), newSs.getId(), newSs.getUrl(),
-                 Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT)]);
+                 Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT), eventId]);
 
   return buildDataResponse_(true, "Evaluator sheet created", {
     url: newSs.getUrl(), fileId: newSs.getId(), warning: placement
@@ -663,21 +679,26 @@ function getEvalRegistrySheet_(ss) {
     sheet.getRange(1, 1, 1, EVAL_REGISTRY_HEADERS.length)
          .setFontWeight("bold").setBackground("#9333ea").setFontColor("white");
     sheet.setFrozenRows(1);
+  } else {
+    sheet.getRange(1, 1, 1, EVAL_REGISTRY_HEADERS.length).setValues([EVAL_REGISTRY_HEADERS]);
   }
   return sheet;
 }
 
-function findEvaluatorEntry_(ss, uid, name) {
+function findEvaluatorEntry_(ss, uid, name, eventId) {
   var sheet = ss.getSheetByName(EVAL_REGISTRY_TAB);
   if (!sheet || sheet.getLastRow() < 2) return null;
-  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 5).getValues();
+  var vals = sheet.getRange(2, 1, sheet.getLastRow() - 1, 7).getValues();
   var found = null;
   for (var i = 0; i < vals.length; i++) {
     var rowUid  = String(vals[i][0] || "").trim();
     var rowName = String(vals[i][1] || "").trim();
+    var rowEventId = String(vals[i][6] || "").trim();
     var matches = (uid && rowUid && rowUid === uid) || (!uid && name && rowName === name) ||
                   (uid && !rowUid && name && rowName === name);
-    if (matches) found = { fileId: String(vals[i][3] || ""), url: String(vals[i][4] || "") };
+    if (matches && rowEventId === String(eventId || "")) {
+      found = { fileId: String(vals[i][3] || ""), url: String(vals[i][4] || "") };
+    }
   }
   return found;
 }
@@ -690,7 +711,7 @@ function mirrorToEvaluatorFile_(ss, payload, fn) {
   var name = String(payload.evaluator_name || "").trim();
   if (!uid && !name) return "השורה נשלחה בלי זיהוי מעריך";
 
-  var entry = findEvaluatorEntry_(ss, uid, name);
+  var entry = findEvaluatorEntry_(ss, uid, name, eventId_(payload));
   if (!entry || !entry.fileId) {
     return "אין קובץ רשום למעריך " + (name || uid) + " — צור אותו בפאנל המנהל";
   }
@@ -753,19 +774,23 @@ function handleSyncBatch_(ss, payload) {
   for (var i = 0; i < rows.length; i++) {
     var team = batchRowTeam_(rows[i]);
     if (!team) { warnings.push("שורה ללא צוות — דולגה"); continue; }
-    (byTeam[team] = byTeam[team] || []).push(rows[i]);
+    var eventId = eventId_(rows[i]);
+    var groupKey = eventId + "::" + team;
+    if (!byTeam[groupKey]) byTeam[groupKey] = { team: team, eventId: eventId, rows: [] };
+    byTeam[groupKey].rows.push(rows[i]);
   }
 
   for (var teamKey in byTeam) {
+    var teamGroup = byTeam[teamKey];
     var teamSs;
     try {
-      teamSs = findTeamFile_(ss, teamKey);
+      teamSs = findTeamFile_(ss, teamGroup.team, teamGroup.eventId);
     } catch (err) {
       warnings.push(err.message);
       continue;
     }
-    if (!teamSs) { warnings.push(missingTeamFileMsg_(teamKey)); continue; }
-    written += writeTeamBatch_(teamSs, byTeam[teamKey], warnings);
+    if (!teamSs) { warnings.push(missingTeamFileMsg_(teamGroup.team)); continue; }
+    written += writeTeamBatch_(teamSs, teamGroup.rows, warnings);
   }
 
   mirrorEvaluatorBatches_(ss, rows, warnings);
@@ -832,9 +857,10 @@ function writeTeamNotesBatch_(teamSs, notes) {
 function mirrorEvaluatorBatches_(ss, rows, warnings) {
   var byEval = {};
   for (var i = 0; i < rows.length; i++) {
-    var key = String(rows[i].evaluator_uid || "").trim() ||
-              String(rows[i].evaluator_name || "").trim();
-    if (!key) continue;
+    var evaluatorKey = String(rows[i].evaluator_uid || "").trim() ||
+                       String(rows[i].evaluator_name || "").trim();
+    if (!evaluatorKey) continue;
+    var key = eventId_(rows[i]) + "::" + evaluatorKey;
     (byEval[key] = byEval[key] || []).push(rows[i]);
   }
 
@@ -843,7 +869,7 @@ function mirrorEvaluatorBatches_(ss, rows, warnings) {
     var name  = String(group[0].evaluator_name || "").trim();
     var uid   = String(group[0].evaluator_uid || "").trim();
 
-    var entry = findEvaluatorEntry_(ss, uid, name);
+    var entry = findEvaluatorEntry_(ss, uid, name, eventId_(group[0]));
     if (!entry || !entry.fileId) {
       warnings.push("אין קובץ רשום למעריך " + (name || evalKey) + " — צור אותו בפאנל המנהל");
       continue;
@@ -919,18 +945,18 @@ function mergeRows_(sheet, headers, keyOf, newRows) {
 // המפתחות זהים לאלה שהנתיב הישן חיפש לפיהם, כדי שסנכרון חוזר ידרוס
 // את אותה שורה בדיוק ולא ייצור כפילות.
 function stationRowKey_(row) {           // סבב | מועמד | מעריך
-  return [row[0], row[2], row[9]].join(" ");
+  return [row[0], row[2], row[9]].join("\u0000");
 }
 
 function participantRowKey_(row) {       // תחנה | סבב | מעריך
   if (String(row[0]) === GENERAL_STATION_LABEL) {
-    return ["GN", row[8], row[9]].join(" ");  // הערה כללית: מעריך | טקסט
+    return ["GN", row[8], row[9]].join("\u0000");  // הערה כללית: מעריך | טקסט
   }
-  return [row[0], row[1], row[8]].join(" ");
+  return [row[0], row[1], row[8]].join("\u0000");
 }
 
 function noteRowKey_(row) {              // מועמד | מעריך | הערה
-  return [row[0], row[1], row[2]].join(" ");
+  return [row[0], row[1], row[2]].join("\u0000");
 }
 
 // ---------- ביקורת קבצים (קריאה בלבד) ----------
@@ -950,14 +976,14 @@ function handleAuditFiles_(ss, payload) {
 
   return buildDataResponse_(true, "Audit complete", {
     inspected:  !!(teamKey || evalKey),
-    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1, 0, teamKey),
-    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3, 1, evalKey)
+    teams:      auditRegistry_(ss, TEAM_REGISTRY_TAB, 5, 1, 0, teamKey, 4),
+    evaluators: auditRegistry_(ss, EVAL_REGISTRY_TAB, 7, 3, 1, evalKey, 6)
   });
 }
 
 // keyCol/fileCol הם אינדקסים מבוססי-0 בתוך שורת הרישום.
 // filterKey ריק = לא פותחים קבצים, רק סופרים רשומות.
-function auditRegistry_(ss, tabName, width, fileCol, keyCol, filterKey) {
+function auditRegistry_(ss, tabName, width, fileCol, keyCol, filterKey, eventCol) {
   var sheet = ss.getSheetByName(tabName);
   if (!sheet || sheet.getLastRow() < 2) return [];
 
@@ -966,10 +992,12 @@ function auditRegistry_(ss, tabName, width, fileCol, keyCol, filterKey) {
   var order = [];
 
   for (var i = 0; i < vals.length; i++) {
-    var key    = String(vals[i][keyCol] || "").trim();
+    var baseKey = String(vals[i][keyCol] || "").trim();
+    var rowEventId = eventCol === undefined ? "" : String(vals[i][eventCol] || "").trim();
+    var key    = rowEventId ? rowEventId + " / " + baseKey : baseKey;
     var fileId = String(vals[i][fileCol] || "").trim();
     if (!key && !fileId) continue;
-    if (filterKey && key !== filterKey) continue;
+    if (filterKey && baseKey !== filterKey) continue;
     if (!byKey[key]) { byKey[key] = { key: key, rows: [] }; order.push(key); }
     byKey[key].rows.push({ registryRow: i + 2, fileId: fileId, state: "", tabs: 0, dataRows: 0 });
   }
@@ -1023,8 +1051,8 @@ function handleResetRegistries_(ss, payload) {
       'הפעולה מוחקת את טבלאות הרישום — נדרש confirm:"RESET" כדי לאשר');
   }
   return buildDataResponse_(true, "Registries cleared", {
-    teams:      clearRegistry_(ss, TEAM_REGISTRY_TAB, 4, 1),
-    evaluators: clearRegistry_(ss, EVAL_REGISTRY_TAB, 6, 3)
+    teams:      clearRegistry_(ss, TEAM_REGISTRY_TAB, 5, 1),
+    evaluators: clearRegistry_(ss, EVAL_REGISTRY_TAB, 7, 3)
   });
 }
 
@@ -1085,6 +1113,11 @@ function teamId_(payload) {
     if (Number.isFinite(n)) return n;
   }
   return teamFromEpc_(payload.epc);
+}
+
+function eventId_(payload) {
+  var raw = String((payload && (payload.eventId || payload.event_id)) || "").trim();
+  return /^[A-Za-z0-9_-]{1,128}$/.test(raw) ? raw : "";
 }
 
 // תאימות לאחור: EPC סינתטי ישן (TTPPPP)

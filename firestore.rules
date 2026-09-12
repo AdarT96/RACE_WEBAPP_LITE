@@ -17,7 +17,24 @@ service cloud.firestore {
     }
 
     function isApprovedRole(role) {
-      return signedIn() && caller().approved == true && caller().role == role;
+      return signedIn() && caller().approved == true && caller().role == role &&
+        (!usesEventStaffing() ||
+         (exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.active == true &&
+          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.role == role));
+    }
+
+    function activeEventId() {
+      return exists(/databases/$(database)/documents/settings/activeEvent)
+        ? get(/databases/$(database)/documents/settings/activeEvent).data.eventId : '';
+    }
+
+    function usesEventStaffing() {
+      return activeEventId() != '' &&
+        exists(/databases/$(database)/documents/events/$(activeEventId())) &&
+        get(/databases/$(database)/documents/events/$(activeEventId())).data.keys()
+          .hasAny(['setupSchemaVersion']) &&
+        get(/databases/$(database)/documents/events/$(activeEventId())).data.setupSchemaVersion == 1;
     }
 
     function isFormationCommander() {
@@ -34,6 +51,12 @@ service cloud.firestore {
         get(/databases/$(database)/documents/settings/activeEvent).data.eventId == eventId &&
         exists(/databases/$(database)/documents/events/$(eventId)) &&
         get(/databases/$(database)/documents/events/$(eventId)).data.status == 'active';
+    }
+
+    function adminMayEditEvent(eventId) {
+      return isAdmin() &&
+        exists(/databases/$(database)/documents/events/$(eventId)) &&
+        get(/databases/$(database)/documents/events/$(eventId)).data.status in ['draft', 'active'];
     }
 
     // The administrator sets this marker only after every legacy shared document
@@ -81,7 +104,7 @@ service cloud.firestore {
     // results live in an owner-scoped evaluatorAssessments child document.
     match /races/{raceId} {
       allow read: if isAdmin() ||
-        (signedIn() && caller().approved == true && isOwnTeam(resource.data.team) &&
+        ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team) &&
          (!privacyMigrationComplete() || resource.data.evaluationSchemaVersion == 2)) ||
         (isFormationCommander() && resource.data.evaluationSchemaVersion == 2 &&
          resource.data.eventId is string && isActiveEvent(resource.data.eventId));
@@ -222,13 +245,13 @@ service cloud.firestore {
     // create or close events.
     match /events/{eventId} {
       allow read: if isAdmin() || isFormationCommander() ||
-        isApprovedRole('operator') || isApprovedRole('evaluator');
+        (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')));
       allow create, update: if isAdmin();
       allow delete: if false;
 
       match /teams/{teamNumber} {
         allow read: if isAdmin() || isFormationCommander() ||
-          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
         allow create, update: if isAdmin();
         allow delete: if false;
       }
@@ -336,7 +359,7 @@ service cloud.firestore {
       }
 
       function mayManageSchedule() {
-        return (isAdmin() || isFormationCommander()) && isActiveEvent(eventId);
+        return adminMayEditEvent(eventId) || (isFormationCommander() && isActiveEvent(eventId));
       }
 
       function publishedRevisionAfter() {
@@ -422,7 +445,7 @@ service cloud.firestore {
         }
 
         allow read: if isAdmin() || isFormationCommander() ||
-          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
         allow create, update: if mayManageSchedule() && validTeamSchedule();
         allow delete: if false;
       }
@@ -490,11 +513,12 @@ service cloud.firestore {
             request.resource.data.firstName is string &&
             request.resource.data.firstName.size() > 0 &&
             request.resource.data.firstName.size() <= 80 &&
-            request.resource.data.firstName != '0' &&
             request.resource.data.nationalId is string &&
-            request.resource.data.nationalId.matches('^[0-9]{9}$') &&
+            (request.resource.data.nationalId == '0' ||
+             request.resource.data.nationalId.matches('^[0-9]{9}$')) &&
             request.resource.data.emergencyContactPhone is string &&
-            request.resource.data.emergencyContactPhone.matches('^[0-9]{9,15}$') &&
+            (request.resource.data.emergencyContactPhone == '0' ||
+             request.resource.data.emergencyContactPhone.matches('^[0-9]{9,15}$')) &&
             request.resource.data.doctorClearance is int &&
             request.resource.data.doctorClearance in [0, 1, 2] &&
             request.resource.data.medicClearance is int &&
@@ -515,8 +539,8 @@ service cloud.firestore {
         }
 
         allow read: if isAdmin() || isFormationCommander() ||
-          ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team));
-        allow create: if isAdmin() && validCandidateRecord() &&
+          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team));
+        allow create: if adminMayEditEvent(eventId) && validCandidateRecord() &&
           request.resource.data.status == 'active' && request.resource.data.statusRevision == 0 &&
           request.resource.data.profileRevision == 0 && request.resource.data.lastTransitionId == '' &&
           request.resource.data.statusChangedAt == request.time &&
@@ -539,7 +563,7 @@ service cloud.firestore {
            !exists(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)) ||
            get(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status != 'open' ||
            getAfter(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status == 'accepted');
-        allow update: if isAdmin() && validCandidateRecord() && isActiveEvent(eventId) &&
+        allow update: if adminMayEditEvent(eventId) && validCandidateRecord() &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'firstName', 'nationalId', 'emergencyContactPhone',
             'doctorClearance', 'medicClearance',
@@ -548,7 +572,8 @@ service cloud.firestore {
           request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
           request.resource.data.profileUpdatedAt == request.time &&
           request.resource.data.profileUpdatedBy == request.auth.uid;
-        allow delete: if false;
+        allow delete: if isAdmin() &&
+          get(/databases/$(database)/documents/events/$(eventId)).data.status == 'draft';
       }
 
       match /dropoutRecommendations/{recommendationId} {
@@ -677,14 +702,64 @@ service cloud.firestore {
         allow read: if isAdmin() || isFormationCommander();
         allow create: if (isAdmin() || isFormationCommander()) &&
           isActiveEvent(eventId) && validTransition();
-        allow update, delete: if false;
+        allow delete: if isAdmin() &&
+          get(/databases/$(database)/documents/events/$(eventId)).data.status == 'draft';
+      }
+
+      // Event membership is the durable source of staffing. The global user role/team
+      // remains a projection for the currently active event so existing operational
+      // screens can route immediately after login.
+      match /staff/{staffUid} {
+        allow read: if isAdmin() || isFormationCommander() ||
+          (isActiveEvent(eventId) && signedIn() && request.auth.uid == staffUid);
+        allow create, update: if isAdmin() &&
+          request.resource.data.keys().hasAll([
+            'eventId', 'uid', 'displayName', 'role', 'team', 'active',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'eventId', 'uid', 'displayName', 'role', 'team', 'active',
+            'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.eventId == eventId && request.resource.data.uid == staffUid &&
+          request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100 &&
+          request.resource.data.role in ['operator', 'evaluator', 'formation_commander'] &&
+          request.resource.data.team is string &&
+          ((request.resource.data.role in ['operator', 'evaluator'] &&
+            request.resource.data.team.matches('^[0-9]{2}$')) ||
+           (request.resource.data.role == 'formation_commander' && request.resource.data.team == '')) &&
+          request.resource.data.active is bool &&
+          request.resource.data.createdAt is timestamp && request.resource.data.createdBy is string &&
+          request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if false;
+      }
+
+      match /artifacts/{artifactId} {
+        allow read: if isAdmin() || isFormationCommander();
+        allow create, update: if isAdmin() &&
+          request.resource.data.keys().hasAll([
+            'eventId', 'kind', 'targetId', 'status', 'fileId', 'url', 'message', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.keys().hasOnly([
+            'eventId', 'kind', 'targetId', 'status', 'fileId', 'url', 'message', 'updatedAt', 'updatedBy'
+          ]) &&
+          request.resource.data.eventId == eventId &&
+          request.resource.data.kind in ['team', 'evaluator'] &&
+          request.resource.data.targetId is string && request.resource.data.targetId.size() > 0 &&
+          request.resource.data.targetId.size() <= 128 &&
+          request.resource.data.status in ['pending', 'ready', 'failed'] &&
+          request.resource.data.fileId is string && request.resource.data.fileId.size() <= 240 &&
+          request.resource.data.url is string && request.resource.data.url.size() <= 1000 &&
+          request.resource.data.message is string && request.resource.data.message.size() <= 500 &&
+          request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
+        allow delete: if false;
       }
     }
 
     // Teams (participants + station mapping): team members read, admins write.
     match /teams/{teamNumber} {
       allow read: if isAdmin() ||
-        (signedIn() && caller().approved == true && int(teamNumber) == int(caller().team));
+        ((isApprovedRole('operator') || isApprovedRole('evaluator')) && int(teamNumber) == int(caller().team));
       allow write: if isAdmin();
     }
 
@@ -702,12 +777,10 @@ service cloud.firestore {
         int(noteId.split('_')[0]) == int(caller().team));
       allow write: if isAdmin();
       allow create: if !privacyMigrationComplete() &&
-        signedIn() && caller().approved == true &&
-        caller().role in ['operator', 'evaluator'] &&
+        (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
         int(noteId.split('_')[0]) == int(caller().team);
       allow update, delete: if !privacyMigrationComplete() &&
-        signedIn() && caller().approved == true &&
-        caller().role in ['operator', 'evaluator'] &&
+        (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
         (!resource.data.keys().hasAny(['privacySchemaVersion']) ||
           resource.data.privacySchemaVersion != 2) &&
         int(noteId.split('_')[0]) == int(caller().team);
@@ -715,7 +788,7 @@ service cloud.firestore {
       match /authors/{authorUid} {
         function ownsPrivateNotes() {
           return signedIn() && request.auth.uid == authorUid &&
-            caller().approved == true && caller().role in ['operator', 'evaluator'] &&
+            (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
             int(noteId.split('_')[0]) == int(caller().team);
         }
 
@@ -844,7 +917,7 @@ service cloud.firestore {
       }
 
       allow create: if signedIn() &&
-        (isAdmin() || (caller().approved == true && caller().role in ['operator', 'evaluator'])) &&
+        (isAdmin() || isApprovedRole('operator') || isApprovedRole('evaluator')) &&
         validNewIssueReport();
       allow read: if isAdmin() ||
         (isFormationCommander() && resource.data.schemaVersion == 2 &&
