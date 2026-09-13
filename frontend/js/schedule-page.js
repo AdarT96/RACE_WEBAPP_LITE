@@ -19,6 +19,7 @@ import './station-operational-dialog.js';
 import {
   ROLES, canManageSchedule, canViewSchedule, roleLabel
 } from './roles.js';
+import { resolveActiveUserContext } from './active-user-context.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -66,6 +67,12 @@ function showToast(message, type = 'info') {
 
 function updateBackLink() {
   const link = document.getElementById('schedule-back');
+  const params = new URLSearchParams(location.search);
+  if (params.get('eventId') && params.get('return') === 'setup') {
+    link.href = `event-setup.html?eventId=${encodeURIComponent(params.get('eventId'))}`;
+    link.textContent = 'הגדרת אירוע';
+    return;
+  }
   if (currentUser.role === ROLES.ADMIN) {
     link.href = 'admin.html'; link.textContent = 'ניהול';
   } else if (currentUser.role === ROLES.FORMATION_COMMANDER) {
@@ -91,6 +98,13 @@ async function loadStationTypes() {
 }
 
 async function getActiveEvent() {
+  const requestedEventId = new URLSearchParams(location.search).get('eventId');
+  if (requestedEventId) {
+    if (currentUser?.role !== ROLES.ADMIN) return null;
+    const requested = await getDoc(doc(db, 'events', requestedEventId));
+    return requested.exists() && ['draft', 'active'].includes(requested.data().status)
+      ? { id:requested.id, ...requested.data() } : null;
+  }
   const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
   if (!pointer.exists() || pointer.data().status !== 'active' || !pointer.data().eventId) return null;
   const snapshot = await getDoc(doc(db, 'events', String(pointer.data().eventId)));
@@ -622,12 +636,13 @@ async function initializePage() {
   updateBackLink();
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
   await Promise.all([loadStationTypes(), getActiveEvent().then(value => { activeEvent = value; })]);
-  if (!activeEvent) { showBlocking('אין אירוע גיבוש פעיל.'); return; }
+  if (!activeEvent) { showBlocking('לא נמצא אירוע זמין.'); return; }
   document.getElementById('schedule-title').textContent = activeEvent.name || 'לו״ז גיבוש';
   document.getElementById('schedule-subtitle').textContent = canManageSchedule(currentUser.role)
-    ? 'מבט־על ועריכת שיבוץ לכל הצוותים' : `לו״ז צוות ${Number(currentUser.team)}`;
+    ? `${activeEvent.status === 'draft' ? 'טיוטה · ' : ''}מבט־על ועריכת שיבוץ לכל הצוותים`
+    : `לו״ז צוות ${Number(currentUser.team)}`;
   await loadEventTeams();
-  if (!teamIds().length) { showBlocking('לא נמצאו צוותים באירוע הפעיל.'); return; }
+  if (!teamIds().length) { showBlocking('לא נמצאו צוותים באירוע. יש להוסיף צוותים במסך הגדרת האירוע.'); return; }
   repository = createScheduleRepository(db, currentUser);
   const clock = localScheduleClock(new Date());
   document.getElementById('new-row-date').value = clock.date;
@@ -662,9 +677,14 @@ onAuthStateChanged(auth, async user => {
   if (!user) { location.href = 'index.html'; return; }
   try {
     const snapshot = await getDoc(doc(db, 'users', user.uid));
-    const profile = snapshot.exists() ? snapshot.data() : null;
+    const rawProfile = snapshot.exists() ? snapshot.data() : null;
+    const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile) : null;
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canViewSchedule(profile.role)) {
       await signOut(auth); location.href = 'index.html'; return;
+    }
+    if (profile.eventAccess === false) {
+      showBlocking('המשתמש אינו משובץ בסגל האירוע הפעיל. פנה למנהל.');
+      return;
     }
     currentUser = { ...profile, uid:user.uid };
     await initializePage();

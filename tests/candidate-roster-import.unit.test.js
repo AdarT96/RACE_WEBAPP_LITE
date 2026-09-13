@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  CANDIDATE_IMPORT_FIELDS, buildCandidateRosterImport
+  CANDIDATE_IMPORT_FIELDS, buildCandidateRosterImport, candidateRowsFromMatrix
 } from '../frontend/js/candidate-roster-import.js';
 
 const validRows = [
@@ -39,4 +39,27 @@ test('the import contract rejects malformed rows and global duplicate national I
   ] });
   assert.ok(result.errors.some(error => error.includes('כבר הופיעה')));
   assert.ok(result.errors.some(error => error.includes('מספר צוות')));
+});
+
+test('Excel matrix adapter supports warning-only missing profile fields', () => {
+  const adapted = candidateRowsFromMatrix([
+    ['צוות', 'מספר מועמד', 'שם פרטי'],
+    [1, 100, 'נועה'],
+    [1, 101, '']
+  ]);
+  assert.deepEqual(adapted.errors, []);
+  const result = buildCandidateRosterImport({ rows:adapted.rows, allowIncompleteProfiles:true });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.teams[0].candidates[1].firstName, '0');
+});
+
+test('Excel adapter preserves leading-zero identity and maps Hebrew clearance labels', () => {
+  const adapted = candidateRowsFromMatrix([
+    ['צוות', 'מספר מועמד', 'תעודת זהות', 'טלפון איש קשר חירום', 'כשירות רופא', 'כשירות חובש'],
+    [1, 100, 18, 501234567, 'כשיר', 'לא כשיר']
+  ]);
+  assert.equal(adapted.rows[0].nationalId, '000000018');
+  assert.equal(adapted.rows[0].emergencyContactPhone, '0501234567');
+  assert.equal(adapted.rows[0].doctorClearance, 1);
+  assert.equal(adapted.rows[0].medicClearance, 2);
 });

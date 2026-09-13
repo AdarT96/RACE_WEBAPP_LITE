@@ -6,7 +6,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection, doc, getDoc, getDocs, query, where,
-  setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
+  deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
 } from 'firebase/firestore';
 import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
@@ -581,6 +581,64 @@ test('only an admin can correct candidate identity and cannot do so without a pr
     doctorClearance: 1, medicClearance: 1, profileRevision: 1,
     profileUpdatedAt: serverTimestamp(), profileUpdatedBy: 'admin1'
   }));
+});
+
+test('an admin can build a draft event while operational users cannot read it', async () => {
+  const admin = userDb('admin1');
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft'), {
+    name:'טיוטת בדיקה', status:'draft', teamCount:1, candidateCount:0,
+    schemaVersion:3, setupSchemaVersion:1,
+    createdAt:serverTimestamp(), createdBy:'admin1', updatedAt:serverTimestamp(), updatedBy:'admin1',
+    activatedAt:null, activatedBy:'', closedAt:null, closedBy:''
+  }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft', 'teams', '01'), {
+    teamNumber:'01', participantIds:[], stationMap:{}, rosterSource:{ type:'manual' },
+    schemaVersion:3, active:true, createdAt:serverTimestamp(), createdBy:'admin1',
+    updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft', 'candidates', '01_100'), {
+    participantId:'100', team:'01', firstName:'0', nationalId:'0', emergencyContactPhone:'0',
+    doctorClearance:0, medicClearance:0, status:'active', reasonCode:'', reasonLabel:'',
+    statusRevision:0, profileRevision:0, lastTransitionId:'',
+    statusChangedAt:serverTimestamp(), statusChangedBy:'admin1',
+    profileUpdatedAt:serverTimestamp(), profileUpdatedBy:'admin1', schemaVersion:3
+  }));
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-draft', 'candidates', '01_100')));
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-1', 'candidates', '01_100')));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft', 'schedule', 'draft'), {
+    ...draftSchedulePayload('admin1'), eventId:'event-draft'
+  }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft', 'staff', 'evaluator1'), {
+    eventId:'event-draft', uid:'evaluator1', displayName:'מעריך 1', role:'evaluator', team:'01',
+    active:true, createdAt:serverTimestamp(), createdBy:'admin1',
+    updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft', 'artifacts', 'team-01'), {
+    eventId:'event-draft', kind:'team', targetId:'01', status:'ready', fileId:'file-1',
+    url:'https://docs.google.com/spreadsheets/d/file-1', message:'',
+    updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-draft')));
+  await assertFails(getDoc(doc(userDb('operator1'), 'events', 'event-draft', 'teams', '01')));
+});
+
+test('new events enforce event-scoped staff membership', async () => {
+  const admin = userDb('admin1');
+  await assertSucceeds(updateDoc(doc(admin, 'events', 'event-1'), { setupSchemaVersion:1 }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
+    eventId:'event-1', uid:'evaluator1', displayName:'מעריך 1', role:'evaluator', team:'01',
+    active:true, createdAt:serverTimestamp(), createdBy:'admin1',
+    updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'staff', 'evaluator1')));
+  await assertFails(getDoc(doc(userDb('evaluator2'), 'events', 'event-1', 'staff', 'evaluator1')));
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '01_100')));
+  await assertFails(getDoc(doc(userDb('evaluator2'), 'events', 'event-1', 'candidates', '01_100')));
+  await assertSucceeds(updateDoc(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
+    active:false, updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'staff', 'evaluator1')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '01_100')));
 });
 
 test('direct formation status changes append an atomic immutable audit event', async () => {

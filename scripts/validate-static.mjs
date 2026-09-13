@@ -69,4 +69,15 @@ for (const required of ['firebase.json', 'firestore.rules', 'firestore.indexes.j
 }
 JSON.parse(readFileSync(join(root, 'firestore.indexes.json'), 'utf8'));
 
-console.log(`Static validation passed: ${htmlFiles.length} HTML files, ${javascriptFiles.length} JavaScript modules.`);
+const appsScriptFile = join(root, 'scripts', 'Code.gs');
+const appsScriptSource = readFileSync(appsScriptFile, 'utf8');
+execFileSync(process.execPath, ['--check', '-'], { input:appsScriptSource, stdio:['pipe', 'pipe', 'pipe'] });
+for (const requiredCapability of [
+  'event_scoped_files', 'eventId_(payload)', 'TEAM_REGISTRY_HEADERS', 'EVAL_REGISTRY_HEADERS'
+]) {
+  if (!appsScriptSource.includes(requiredCapability)) {
+    throw new Error(`scripts/Code.gs is missing event-scoped Drive capability: ${requiredCapability}`);
+  }
+}
+
+console.log(`Static validation passed: ${htmlFiles.length} HTML files, ${javascriptFiles.length} JavaScript modules, Apps Script.`);
