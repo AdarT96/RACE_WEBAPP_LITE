@@ -324,22 +324,24 @@ document.getElementById('logout-button').addEventListener('click', async () => {
 });
 
 document.getElementById('save-details-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true);
+  const button = event.currentTarget;
+  setBusy(button, true);
   try {
     await repository.saveDetails(currentEventId, document.getElementById('event-name').value);
     await refreshBundle(); showToast('שם האירוע נשמר.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('save-teams-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true);
+  const button = event.currentTarget;
+  setBusy(button, true);
   try {
     const ids = teamIdsFromInput();
     await saveTeamTopology([...new Set(ids)]);
     showToast('רשימת הצוותים נשמרה בלו״ז.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('download-schedule-template').addEventListener('click', () => {
@@ -352,7 +354,8 @@ document.getElementById('download-schedule-template').addEventListener('click', 
 });
 
 document.getElementById('import-schedule-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true, 'מייבא…');
+  const button = event.currentTarget;
+  setBusy(button, true, 'מייבא…');
   try {
     const matrix = await workbookMatrix(document.getElementById('schedule-file').files[0]);
     const provisional = buildScheduleImport({ matrix, stationCatalogByTeam:Object.fromEntries(
@@ -381,7 +384,7 @@ document.getElementById('import-schedule-button').addEventListener('click', asyn
     });
     await refreshBundle(); showToast('הלו״ז יובא ונשמר כטיוטה.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('candidate-team').addEventListener('change', renderCandidateRows);
@@ -393,7 +396,8 @@ document.getElementById('candidate-table').addEventListener('click', event => {
 });
 
 document.getElementById('save-candidates-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true);
+  const button = event.currentTarget;
+  setBusy(button, true);
   try {
     const team = document.getElementById('candidate-team').value;
     if (!team) throw new Error('יש להגדיר צוותים לפני הוספת מועמדים.');
@@ -403,11 +407,12 @@ document.getElementById('save-candidates-button').addEventListener('click', asyn
     await repository.replaceTeamCandidates(currentEventId, team, candidates);
     await refreshBundle(); showToast(`מועמדי צוות ${Number(team)} נשמרו.`, 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('import-candidates-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true, 'מייבא…');
+  const button = event.currentTarget;
+  setBusy(button, true, 'מייבא…');
   try {
     const file = document.getElementById('candidate-file').files[0];
     const adapted = candidateRowsFromMatrix(await workbookMatrix(file));
@@ -424,7 +429,7 @@ document.getElementById('import-candidates-button').addEventListener('click', as
     }
     await refreshBundle(); showToast(`יובאו ${result.teams.length} צוותים.`, 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('staff-list').addEventListener('change', event => {
@@ -433,12 +438,13 @@ document.getElementById('staff-list').addEventListener('change', event => {
   row.querySelector('[data-field="team"]').disabled = event.target.value === ROLES.FORMATION_COMMANDER;
 });
 document.getElementById('save-staff-button').addEventListener('click', async event => {
-  setBusy(event.currentTarget, true);
+  const button = event.currentTarget;
+  setBusy(button, true);
   try {
     await repository.replaceStaff(currentEventId, selectedStaffFromDom());
     await refreshBundle(); showToast('שיבוץ אנשי הצוות נשמר.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(event.currentTarget, false); }
+  finally { setBusy(button, false); }
 });
 
 document.getElementById('refresh-readiness-button').addEventListener('click', () => refreshBundle()
@@ -485,10 +491,10 @@ document.getElementById('activate-event-button').addEventListener('click', async
     let state = readiness();
     if (!state.canActivate) throw new Error(state.blockers[0]);
     if (state.warnings.length && !confirm(`קיימות ${state.warnings.length} אזהרות שאינן חוסמות. להפעיל את האירוע בכל זאת?`)) return;
-    if (!bundle.publishedSchedule) {
+    if (bundle.schedule?.draftRevision || !bundle.publishedSchedule) {
       await scheduleRepository.publishDraft({
         eventId:currentEventId,
-        expectedPublishedRevision:0,
+        expectedPublishedRevision:Number(bundle.publishedSchedule?.revision || 0),
         expectedDraftRevision:Number(bundle.schedule?.draftRevision || 0),
         stationIdsByTeam:Object.fromEntries(teamIds().map(team => [team, Object.keys(stationMapForTeam(team))]))
       });
