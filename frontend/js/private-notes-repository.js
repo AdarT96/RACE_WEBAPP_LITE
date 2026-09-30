@@ -7,12 +7,29 @@ export function privateNotesDocumentId(team, participantId) {
   return `${String(team).padStart(2, '0')}_${String(participantId)}`;
 }
 
-export function createPrivateNotesRepository(db, user) {
+// ההערות יושבות תחת הגיבוש ולא באוסף גלובלי. מספר מועמד ייחודי בתוך גיבוש
+// אך חוזר בין גיבושים, ולכן מפתח שאינו כולל את הגיבוש היה מאחד את מועמד 5
+// של מרץ ושל יוני למסמך אחד — ומציג למעריך הערות על אדם אחר.
+export function privateNotesPath(eventId, team, participantId) {
+  return ['events', String(eventId), 'generalNotes',
+    privateNotesDocumentId(team, participantId), 'authors'];
+}
+
+export function createPrivateNotesRepository(db, user, resolveEventId) {
   const uid = String(user?.uid || '');
   if (!uid) throw new Error('חסר מזהה משתמש');
+  if (typeof resolveEventId !== 'function') throw new Error('חסר מקור לזיהוי הגיבוש');
+
+  // נפתר בכל קריאה ולא פעם אחת בבנייה, כדי שסדר האתחול בדף לא יקבע
+  // לאיזה גיבוש ההערות נכתבות.
+  function eventId() {
+    const id = String(resolveEventId() || '');
+    if (!id) throw new Error('אין גיבוש פעיל — לא ניתן לקרוא או לכתוב הערות');
+    return id;
+  }
 
   const refFor = (team, participantId, authorUid = uid) => doc(
-    db, 'general_notes', privateNotesDocumentId(team, participantId), 'authors', String(authorUid)
+    db, ...privateNotesPath(eventId(), team, participantId), String(authorUid)
   );
 
   function subscribe(team, participantId, onValue, onError) {
@@ -32,6 +49,7 @@ export function createPrivateNotesRepository(db, user) {
       const snapshot = await transaction.get(reference);
       const notes = normalizeNotes(snapshot.exists() ? snapshot.data().notes : []);
       const updated = normalizeNotes(mutateNotes(notes.slice()) || notes);
+      // הגיבוש נובע מהנתיב ואינו שדה — הכללים אוכפים את מבנה המסמך במדויק.
       const payload = {
         authorUid: String(authorUid), team: String(team).padStart(2, '0'),
         participantId: String(participantId), notes: updated,
@@ -46,7 +64,7 @@ export function createPrivateNotesRepository(db, user) {
 
   async function getAllAuthors(team, participantId) {
     const snapshot = await getDocs(collection(
-      db, 'general_notes', privateNotesDocumentId(team, participantId), 'authors'
+      db, ...privateNotesPath(eventId(), team, participantId)
     ));
     return snapshot.docs.flatMap(author => normalizeNotes(author.data().notes));
   }

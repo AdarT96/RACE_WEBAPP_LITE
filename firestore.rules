@@ -53,6 +53,16 @@ service cloud.firestore {
         get(/databases/$(database)/documents/events/$(eventId)).data.status == 'active';
     }
 
+    // מחיקת גיבוש שהסתיים. מותרת רק לאירוע שאינו פעיל ושהמצביע
+    // settings/activeEvent אינו מפנה אליו — הגיבוש הרץ לעולם אינו נמחק,
+    // וגם לא אירוע שנסגר בעוד המצביע נותר עליו.
+    function purgeableEvent(eventId) {
+      return isAdmin() &&
+        exists(/databases/$(database)/documents/events/$(eventId)) &&
+        get(/databases/$(database)/documents/events/$(eventId)).data.status in ['draft', 'closed'] &&
+        activeEventId() != eventId;
+    }
+
     function adminMayEditEvent(eventId) {
       return isAdmin() &&
         exists(/databases/$(database)/documents/events/$(eventId)) &&
@@ -247,13 +257,13 @@ service cloud.firestore {
       allow read: if isAdmin() || isFormationCommander() ||
         (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')));
       allow create, update: if isAdmin();
-      allow delete: if false;
+      allow delete: if purgeableEvent(eventId);
 
       match /teams/{teamNumber} {
         allow read: if isAdmin() || isFormationCommander() ||
           (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
         allow create, update: if isAdmin();
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       // The master schedule is visible only to formation management. Team staff
@@ -416,7 +426,7 @@ service cloud.firestore {
           request.resource.data.baseRevision == publishedRevisionAfter() &&
           request.resource.data.createdAt == resource.data.createdAt &&
           request.resource.data.createdBy == resource.data.createdBy;
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       match /teamSchedules/{teamNumber} {
@@ -447,7 +457,7 @@ service cloud.firestore {
         allow read: if isAdmin() || isFormationCommander() ||
           (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
         allow create, update: if mayManageSchedule() && validTeamSchedule();
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       // Every successful save appends the complete approved snapshot. Revisions
@@ -478,7 +488,8 @@ service cloud.firestore {
             getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.publicationType &&
           request.resource.data.restoredFromRevisionKey ==
             getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.restoredFromRevisionKey;
-        allow update, delete: if false;
+        allow update: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       match /candidates/{candidateId} {
@@ -572,8 +583,7 @@ service cloud.firestore {
           request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
           request.resource.data.profileUpdatedAt == request.time &&
           request.resource.data.profileUpdatedBy == request.auth.uid;
-        allow delete: if isAdmin() &&
-          get(/databases/$(database)/documents/events/$(eventId)).data.status == 'draft';
+        allow delete: if purgeableEvent(eventId);
       }
 
       match /dropoutRecommendations/{recommendationId} {
@@ -659,7 +669,7 @@ service cloud.firestore {
           (request.resource.data.status == 'rejected' ||
             (getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.status == 'withdrawn' &&
              getAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(recommendationId)).data.reasonCode == resource.data.reasonCode));
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       // Status transitions are appended to an immutable audit trail. The new
@@ -702,8 +712,7 @@ service cloud.firestore {
         allow read: if isAdmin() || isFormationCommander();
         allow create: if (isAdmin() || isFormationCommander()) &&
           isActiveEvent(eventId) && validTransition();
-        allow delete: if isAdmin() &&
-          get(/databases/$(database)/documents/events/$(eventId)).data.status == 'draft';
+        allow delete: if purgeableEvent(eventId);
       }
 
       // Event membership is the durable source of staffing. The global user role/team
@@ -731,7 +740,7 @@ service cloud.firestore {
           request.resource.data.active is bool &&
           request.resource.data.createdAt is timestamp && request.resource.data.createdBy is string &&
           request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
       }
 
       match /artifacts/{artifactId} {
@@ -752,7 +761,54 @@ service cloud.firestore {
           request.resource.data.url is string && request.resource.data.url.size() <= 1000 &&
           request.resource.data.message is string && request.resource.data.message.size() <= 500 &&
           request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;
-        allow delete: if false;
+        allow delete: if purgeableEvent(eventId);
+      }
+
+      // Per-evaluator notes about a candidate, stored under the formation they
+      // were written in. The document id stays {team}_{participantId}; the
+      // formation comes from the path, so the same candidate number in another
+      // formation is a different document and never inherits old notes.
+      match /generalNotes/{noteId} {
+        allow read: if isAdmin();
+        allow create, update: if false;
+        allow delete: if purgeableEvent(eventId);
+
+        match /authors/{authorUid} {
+          function ownsPrivateNotes() {
+            return signedIn() && request.auth.uid == authorUid &&
+              isActiveEvent(eventId) &&
+              (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
+              int(noteId.split('_')[0]) == int(caller().team);
+          }
+
+          function validPrivateNotesShape() {
+            return request.resource.data.keys().hasAll([
+                'authorUid', 'team', 'participantId', 'notes',
+                'schemaVersion', 'createdAt', 'updatedAt'
+              ]) &&
+              request.resource.data.keys().hasOnly([
+                'authorUid', 'team', 'participantId', 'notes',
+                'schemaVersion', 'createdAt', 'updatedAt'
+              ]) &&
+              request.resource.data.authorUid == authorUid &&
+              int(request.resource.data.team) == int(noteId.split('_')[0]) &&
+              request.resource.data.participantId == noteId.split('_')[1] &&
+              request.resource.data.notes is list &&
+              request.resource.data.notes.size() <= 200 &&
+              request.resource.data.schemaVersion == 2 &&
+              request.resource.data.updatedAt == request.time;
+          }
+
+          allow read: if isAdmin() || ownsPrivateNotes();
+          allow create: if isAdmin() ||
+            (ownsPrivateNotes() && validPrivateNotesShape() &&
+             request.resource.data.createdAt == request.time);
+          allow update: if isAdmin() ||
+            (ownsPrivateNotes() && validPrivateNotesShape() &&
+             request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['notes', 'updatedAt']));
+          allow delete: if isAdmin();
+        }
       }
     }
 

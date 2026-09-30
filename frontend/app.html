@@ -1665,7 +1665,7 @@
     await loadPrivacyState();
     subscribeToPrivacyState();
     evaluationRepository = createEvaluationRepository(db, currentUser);
-    privateNotesRepository = createPrivateNotesRepository(db, currentUser);
+    privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
     formationRepository = createFormationOperationsRepository(db, currentUser);
     activeFormationEvent = await formationRepository.getActiveEvent();
     applyRoleVisibility();
