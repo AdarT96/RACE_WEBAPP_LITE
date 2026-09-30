@@ -77,14 +77,20 @@ export function buildCandidateRosterImport({ rows = [], source = {}, allowIncomp
 }
 
 const cleanHeader = value => String(value ?? '').trim().toLowerCase().replace(/["״׳']/g, '').replace(/\s+/g, ' ');
+// הכותרות נכתבות בידי אדם, ולכן כל שדה מקבל את הניסוחים שבאמת מופיעים
+// בקבצים — "מספר חולצה" הוא מספר המועמד בשטח, ו"כשיר רופא" נפוץ לא פחות
+// מ"כשירות רופא". cleanHeader מסיר מרכאות וגרשיים ומכווץ רווחים, ולכן
+// רווח נגרר או ״ במקום " אינם מפילים התאמה.
 const IMPORT_HEADER_ALIASES = Object.freeze({
   team:['צוות', 'מספר צוות', 'team'],
-  participantId:['מספר מועמד', 'מועמד', 'participant id', 'candidate number'],
+  participantId:['מספר מועמד', 'מועמד', 'מספר חולצה', 'חולצה', 'participant id', 'candidate number'],
   firstName:['שם פרטי', 'שם', 'first name'],
-  nationalId:['תעודת זהות', 'תז', 'national id'],
-  emergencyContactPhone:['טלפון איש קשר חירום', 'איש קשר חירום', 'emergency phone'],
-  doctorClearance:['כשירות רופא', 'רופא', 'doctor clearance'],
-  medicClearance:['כשירות חובש', 'חובש', 'medic clearance']
+  nationalId:['תעודת זהות', 'תז', 'ת.ז', 'ת.ז.', 'מספר זהות', 'מס זהות', 'national id'],
+  emergencyContactPhone:[
+    'טלפון איש קשר חירום', 'איש קשר חירום', 'טלפון איש קשר', 'טלפון חירום', 'emergency phone'
+  ],
+  doctorClearance:['כשירות רופא', 'רופא', 'כשיר רופא', 'doctor clearance'],
+  medicClearance:['כשירות חובש', 'חובש', 'כשיר חובש', 'medic clearance']
 });
 
 function clearanceFromCell(value) {

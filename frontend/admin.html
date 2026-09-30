@@ -258,6 +258,31 @@
     </div>
   </details>
 
+
+  <!-- ייבוא משתתפים מאקסל -->
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
+      <h2>📥 ייבוא משתתפים מאקסל</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <p style="font-size:12px; color:var(--text-muted); margin:12px 0">
+      טוען את כל המשתתפים אל <b>הגיבוש הפעיל</b>, לפי עמודת הצוות שבקובץ.
+      נדרשות עמודות <b>צוות</b> ו<b>מספר מועמד</b> (או "מספר חולצה"); מזוהות גם
+      שם פרטי, מספר זהות, טלפון איש קשר וכשירות רופא/חובש.
+      בדיקה קודמת לייבוא ומפרטת כל שורה בעייתית — אפשר לתקן בקובץ ולנסות שוב,
+      או לייבא רק את השורות התקינות.
+    </p>
+    <div class="flex gap-8 mb-12" style="flex-wrap:wrap; align-items:center">
+      <input id="roster-file" class="form-input" type="file" accept=".xlsx,.xls,.csv"
+             style="flex:1; min-width:220px" onchange="checkRosterFile()">
+      <button class="btn btn-ghost" id="roster-check-btn" onclick="checkRosterFile()">🔍 בדוק קובץ</button>
+      <button class="btn btn-primary" id="roster-import-btn" onclick="importRoster(false)" disabled>ייבא</button>
+      <button class="btn btn-warning" id="roster-import-partial-btn" onclick="importRoster(true)" hidden>ייבא רק תקינים</button>
+    </div>
+    <div id="roster-status" style="font-size:13px; white-space:pre-wrap; color:var(--text-muted)"></div>
+    <div id="roster-issues" class="section" style="font-size:13px; margin-top:10px; max-height:280px; overflow-y:auto" hidden></div>
+  </details>
+
   <!-- ניהול צוותים -->
   <details class="card mb-16 collapsible-card">
     <summary class="collapsible-summary">
@@ -522,6 +547,7 @@
 
 <div id="toast-container"></div>
 
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="js/firebase-config.js"></script>
 <script src="js/station-types.js"></script>
 
@@ -540,6 +566,10 @@
     normalizeEmergencyContactPhone, normalizeNationalId, padTeam
   } from "./js/formation-operations-model.js";
   import { ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam } from "./js/roles.js";
+  import {
+    buildCandidateRosterImport, candidateRowsFromMatrix
+  } from "./js/candidate-roster-import.js";
+  import { createEventSetupRepository } from "./js/event-setup-repository.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
@@ -2261,6 +2291,123 @@
       showToast('ההסבה נכשלה: ' + error.message, 'error');
     } finally {
       button.disabled = false;
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  //  ייבוא משתתפים מאקסל
+  // ═══════════════════════════════════════════════════════════
+
+  // הייבוא כותב אל events/{גיבוש}/candidates — אותו יעד שדף הקמת האירוע כותב
+  // אליו. teams/{מספר} הגלובלי אינו היעד: כתיבה לשם הייתה יוצרת רשימה שנייה
+  // שמתפצלת מזו שהאפליקציה קוראת בפועל.
+  let rosterPreview = null;
+
+  function setRosterStatus(text) {
+    document.getElementById('roster-status').textContent = text;
+  }
+
+  function renderRosterIssues(issues) {
+    const box = document.getElementById('roster-issues');
+    if (!issues.length) { box.hidden = true; box.innerHTML = ''; return; }
+    const SHOWN = 60;
+    box.hidden = false;
+    box.innerHTML = '<b>' + issues.length + ' בעיות:</b><ul style="margin:8px 0 0; padding-inline-start:20px">' +
+      issues.slice(0, SHOWN).map(issue => '<li>' + escHtml(issue) + '</li>').join('') +
+      '</ul>' + (issues.length > SHOWN
+        ? '<p style="margin-top:6px">…ועוד ' + (issues.length - SHOWN) + '. תקן את אלה והרץ בדיקה שוב.</p>' : '');
+  }
+
+  async function workbookMatrix(file) {
+    if (!window.XLSX) throw new Error('רכיב קריאת Excel לא נטען. בדוק חיבור לאינטרנט ונסה שוב.');
+    const workbook = window.XLSX.read(await file.arrayBuffer(), { type:'array', cellDates:true });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new Error('הקובץ ריק.');
+    return window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header:1, raw:true, defval:'' });
+  }
+
+  window.checkRosterFile = async () => {
+    const file = document.getElementById('roster-file').files[0];
+    const importBtn = document.getElementById('roster-import-btn');
+    const partialBtn = document.getElementById('roster-import-partial-btn');
+    rosterPreview = null;
+    importBtn.disabled = true;
+    partialBtn.hidden = true;
+    renderRosterIssues([]);
+    if (!file) { setRosterStatus(''); return; }
+
+    try {
+      setRosterStatus('קורא את הקובץ…');
+      const event = await activeFormationEvent();
+      if (!event) throw new Error('אין גיבוש פעיל. הפעל אירוע לפני ייבוא.');
+
+      const adapted = candidateRowsFromMatrix(await workbookMatrix(file));
+      // כותרת חסרה מפילה עמודה שלמה, ולכן היא נעצרת כאן ולא נבלעת כשדה ריק.
+      if (adapted.errors.length) { setRosterStatus('✗ ' + adapted.errors.join(' · ')); return; }
+
+      // אימות זהות מלא — שם, תעודת זהות וטלפון. זו הנקודה שבה שורה בעייתית
+      // מדווחת בשמה ובמספרה, במקום להיכתב חסרה ולהתגלות באמצע גיבוש.
+      const result = buildCandidateRosterImport({
+        rows:adapted.rows, source:{ type:'excel', fileName:file.name }, allowIncompleteProfiles:false
+      });
+
+      const eventTeams = new Set((await getDocs(collection(db, 'events', event.id, 'teams')))
+        .docs.map(d => String(d.id)));
+      const missingTeams = result.teams.map(group => group.team).filter(team => !eventTeams.has(team));
+      const issues = result.errors.concat(missingTeams.map(team =>
+        'צוות ' + Number(team) + ' אינו קיים בגיבוש. הוסף אותו בהגדרת האירוע.'));
+
+      const usable = result.teams.filter(group => eventTeams.has(group.team));
+      const count = usable.reduce((total, group) => total + group.candidates.length, 0);
+      rosterPreview = { event, teams:usable, source:result.source, count, blocked:issues.length > 0 };
+
+      renderRosterIssues(issues);
+      if (!issues.length) {
+        setRosterStatus('✓ ' + count + ' משתתפים ב-' + usable.length + ' צוותים, הכל תקין. אפשר לייבא אל "' +
+          (event.name || event.id) + '".');
+        importBtn.disabled = false;
+      } else {
+        setRosterStatus('נמצאו בעיות. תקן בקובץ והרץ בדיקה שוב, או ייבא רק את ' + count + ' השורות התקינות.');
+        partialBtn.hidden = count === 0;
+      }
+    } catch (error) {
+      setRosterStatus('✗ ' + error.message);
+    }
+  };
+
+  window.importRoster = async (allowPartial) => {
+    if (!rosterPreview) { showToast('הרץ בדיקת קובץ תחילה', 'error'); return; }
+    if (rosterPreview.blocked && !allowPartial) { showToast('יש בעיות בקובץ', 'error'); return; }
+    if (!rosterPreview.count) { showToast('אין שורות תקינות לייבוא', 'error'); return; }
+
+    const { event, teams, source, count } = rosterPreview;
+    if (!confirm('לייבא ' + count + ' משתתפים ב-' + teams.length + ' צוותים אל "' +
+        (event.name || event.id) + '"?\n\nרשימת מועמדים קיימת בצוותים אלה תוחלף.')) return;
+
+    const importBtn = document.getElementById('roster-import-btn');
+    const partialBtn = document.getElementById('roster-import-partial-btn');
+    importBtn.disabled = true;
+    partialBtn.disabled = true;
+    try {
+      const repository = createEventSetupRepository(db, currentAdmin);
+      let done = 0;
+      for (const group of teams) {
+        setRosterStatus('מייבא צוות ' + Number(group.team) + '… (' + done + '/' + teams.length + ')');
+        await repository.replaceTeamCandidates(event.id, group.team, group.candidates, source);
+        done += 1;
+      }
+      setRosterStatus('✓ יובאו ' + count + ' משתתפים ב-' + done + ' צוותים אל "' + (event.name || event.id) + '".');
+      showToast('הייבוא הושלם', 'success');
+      rosterPreview = null;
+      partialBtn.hidden = true;
+      renderRosterIssues([]);
+      if (currentTeamNumber) onTeamSelected(currentTeamNumber);
+    } catch (error) {
+      setRosterStatus('✗ הייבוא נעצר: ' + error.message +
+        '\nצוותים שכבר יובאו נשמרו. תקן והרץ שוב — ייבוא חוזר מחליף את אותם צוותים.');
+      showToast('הייבוא נכשל: ' + error.message, 'error');
+    } finally {
+      partialBtn.disabled = false;
     }
   };
 </script>
