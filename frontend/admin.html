@@ -433,7 +433,8 @@
     <h2 class="mb-16">🗑 מחיקת נתוני גיבוש קודם</h2>
     <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
       מוחק לצמיתות מהאפליקציה את כל נתוני הגיבוש שנבחר: סבבים, הערכות, סדרי הגעה,
-      מועמדים, צוותים, לוז, סגל, דיווחי תקלות והערות. הפעולה אינה הפיכה.
+      מועמדים, צוותים, לוז, סגל, דיווחי תקלות, הערות, וכן חשבונות מעריכים
+      ומפקצ״ים ששימשו רק בו. הפעולה אינה הפיכה.
       <strong>קבצי Google Sheets אינם נמחקים.</strong>
       הגיבוש הפעיל אינו ניתן למחיקה — יש לסגור אותו תחילה.
     </p>
@@ -1934,7 +1935,8 @@
     // כדי ששתי לחיצות אישור רצופות לא יוכלו למחוק גיבוש בטעות.
     const warning = 'פעולה הרסנית ובלתי הפיכה.\n\n' +
       'כל נתוני הגיבוש "' + name + '" יימחקו מהאפליקציה:\n' +
-      'סבבים, הערכות, סדרי הגעה, מועמדים, צוותים, לוז, סגל, דיווחי תקלות והערות.\n\n' +
+      'סבבים, הערכות, סדרי הגעה, מועמדים, צוותים, לוז, סגל, דיווחי תקלות והערות,\n' +
+      'וכן חשבונות המעריכים והמפקצ״ים ששימשו רק בגיבוש הזה.\n\n' +
       'קבצי Google Sheets לא ייגעו.\n\nלהמשיך?';
     if (!confirm(warning)) return;
     const typed = prompt('אישור אחרון. הקלד את שם הגיבוש בדיוק כדי למחוק:\n\n' + name);
@@ -1953,6 +1955,8 @@
       setPurgeStatus('קורא את רשימת המועמדים…');
       const candidates = await getDocs(collection(db, 'events', eventId, 'candidates'));
       const noteKeys = candidates.docs.map(d => noteKeyFor(d.data()));
+      // הסגל נקרא כאן כי שלב 6 מוחק אותו, ושלב 7 עדיין זקוק לרשימה.
+      const staffUids = (await getDocs(collection(db, 'events', eventId, 'staff'))).docs.map(d => d.id);
 
       // 2. סבבים ותת-האוספים שלהם. סבב ישן ללא eventId אינו משויך לגיבוש
       //    ולכן אינו נמחק — הוא מדווח בסיכום.
@@ -2016,7 +2020,40 @@
       }
       counts['נתוני האירוע'] = eventDocs;
 
-      // 7. העותק הגלובלי של הרשימות. teams/{מספר} מחזיק שמות, תעודות זהות
+      // 7. חשבונות הסגל. לכל גיבוש מעריכים ומפקצ״ים אחרים, ולכן חשבון ששימש
+      //    רק בגיבוש הנמחק נמחק איתו. שלוש הגנות, כי זו הפעולה הכי קלה לטעות
+      //    בה: לא נוגעים במי שמשובץ לגיבוש אחר כלשהו, לא במנהלים, ולא במי
+      //    שמריץ את המחיקה. חשבון ההתחברות עצמו (Firebase Auth) אינו נמחק
+      //    מכאן — הוא נמחק בקונסולת Firebase.
+      setPurgeStatus('בודק אילו חשבונות שימשו רק בגיבוש הזה…');
+      const stillStaffed = new Set();
+      for (const otherEvent of (await getDocs(collection(db, 'events'))).docs) {
+        if (otherEvent.id === eventId) continue;
+        for (const staff of (await refsIn(['events', otherEvent.id, 'staff']))) {
+          stillStaffed.add(staff.id);
+        }
+      }
+      const userRefs = [];
+      let keptUsers = 0;
+      for (const uid of staffUids) {
+        if (uid === (currentAdmin?.uid || '')) { keptUsers++; continue; }
+        if (stillStaffed.has(uid)) { keptUsers++; continue; }
+        const userDocument = await getDoc(doc(db, 'users', uid));
+        if (!userDocument.exists()) continue;
+        if (userDocument.data().role === 'admin') { keptUsers++; continue; }
+        userRefs.push(userDocument.ref);
+      }
+      counts['חשבונות סגל'] = await deleteRefsInBatches(userRefs);
+      if (keptUsers) {
+        remarks.push('נשמרו ' + keptUsers + ' חשבונות — מנהלים, או משובצים ' +
+          'לגיבוש אחר, שמחיקתם הייתה מנתקת אותם מגיבוש פעיל.');
+      }
+      if (userRefs.length) {
+        remarks.push('חשבונות ההתחברות עצמם (Firebase Auth) לא נמחקו — ' +
+          'מחיקתם נעשית בקונסולת Firebase. מי שיתחבר שוב יירשם כממתין לאישור.');
+      }
+
+      // 8. העותק הגלובלי של הרשימות. teams/{מספר} מחזיק שמות, תעודות זהות
       //    וטלפוני חירום, ממופתח לפי מספר צוות בלבד — ללא אירוע. הוא נדרס
       //    בכל ייבוא רשימות, ולכן כשקיים גיבוש פעיל הוא כבר מתאר אותו ואסור
       //    לגעת בו. רק כשאין גיבוש פעיל הוא עדיין מחזיק את הרשימה של הגיבוש
@@ -2042,7 +2079,7 @@
         counts['רשימות גלובליות'] = purgedTeams.length;
       }
 
-      // 8. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
+      // 9. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
       //    סגור. מחיקתו מוקדם יותר הייתה חוסמת את כל השאר.
       setPurgeStatus('מוחק את מסמך הגיבוש…');
       await deleteDoc(doc(db, 'events', eventId));

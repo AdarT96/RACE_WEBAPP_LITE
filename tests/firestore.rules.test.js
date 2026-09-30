@@ -868,3 +868,27 @@ test('purging a formation takes its notes with it', async () => {
   await assertSucceeds(deleteDoc(eventNoteRef(admin, 'event-old', '01_100', 'evaluator1')));
   await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', 'generalNotes', '01_100')));
 });
+
+test('staff accounts are deletable by an administrator and by nobody else', async () => {
+  await assertFails(deleteDoc(doc(userDb('evaluator1'), 'users', 'evaluator2')));
+  await assertFails(deleteDoc(doc(userDb('formation1'), 'users', 'evaluator1')));
+  await assertFails(deleteDoc(doc(userDb('evaluator1'), 'users', 'evaluator1')));
+  await assertSucceeds(deleteDoc(doc(userDb('admin1'), 'users', 'evaluator1')));
+});
+
+// הרשימה נקראת לפני שהמחיקה מוחקת אותה; בלי זה אין דרך לדעת אילו חשבונות
+// שימשו רק בגיבוש הנמחק.
+test('event staff membership is readable before it is deleted', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-old', 'staff', 'evaluator2'), {
+      eventId: 'event-old', uid: 'evaluator2', displayName: 'מעריך 2', role: 'evaluator',
+      team: 1, active: true, createdAt: Timestamp.now(), createdBy: 'admin1',
+      updatedAt: Timestamp.now(), updatedBy: 'admin1'
+    });
+  });
+  const admin = userDb('admin1');
+  const snapshot = await assertSucceeds(getDocs(collection(admin, 'events', 'event-old', 'staff')));
+  assert.equal(snapshot.docs.some(d => d.id === 'evaluator2'), true);
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', 'staff', 'evaluator2')));
+});
