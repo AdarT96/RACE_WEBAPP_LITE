@@ -30,7 +30,7 @@ const APP_CONFIG = {
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
 
   // מספר הצוותים במערכת (המשתמש בוחר צוות ברישום)
-  maxTeamNumber: 15,
+  maxTeamNumber: 20,
 
   // תחנות המערכת — חייב להתאים ל-STATION_COUNT ו-STATION_NAMES ב-scripts/Code.gs.
   // הערכים כאן הם ברירת מחדל בלבד — המנהל יכול לדרוס אותם לכל צוות בפאנל המנהל.

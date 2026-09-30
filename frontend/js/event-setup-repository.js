@@ -9,6 +9,9 @@ import {
   EVENT_SETUP_SCHEMA_VERSION, EVENT_STATUSES, normalizeEventStaff, normalizeEventTeamId
 } from './event-setup-model.js';
 import { EVENT_STAFFING_SCHEMA_VERSION, ROLES } from './roles.js';
+// מקור אמת יחיד למספר הצוותים. המספר היה כתוב כאן בנפרד, וזה בדיוק סוג
+// הכפילות שמשאירה מגבלה ישנה אחרי שהעלו אותה במקום אחר.
+import { SCHEDULE_MAX_TEAMS as MAX_EVENT_TEAMS } from './schedule-model.js';
 
 const BATCH_LIMIT = 450;
 
@@ -107,7 +110,7 @@ export function createEventSetupRepository(db, adminUser) {
       const teamIds = [...new Set((Array.isArray(teamValues) ? teamValues : []).map(normalizeEventTeamId).filter(Boolean))]
         .sort((left, right) => Number(left) - Number(right));
       if (!teamIds.length) throw new Error('יש להגדיר לפחות צוות אחד.');
-      if (teamIds.length > 15) throw new Error('ניתן להגדיר עד 15 צוותים.');
+      if (teamIds.length > MAX_EVENT_TEAMS) throw new Error(`ניתן להגדיר עד ${MAX_EVENT_TEAMS} צוותים.`);
       const eventSnapshot = await getDoc(eventRef(eventId));
       if (!eventSnapshot.exists() || ![EVENT_STATUSES.DRAFT, EVENT_STATUSES.ACTIVE].includes(eventSnapshot.data().status)) {
         throw new Error('לא ניתן לערוך צוותים באירוע במצב הנוכחי.');

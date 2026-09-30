@@ -91,7 +91,7 @@ service cloud.firestore {
         request.resource.data.role in ['operator', 'evaluator', 'formation_commander'] &&
         ((request.resource.data.role in ['operator', 'evaluator'] &&
           request.resource.data.team is int &&
-          request.resource.data.team >= 1 && request.resource.data.team <= 15) ||
+          request.resource.data.team >= 1 && request.resource.data.team <= 20) ||
          (request.resource.data.role == 'formation_commander' &&
           request.resource.data.team == null));
 
@@ -274,8 +274,8 @@ service cloud.firestore {
           ]) &&
           request.resource.data.eventId == eventId &&
           request.resource.data.teamIds is list && request.resource.data.teamIds.size() > 0 &&
-          request.resource.data.teamIds.size() <= 15 &&
-          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 15 &&
+          request.resource.data.teamIds.size() <= 20 &&
+          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 20 &&
           request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
           request.resource.data.loadPolicy is map &&
           request.resource.data.loadPolicy.keys().hasAll([
@@ -326,8 +326,8 @@ service cloud.firestore {
           ]) &&
           request.resource.data.eventId == eventId &&
           request.resource.data.teamIds is list && request.resource.data.teamIds.size() > 0 &&
-          request.resource.data.teamIds.size() <= 15 &&
-          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 15 &&
+          request.resource.data.teamIds.size() <= 20 &&
+          request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 20 &&
           request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
           request.resource.data.loadPolicy is map &&
           request.resource.data.loadPolicy.keys().hasAll([
@@ -901,7 +901,7 @@ service cloud.firestore {
           request.resource.data.reporterRole == caller().role &&
           request.resource.data.reporterRole in ['operator', 'evaluator', 'admin'] &&
           request.resource.data.reporterTeam is int &&
-          request.resource.data.reporterTeam >= 1 && request.resource.data.reporterTeam <= 15 &&
+          request.resource.data.reporterTeam >= 1 && request.resource.data.reporterTeam <= 20 &&
           (isAdmin() || request.resource.data.reporterTeam == int(caller().team)) &&
           request.resource.data.category in ['timing', 'arrival_order', 'saving', 'display', 'other'] &&
           request.resource.data.description is string &&

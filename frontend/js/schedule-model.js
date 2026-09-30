@@ -1,6 +1,6 @@
 export const SCHEDULE_SCHEMA_VERSION = 1;
 export const SCHEDULE_TIME_ZONE = 'Asia/Jerusalem';
-export const SCHEDULE_MAX_TEAMS = 15;
+export const SCHEDULE_MAX_TEAMS = 20;
 export const SCHEDULE_MAX_ROWS = 100;
 
 export const SCHEDULE_ROW_KINDS = Object.freeze({
