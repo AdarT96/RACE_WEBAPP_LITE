@@ -102,7 +102,7 @@
     <div class="stat-card"><div class="stat-val" id="count-pending">—</div><div class="stat-lbl">ממתינים</div></div>
     <div class="stat-card"><div class="stat-val" id="count-approved">—</div><div class="stat-lbl">מאושרים</div></div>
     <div class="stat-card"><div class="stat-val" id="count-total">—</div><div class="stat-lbl">סה"כ משתמשים</div></div>
-    <div class="stat-card"><div class="stat-val" id="count-races">—</div><div class="stat-lbl">מרוצים</div></div>
+    <div class="stat-card"><div class="stat-val" id="count-races">—</div><div class="stat-lbl">סבבים בגיבוש הפעיל</div></div>
     <div class="stat-card"><div class="stat-val" id="count-issues-open">—</div><div class="stat-lbl">פתוחות ברשימה</div></div>
   </div>
 
@@ -376,11 +376,11 @@
 
   <details class="card mb-16 collapsible-card">
     <summary class="collapsible-summary">
-      <h2>🏁 היסטוריית מרוצים</h2>
+      <h2>🏁 היסטוריית הגיבוש הפעיל</h2>
       <span class="collapsible-chevron" aria-hidden="true">▾</span>
     </summary>
     <div class="flex flex-center flex-between mb-12" style="margin-top:12px">
-      <span style="font-size:12px; color:var(--text-muted)">מונה המרוצים בראש הפאנל מתעדכן גם כשהקטע סגור.</span>
+      <span style="font-size:12px; color:var(--text-muted)">מוצגים סבבי הגיבוש הפעיל בלבד. המונה בראש הפאנל מתעדכן גם כשהקטע סגור.</span>
       <button class="btn btn-ghost" onclick="loadRaces()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
     </div>
     <div id="races-list">
@@ -1279,24 +1279,44 @@
     }
   };
 
+  // ההיסטוריה מוצגת לגיבוש הפעיל בלבד. אירוע יחיד מחזיק מאות סבבים
+  // (20 צוותים × 17 תחנות × סבבים), וקריאת כל האוסף גם איטית וגם מטעה —
+  // המנהל צריך לראות את הגיבוש שרץ עכשיו, לא את כל מה שהיה.
   window.loadRaces = async () => {
+    const container = document.getElementById('races-list');
+    const counter   = document.getElementById('count-races');
     try {
-      const snap = await getDocs(collection(db, 'races'));
+      const event = await activeFormationEvent();
+      if (!event) {
+        counter.textContent = '0';
+        container.innerHTML = '<div class="empty-state"><div class="icon">🏁</div>' +
+          'אין אירוע גיבוש פעיל. ההיסטוריה מוצגת לאירוע הפעיל בלבד.</div>';
+        return;
+      }
+      // שוויון בודד אינו דורש אינדקס מורכב, ולכן המיון נעשה בזיכרון.
+      const snap = await getDocs(query(collection(db, 'races'), where('eventId', '==', event.id)));
       const races = [];
       snap.forEach(d => races.push({ ...d.data(), id: d.id }));
-      document.getElementById('count-races').textContent = races.length;
-      const container = document.getElementById('races-list');
+      counter.textContent = races.length;
       if (races.length === 0) {
-        container.innerHTML = '<div class="empty-state"><div class="icon">🏁</div>לא נרשמו מרוצים עדיין.</div>'; return;
+        container.innerHTML = '<div class="empty-state"><div class="icon">🏁</div>' +
+          'לא נרשמו סבבים ב' + escHtml(String(event.name || event.id)) + ' עדיין.</div>';
+        return;
       }
-      container.innerHTML = races.sort((a,b)=>(b.round||0)-(a.round||0)).map(r => {
+      const byTeamStationRound = (a, b) =>
+        String(a.team || '').localeCompare(String(b.team || '')) ||
+        String(a.station || '').localeCompare(String(b.station || '')) ||
+        (Number(b.round) || 0) - (Number(a.round) || 0);
+      container.innerHTML = races.sort(byTeamStationRound).map(r => {
         const nowMs = Date.now();
         const status = isSessionExpired(r, nowMs) ? 'תקרת 40 דק׳' :
           isSessionEffectivelyRunning(r, nowMs) ? 'פעיל' : 'עצור';
+        const team    = r.team ? 'צוות ' + Number(r.team) : 'ללא צוות';
+        const station = r.station ? 'תחנה ' + escHtml(String(r.station)) : 'ללא תחנה';
         return `
         <div class="user-row">
           <div class="user-info">
-            <div class="user-name">סבב #${r.round} — ${r.mode==='laps'?'הקפות':'הגעה'}</div>
+            <div class="user-name">${team} · ${station} · סבב #${Number(r.round) || 0}</div>
             <div class="user-email">
               ${r.participantIds?.length || 0} משתתפים · סטטוס: ${status}
             </div>
