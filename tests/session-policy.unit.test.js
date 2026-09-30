@@ -48,10 +48,13 @@ test('arrival measurements after the limit are untimed instead of becoming zero'
   assert.equal(measuredElapsedMs(race, START - 1), null);
 });
 
-test('only the commander role controls session lifecycle', () => {
+// מעריך לעולם אינו מפעיל סבב — אחרת סבב היה נפתח באמצע הערכה. מפקד הגיבוש
+// צופה בתמונת המצב ואינו מפעיל תחנות. המנהל כן, כדי שיוכל לכסות על מפק״צ נעדר
+// בלי לשנות לעצמו תפקיד.
+test('the station commander and the administrator control session lifecycle', () => {
   assert.equal(canRoleControlSession('operator'), true);
+  assert.equal(canRoleControlSession('admin'), true);
   assert.equal(canRoleControlSession('evaluator'), false);
   assert.equal(canRoleControlSession('formation_commander'), false);
-  assert.equal(canRoleControlSession('admin'), false);
   assert.equal(canRoleControlSession(undefined), false);
 });
