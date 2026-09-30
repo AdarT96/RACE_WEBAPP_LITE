@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, normalizeSchedule,
+  SCHEDULE_MAX_TEAMS, SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, normalizeSchedule,
   recommendedStationFromProjection, scheduleEntryAt, scheduleIssues
 } from '../frontend/js/schedule-model.js';
 import { analyzeScheduleLoad } from '../frontend/js/schedule-load-policy.js';
@@ -56,7 +56,9 @@ test('schedule validation reports an oversized schedule instead of silently trun
 
 test('schedule validation rejects invalid or duplicate team identities', () => {
   const invalid = masterSchedule();
-  invalid.teamIds = ['01', '1', '16'];
+  // מעבר לתקרה, נגזר מהקבוע — מספר קשיח כאן נשבר בכל שינוי קיבולת
+  const aboveCap = String(SCHEDULE_MAX_TEAMS + 1).padStart(2, '0');
+  invalid.teamIds = ['01', '1', aboveCap];
   const issues = scheduleIssues(invalid);
   assert.ok(issues.some(issue => issue.includes('יותר מפעם אחת')));
   assert.ok(issues.some(issue => issue.includes('מספר צוות שאינו תקין')));

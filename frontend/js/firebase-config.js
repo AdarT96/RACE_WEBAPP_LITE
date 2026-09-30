@@ -25,7 +25,7 @@ const APP_CONFIG = {
   sheetsApiKey: "YOUR_SECRET_KEY_HERE",
 
   // Team count for registration.
-  maxTeamNumber: 15,
+  maxTeamNumber: 20,
 
   // 17 station types are defined in js/station-types.js. Per-team ordering lives in Firestore `teams/{teamNumber}.stationMap`.
   stationCount: 17,
