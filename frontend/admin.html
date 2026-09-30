@@ -1986,7 +1986,33 @@
       }
       counts['נתוני האירוע'] = eventDocs;
 
-      // 6. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
+      // 6. העותק הגלובלי של הרשימות. teams/{מספר} מחזיק שמות, תעודות זהות
+      //    וטלפוני חירום, ממופתח לפי מספר צוות בלבד — ללא אירוע. הוא נדרס
+      //    בכל ייבוא רשימות, ולכן כשקיים גיבוש פעיל הוא כבר מתאר אותו ואסור
+      //    לגעת בו. רק כשאין גיבוש פעיל הוא עדיין מחזיק את הרשימה של הגיבוש
+      //    הנמחק, ואז מנקים את הפרטים האישיים ומשאירים את מיפוי התחנות.
+      const purgedTeams = [...new Set(candidates.docs
+        .map(d => String(d.data().team).padStart(2, '0')))];
+      if (activeId) {
+        remarks.push('רשימות המועמדים הגלובליות (teams/{מספר}) לא נוגעו — הן כבר ' +
+          'מתארות את הגיבוש הפעיל, לא את הנמחק.');
+        counts['רשימות גלובליות'] = 0;
+      } else if (purgedTeams.length) {
+        setPurgeStatus('מנקה את רשימות המועמדים הגלובליות…');
+        const rosterBatch = writeBatch(db);
+        for (const team of purgedTeams) {
+          rosterBatch.set(doc(db, 'teams', team), {
+            candidates: deleteField(),
+            rosterSource: deleteField(),
+            updatedAt: serverTimestamp(),
+            updatedBy: currentAdmin?.uid || ''
+          }, { merge: true });
+        }
+        await rosterBatch.commit();
+        counts['רשימות גלובליות'] = purgedTeams.length;
+      }
+
+      // 7. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
       //    סגור. מחיקתו מוקדם יותר הייתה חוסמת את כל השאר.
       setPurgeStatus('מוחק את מסמך הגיבוש…');
       await deleteDoc(doc(db, 'events', eventId));
