@@ -104,7 +104,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-09-11-event-files";
+var CODE_VERSION = "2026-09-30-target-fallback";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -513,8 +513,19 @@ function safeDriveName_(value) {
 function driveParent_() {
   var target = getDriveTarget_();
   if (target.folderId) {
-    return DriveApp.getFolderById(target.folderId); // נכשל ברעש אם אין גישה
+    try {
+      return DriveApp.getFolderById(target.folderId);
+    } catch (err) {
+      // יעד שנמחק אסור שישתק את יצירת הקבצים. בלי הנפילה חזרה הזו, מחיקת
+      // תיקייה אחת ב-Drive הפילה כל הקצאה עם שגיאת Drive גולמית, רחוק מהסיבה.
+      addRequestWarning_("תיקיית היעד אינה נגישה (נמחקה או הוסרה ההרשאה) — " +
+        "הקובץ נוצר לצד הקובץ הראשי. פאנל מנהל → יעד השמירה ב-Drive [" + err.message + "]");
+    }
   }
+  return defaultParentFolder_();
+}
+
+function defaultParentFolder_() {
   try {
     var parents = DriveApp.getFileById(SHEET_ID).getParents();
     return parents.hasNext() ? parents.next() : DriveApp.getRootFolder();
