@@ -402,6 +402,23 @@
       </div>
     </div>
 
+
+    <div class="section mb-12">
+      <h3 class="mb-8">שיוך הערות ישנות לגיבוש</h3>
+      <p style="font-size:13px; margin-bottom:12px; color:var(--text-muted)">
+        הערות שנכתבו לפני השינוי נשמרו ללא שיוך לגיבוש, ולכן מועמד באותו מספר
+        בגיבוש אחר ראה אותן. ההסבה מעבירה אותן אל הגיבוש שתבחר. אין דרך להסיק
+        לאיזה גיבוש שייכת הערה קיימת — הבחירה שלך היא ההכרעה.
+        הרצה חוזרת בטוחה, והערות שכבר קיימות ביעד לא נדרסות.
+      </p>
+      <div class="flex gap-8" style="flex-wrap:wrap">
+        <select id="notes-migration-event" class="form-input" style="flex:1; min-width:220px">
+          <option value="">— טוען גיבושים —</option>
+        </select>
+        <button class="btn btn-warning" id="notes-migration-btn" onclick="migrateNotesToEvent()">הסב הערות</button>
+      </div>
+      <div id="notes-migration-status" style="font-size:13px; white-space:pre-wrap; margin-top:8px; color:var(--text-muted)"></div>
+    </div>
     <div class="section">
       <h3 class="mb-8">קידום משתמש לתפקיד מנהל</h3>
       <div class="flex gap-8" style="flex-wrap:wrap">
@@ -484,6 +501,7 @@
     loadFormationEventStatus();
     loadDriveTarget();
     loadPurgeableEvents();
+    loadNotesMigrationEvents();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -1954,10 +1972,21 @@
       const issues = await getDocs(query(collection(db, 'issue_reports'), where('eventId', '==', eventId)));
       counts['דיווחי תקלות'] = await deleteRefsInBatches(issues.docs.map(d => d.ref));
 
-      // 4. הערות כלליות. מפתח המסמך הוא {צוות}_{מספר מועמד} ואינו כולל אירוע,
-      //    ולכן זוג שקיים גם בגיבוש הפעיל מדולג — אחרת מחיקת גיבוש ישן הייתה
-      //    מוחקת הערות חיות על מועמד אחר שקיבל את אותו מספר.
-      setPurgeStatus('מוחק הערות כלליות…');
+      // 4. הערות הגיבוש. הערות חדשות יושבות תחת האירוע, ולכן נמחקות במדויק
+      //    ובלי שאלות. כל טאב הערות מחזיק תת-אוסף authors שיש למחוק לפניו.
+      setPurgeStatus('מוחק את הערות הגיבוש…');
+      const eventNoteRefs = [];
+      for (const noteDoc of (await getDocs(collection(db, 'events', eventId, 'generalNotes'))).docs) {
+        eventNoteRefs.push(...await refsIn(['events', eventId, 'generalNotes', noteDoc.id, 'authors']));
+        eventNoteRefs.push(noteDoc.ref);
+      }
+      counts['הערות הגיבוש'] = await deleteRefsInBatches(eventNoteRefs);
+
+      // 5. הערות ישנות שטרם הוסבו. האוסף הגלובלי general_notes ממופתח
+      //    {צוות}_{מספר מועמד} בלי אירוע, ולכן זוג שקיים גם בגיבוש הפעיל
+      //    מדולג — מחיקתו הייתה פוגעת בהערות חיות על אדם אחר. לאחר הרצת
+      //    ההסבה בפאנל אין כאן עוד מה למחוק.
+      setPurgeStatus('מוחק הערות ישנות שטרם הוסבו…');
       const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
       const activeId = pointer.exists() ? String(pointer.data().eventId || '') : '';
       const liveKeys = new Set();
@@ -1972,13 +2001,14 @@
         noteRefs.push(...await refsIn(['general_notes', key, 'authors']));
         noteRefs.push(doc(db, 'general_notes', key));
       }
-      counts['הערות כלליות'] = await deleteRefsInBatches(noteRefs);
+      counts['הערות ישנות'] = await deleteRefsInBatches(noteRefs);
       if (skippedNotes) {
-        remarks.push('דולגו ' + skippedNotes + ' הערות שמשותפות לגיבוש הפעיל ' +
-          '(אותו צוות ואותו מספר מועמד). מחיקתן הייתה פוגעת בנתונים חיים.');
+        remarks.push('דולגו ' + skippedNotes + ' הערות ישנות שטרם הוסבו ומשותפות ' +
+          'לגיבוש הפעיל (אותו צוות ואותו מספר מועמד). הרצת ההסבה לגיבושים ' +
+          'תפתור את זה לצמיתות.');
       }
 
-      // 5. תת-האוספים של האירוע.
+      // 6. תת-האוספים של האירוע.
       let eventDocs = 0;
       for (const sub of PURGE_EVENT_SUBCOLLECTIONS) {
         setPurgeStatus('מוחק ' + sub + '…');
@@ -1986,7 +2016,7 @@
       }
       counts['נתוני האירוע'] = eventDocs;
 
-      // 6. העותק הגלובלי של הרשימות. teams/{מספר} מחזיק שמות, תעודות זהות
+      // 7. העותק הגלובלי של הרשימות. teams/{מספר} מחזיק שמות, תעודות זהות
       //    וטלפוני חירום, ממופתח לפי מספר צוות בלבד — ללא אירוע. הוא נדרס
       //    בכל ייבוא רשימות, ולכן כשקיים גיבוש פעיל הוא כבר מתאר אותו ואסור
       //    לגעת בו. רק כשאין גיבוש פעיל הוא עדיין מחזיק את הרשימה של הגיבוש
@@ -2012,7 +2042,7 @@
         counts['רשימות גלובליות'] = purgedTeams.length;
       }
 
-      // 7. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
+      // 8. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
       //    סגור. מחיקתו מוקדם יותר הייתה חוסמת את כל השאר.
       setPurgeStatus('מוחק את מסמך הגיבוש…');
       await deleteDoc(doc(db, 'events', eventId));
@@ -2029,6 +2059,86 @@
       setPurgeStatus('✗ המחיקה נעצרה: ' + error.message +
         '\nייתכן שחלק מהנתונים כבר נמחק. אפשר להריץ שוב — המחיקה מתחילה מההתחלה ומדלגת על מה שכבר אינו קיים.');
       showToast('המחיקה נכשלה: ' + error.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  //  הסבת הערות לשיוך לגיבוש
+  // ═══════════════════════════════════════════════════════════
+
+  // ההערות נכתבו במקור ל-general_notes/{צוות}_{מספר}, בלי שיוך לגיבוש, ולכן
+  // אותו מועמד בשני גיבושים חלק את אותו מסמך. ההסבה מעבירה אותן אל
+  // events/{גיבוש}/generalNotes/… — ושם השיוך מבני. אין דרך להסיק לאיזה גיבוש
+  // שייכת הערה קיימת, ולכן המנהל בוחר את היעד במפורש.
+  window.loadNotesMigrationEvents = async () => {
+    const select = document.getElementById('notes-migration-event');
+    try {
+      const snapshot = await getDocs(collection(db, 'events'));
+      const events = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (!events.length) {
+        select.innerHTML = '<option value="">אין גיבושים</option>';
+        return;
+      }
+      select.innerHTML = '<option value="">— בחר גיבוש יעד —</option>' + events.map(event => {
+        const name = String(event.name || event.id);
+        return '<option value="' + escHtml(event.id) + '">' +
+          escHtml(name + ' · ' + (event.status || '')) + '</option>';
+      }).join('');
+    } catch (error) {
+      select.innerHTML = '<option value="">שגיאה בטעינה</option>';
+      showToast('שגיאה בטעינת גיבושים: ' + error.message, 'error');
+    }
+  };
+
+  window.migrateNotesToEvent = async () => {
+    const select = document.getElementById('notes-migration-event');
+    const eventId = select.value;
+    const status = document.getElementById('notes-migration-status');
+    if (!eventId) { showToast('בחר גיבוש יעד', 'error'); return; }
+    const label = select.options[select.selectedIndex].textContent;
+    if (!confirm('כל ההערות הישנות ישויכו לגיבוש:\n\n' + label +
+        '\n\nהערות שכבר קיימות בגיבוש היעד לא יידרסו. המקור יימחק לאחר העתקה מוצלחת.\n\nלהמשיך?')) return;
+
+    const button = document.getElementById('notes-migration-btn');
+    button.disabled = true;
+    let moved = 0, kept = 0, notes = 0;
+    try {
+      status.textContent = 'קורא הערות ישנות…';
+      const legacy = await getDocs(collection(db, 'general_notes'));
+      for (let index = 0; index < legacy.docs.length; index += 1) {
+        const noteDoc = legacy.docs[index];
+        status.textContent = 'מסב ' + (index + 1) + '/' + legacy.docs.length + '…';
+        const authors = await getDocs(collection(db, 'general_notes', noteDoc.id, 'authors'));
+        const done = [];
+        for (const author of authors.docs) {
+          const target = doc(db, 'events', eventId, 'generalNotes', noteDoc.id, 'authors', author.id);
+          // ההסבה לעולם אינה דורסת הערה שכבר נכתבה בגיבוש היעד — הרצה
+          // חוזרת בטוחה, וגם הרצה אחרי שהמעריכים כבר התחילו לעבוד.
+          if ((await getDoc(target)).exists()) { kept += 1; continue; }
+          await setDoc(target, author.data());
+          done.push(author.ref);
+          notes += normalizeNotes(author.data().notes).length;
+        }
+        if (done.length) {
+          const batch = writeBatch(db);
+          for (const ref of done) batch.delete(ref);
+          await batch.commit();
+          moved += done.length;
+        }
+        // מסמך האב נמחק רק כשכל מחבריו הועברו, כדי שהרצה חוזרת תוכל להשלים.
+        if (done.length === authors.docs.length && authors.docs.length) {
+          await deleteDoc(noteDoc.ref);
+        }
+      }
+      status.textContent = '✓ הוסבו ' + moved + ' רשומות מעריך (' + notes + ' הערות)' +
+        (kept ? ', ' + kept + ' דולגו כי כבר קיימות בגיבוש היעד' : '') + '.';
+      showToast('ההסבה הושלמה', 'success');
+    } catch (error) {
+      status.textContent = '✗ ההסבה נעצרה: ' + error.message +
+        '\nהועברו ' + moved + ' עד כה. אפשר להריץ שוב — היא ממשיכה מהנקודה שנעצרה.';
+      showToast('ההסבה נכשלה: ' + error.message, 'error');
     } finally {
       button.disabled = false;
     }

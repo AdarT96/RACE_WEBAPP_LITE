@@ -818,3 +818,53 @@ test('the privacy archive survives a formation purge', async () => {
   });
   await assertFails(deleteDoc(doc(userDb('admin1'), 'privacy_migration_archive', 'archive-1')));
 });
+
+// ═══════════════════════════════════════════════════════════
+//  הערות משויכות לגיבוש
+// ═══════════════════════════════════════════════════════════
+
+const eventNoteRef = (db, eventId, noteId, authorUid) =>
+  doc(db, 'events', eventId, 'generalNotes', noteId, 'authors', authorUid);
+
+test('notes under a formation stay isolated by author', async () => {
+  const own = eventNoteRef(userDb('evaluator1'), 'event-1', '01_100', 'evaluator1');
+  await assertSucceeds(setDoc(own, privateNotesPayload()));
+  await assertSucceeds(getDoc(own));
+  await assertFails(getDoc(eventNoteRef(userDb('evaluator2'), 'event-1', '01_100', 'evaluator1')));
+  await assertFails(getDoc(eventNoteRef(userDb('operator1'), 'event-1', '01_100', 'evaluator1')));
+  await assertFails(getDoc(eventNoteRef(userDb('formation1'), 'event-1', '01_100', 'evaluator1')));
+});
+
+// זו הסיבה לכל השינוי: מספר מועמד חוזר בין גיבושים, ובמבנה הישן שתי
+// ההערות היו נכתבות לאותו מסמך ומוצגות לאדם הלא נכון.
+test('the same candidate number in another formation is a separate document', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await assertSucceeds(setDoc(
+    eventNoteRef(userDb('evaluator1'), 'event-1', '01_100', 'evaluator1'), privateNotesPayload()
+  ));
+  const admin = userDb('admin1');
+  const current = await assertSucceeds(getDoc(eventNoteRef(admin, 'event-1', '01_100', 'evaluator1')));
+  const previous = await assertSucceeds(getDoc(eventNoteRef(admin, 'event-old', '01_100', 'evaluator1')));
+  assert.equal(current.exists(), true);
+  assert.equal(previous.exists(), false);
+});
+
+test('notes cannot be written into a formation that is not running', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await assertFails(setDoc(
+    eventNoteRef(userDb('evaluator1'), 'event-old', '01_100', 'evaluator1'), privateNotesPayload()
+  ));
+});
+
+test('purging a formation takes its notes with it', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'events', 'event-old', 'generalNotes', '01_100'), { seeded: true });
+    await setDoc(doc(db, 'events', 'event-old', 'generalNotes', '01_100', 'authors', 'evaluator1'),
+      { ...privateNotesPayload(), createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+  });
+  const admin = userDb('admin1');
+  await assertSucceeds(deleteDoc(eventNoteRef(admin, 'event-old', '01_100', 'evaluator1')));
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', 'generalNotes', '01_100')));
+});
