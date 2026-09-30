@@ -1759,7 +1759,15 @@
 
     // הערות כלליות זמינות תמיד לצד התחנה
     initGeneralNotes();
-    applyAppRoute();
+    await applyAppRoute();
+
+    // פאנל המנהל מפנה לכאן עם #sync-all. הסנכרון נשאר בדף הזה, שבו יושבים
+    // מטמון הצוותים, סוגי התחנות והרשאות הקריאה שהוא צריך — הפאנל רק פותח אותו.
+    if (location.hash === '#sync-all') {
+      history.replaceState(null, '', location.pathname + location.search);
+      if (isAdmin()) doSyncAllSheets();
+      else showToast('סנכרון מלא זמין למנהל בלבד', 'error');
+    }
   }
 
   async function loadTeamScheduleProjection(team) {
