@@ -107,10 +107,13 @@
   </div>
 
   <!-- אירוע גיבוש פעיל -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap">
+  <details class="card mb-16 collapsible-card" open>
+    <summary class="collapsible-summary">
+      <h2>🧭 אירוע גיבוש</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <div>
-        <h2>🧭 אירוע גיבוש</h2>
         <p id="formation-event-summary" style="font-size:13px; color:var(--text-muted); margin-top:5px">טוען…</p>
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap">
@@ -129,45 +132,47 @@
     <div id="formation-event-active-actions" style="display:none">
       <button class="btn btn-danger" onclick="closeFormationEvent()" style="padding:7px 12px">סגור אירוע פעיל</button>
     </div>
-  </div>
+  </details>
 
   <!-- אישורים ממתינים -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>⏳ אישורים ממתינים</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <span class="badge badge-warning" id="pending-badge">0</span>
     </div>
     <div id="pending-list">
       <div class="empty-state"><div class="icon">✅</div>אין בקשות ממתינות.</div>
     </div>
-  </div>
+  </details>
 
   <!-- כל המשתמשים -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>👥 כל המשתמשים</h2>
-      <div class="flex gap-8" style="flex-wrap:wrap">
-        <button id="btn-create-all-sheets" class="btn btn-primary" onclick="createAllEvaluatorSheets()"
-                style="font-size:13px; padding:6px 12px" title="יוצר קובץ שיט לכל מעריך שאין לו עדיין">
-          📄 צור קבצי שיט לכל המעריכים
-        </button>
-        <button id="btn-recreate-all-sheets" class="btn btn-warning" onclick="createAllEvaluatorSheets(true)"
-                style="font-size:13px; padding:6px 12px"
-                title="יוצר קבצים חדשים בתיקיית היעד לכל המעריכים, גם למי שכבר יש לו">
-          🆕 קבצי מעריכים חדשים ביעד
-        </button>
-        <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
-      </div>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
+      <span style="font-size:12px; color:var(--text-muted)">
+        שינוי תפקיד, שיוך צוות ומחיקת חשבון — כאן. יצירת קבצים לכל המעריכים נמצאת
+        בכרטיס <b>קבצי Google Sheets</b>.
+      </span>
+      <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
     </div>
     <div id="users-list">
       <div class="empty-state"><div class="spinner"></div></div>
     </div>
-  </div>
+  </details>
 
   <!-- ניהול תיוגים מהירים -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>💬 תיוגים מהירים למעריכים</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <span id="tags-save-status" style="font-size:12px; color:var(--text-muted)"></span>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
@@ -185,12 +190,15 @@
     <div style="text-align:left; margin-top:12px">
       <button class="btn btn-success" onclick="saveQuickTags()" style="padding:10px 20px">💾 שמור תיוגים</button>
     </div>
-  </div>
+  </details>
 
   <!-- עריכת סוגי תחנות -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>🧩 עריכת סוגי תחנות</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <select id="sttype-select" class="role-sel" onchange="onStTypeSelected(this.value)">
         <option value="">— בחר סוג תחנה —</option>
       </select>
@@ -248,12 +256,15 @@
       <span id="sttype-status" style="font-size:12px; color:var(--text-muted)"></span>
       <button class="btn btn-success" onclick="saveStTypes()" style="padding:10px 20px">💾 שמור סוגי תחנות</button>
     </div>
-  </div>
+  </details>
 
   <!-- ניהול צוותים -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>🏁 ניהול צוותים</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <select id="team-select" class="role-sel" onchange="onTeamSelected(this.value)">
         <option value="">— בחר צוות —</option>
       </select>
@@ -316,30 +327,57 @@
         <button class="btn btn-success" onclick="saveTeam()" style="padding:10px 20px">💾 שמור צוות</button>
       </div>
     </div>
-  </div>
+  </details>
 
   <!-- קבצי Google Sheets -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>📊 קבצי Google Sheets</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <button class="btn btn-ghost" onclick="auditSheetFiles()" style="font-size:13px; padding:6px 12px">🔍 בדיקת קבצים</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-      קבצי הצוותים נוצרים כאן <strong>מראש</strong>, לפני האירוע. הסנכרון עצמו רק כותב לקבצים
+      כל הקבצים נוצרים כאן <strong>מראש</strong>, לפני האירוע. הסנכרון עצמו רק כותב לקבצים
       קיימים ולעולם לא יוצר חדשים — כך נמנעת יצירת קובץ כפול בכל שורה.
+      <br>
+      <strong>"צור קבצים חדשים ביעד"</strong> מייצר קבצים חדשים בתיקיית היעד גם כשקיימים קבצים
+      במקום אחר, ומפנה את הסנכרון אליהם. הקבצים הישנים נשארים שלמים כארכיון. מיועד לתחילת אירוע.
     </p>
-    <div style="display:flex; gap:8px; flex-wrap:wrap">
-      <button id="btn-create-team-sheets" class="btn btn-primary" onclick="createAllTeamSheets()">
-        📁 צור קבצי צוותים
-      </button>
-      <button id="btn-recreate-team-sheets" class="btn btn-warning" onclick="createAllTeamSheets(true)">
-        🆕 צור קבצים חדשים ביעד
-      </button>
+
+    <div class="section mb-12">
+      <h3 class="mb-8">📁 קבצי צוותים</h3>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
+        קובץ לכל צוות, טאב לכל תחנה — סדר ההגעה וההערות של כל הצוות.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="btn-create-team-sheets" class="btn btn-primary" onclick="createAllTeamSheets()">
+          צור קבצי צוותים חסרים
+        </button>
+        <button id="btn-recreate-team-sheets" class="btn btn-warning" onclick="createAllTeamSheets(true)">
+          🆕 צור קבצים חדשים ביעד
+        </button>
+      </div>
     </div>
-    <p style="font-size:12px; color:var(--text-muted); margin-top:8px">
-      "צור קבצים חדשים ביעד" מייצר קבצים חדשים בתיקיית היעד גם כשקיימים קבצים במקום אחר,
-      ומפנה את הסנכרון אליהם. הקבצים הישנים נשארים שלמים כארכיון. מיועד לתחילת אירוע.
-    </p>
+
+    <div class="section mb-12">
+      <h3 class="mb-8">📄 קבצי מעריכים</h3>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
+        קובץ לכל מעריך, טאב לכל מועמד. קובץ למעריך יחיד נוצר משורת המשתמש
+        בכרטיס <b>כל המשתמשים</b>.
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="btn-create-all-sheets" class="btn btn-primary" onclick="createAllEvaluatorSheets()"
+                title="יוצר קובץ שיט לכל מעריך שאין לו עדיין">
+          צור קבצי מעריכים חסרים
+        </button>
+        <button id="btn-recreate-all-sheets" class="btn btn-warning" onclick="createAllEvaluatorSheets(true)"
+                title="יוצר קבצים חדשים בתיקיית היעד לכל המעריכים, גם למי שכבר יש לו">
+          🆕 צור קבצים חדשים ביעד
+        </button>
+      </div>
+    </div>
 
     <!-- יעד ב-Drive -->
     <div class="section" style="margin-top:14px">
@@ -360,12 +398,15 @@
     </div>
 
     <div id="sheets-audit" style="margin-top:12px; font-size:13px"></div>
-  </div>
+  </details>
 
   <!-- דיווחי תקלות -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12">
+  <details class="card mb-16 collapsible-card">
+    <summary class="collapsible-summary">
       <h2>⚠️ דיווחי תקלות</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <button class="btn btn-ghost" onclick="loadIssueReports()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
@@ -374,21 +415,24 @@
     <div id="issue-reports-list">
       <div class="empty-state"><div class="spinner"></div></div>
     </div>
-  </div>
+  </details>
 
-  <!-- היסטוריית מרוצים -->
-  <div class="card mb-16">
-    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap">
+  <!-- הסבת פרטיות — חד־פעמית; הכרטיס נעלם לאחר השלמתה -->
+  <details class="card mb-16 collapsible-card" id="privacy-migration-card" hidden>
+    <summary class="collapsible-summary">
       <h2>🔒 הסבת פרטיות הערכות</h2>
-      <button id="privacy-migration-btn" class="btn btn-warning" onclick="migrateEvaluationPrivacy()"
-              style="padding:8px 14px">הפעל הסבה</button>
-    </div>
-    <p style="font-size:12px; color:var(--text-muted); margin-bottom:10px">
-      פעולה חד־פעמית שמעבירה ציונים, מדידות והערות ישנים למסמכים פרטיים לכל משתמש.
-      מקור הנתונים נשמר בארכיון מנהל, והאכיפה המחמירה מופעלת רק לאחר שכל הרשומות הוסבו בהצלחה.
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
+    <p style="font-size:12px; color:var(--text-muted); margin:12px 0 10px">
+      פעולה חד־פעמית, ואינה קשורה לסנכרון ל-Sheets. במבנה הישן הציונים וההערות ישבו
+      <b>משותפים על מסמך הסבב</b> — כל מעריך ראה את של כולם. ההסבה מפרקת אותם למסמכים
+      פרטיים לכל מעריך. <b>עד להשלמתה החוקים ממשיכים להתיר את הקריאה המשותפת הישנה.</b>
+      מקור הנתונים נשמר בארכיון מנהל, והאכיפה המחמירה מופעלת רק לאחר שכל הרשומות הוסבו.
     </p>
-    <div id="privacy-migration-status" class="section" style="font-size:13px" aria-live="polite">בודק סטטוס…</div>
-  </div>
+    <button id="privacy-migration-btn" class="btn btn-warning" onclick="migrateEvaluationPrivacy()"
+            style="padding:8px 14px">הפעל הסבה</button>
+    <div id="privacy-migration-status" class="section" style="font-size:13px; margin-top:10px" aria-live="polite">בודק סטטוס…</div>
+  </details>
 
   <details class="card mb-16 collapsible-card">
     <summary class="collapsible-summary">
@@ -405,8 +449,11 @@
   </details>
 
   <!-- הגדרות מערכת -->
-  <div class="card">
-    <h2 class="mb-16">⚙ הגדרות מערכת</h2>
+  <details class="card collapsible-card">
+    <summary class="collapsible-summary">
+      <h2>⚙ הגדרות מערכת</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
 
     <div class="section mb-12">
       <h3 class="mb-8">יצירת חשבון מנהל ראשון</h3>
@@ -435,18 +482,14 @@
       </div>
       <div id="notes-migration-status" style="font-size:13px; white-space:pre-wrap; margin-top:8px; color:var(--text-muted)"></div>
     </div>
-    <div class="section">
-      <h3 class="mb-8">קידום משתמש לתפקיד מנהל</h3>
-      <div class="flex gap-8" style="flex-wrap:wrap">
-        <input id="promote-uid" class="form-input" style="flex:1; min-width:200px; direction:ltr" placeholder="UID של המשתמש">
-        <button class="btn btn-warning" onclick="promoteToAdmin()">הגדר כמנהל</button>
-      </div>
-    </div>
-  </div>
+  </details>
 
   <!-- מחיקת נתוני גיבוש קודם -->
-  <div class="card" style="border:1px solid var(--danger)">
-    <h2 class="mb-16">🗑 מחיקת נתוני גיבוש קודם</h2>
+  <details class="card collapsible-card" style="border:1px solid var(--danger)">
+    <summary class="collapsible-summary">
+      <h2>🗑 מחיקת נתוני גיבוש קודם</h2>
+      <span class="collapsible-chevron" aria-hidden="true">▾</span>
+    </summary>
     <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
       מוחק לצמיתות מהאפליקציה את כל נתוני הגיבוש שנבחר: סבבים, הערכות, סדרי הגעה,
       מועמדים, צוותים, לוז, סגל, דיווחי תקלות, הערות, וכן חשבונות מעריכים
@@ -462,7 +505,7 @@
       <button class="btn btn-danger" id="purge-btn" onclick="purgePreviousEvent()">מחק את כל נתוני הגיבוש</button>
     </div>
     <div id="purge-status" style="font-size:13px; white-space:pre-wrap; color:var(--text-muted)"></div>
-  </div>
+  </details>
 
 </div>
 
@@ -988,16 +1031,6 @@
     try { await deleteDoc(doc(db,'users',uid)); showToast('רשומה נמחקה.','info'); loadUsers(); }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
-  window.promoteToAdmin = async () => {
-    const uid = document.getElementById('promote-uid').value.trim();
-    if (!uid) { showToast('הזן UID','error'); return; }
-    try {
-      await updateDoc(doc(db,'users',uid),{role:'admin',approved:true});
-      showToast('המשתמש קודם לתפקיד מנהל ✓','success');
-      document.getElementById('promote-uid').value = '';
-      loadUsers();
-    } catch(e) { showToast('שגיאה: '+e.message,'error'); }
-  };
 
   // ═════════ Issue report triage ═════════
   const ISSUE_CATEGORY_LABELS = {
@@ -1130,12 +1163,18 @@
       const snapshot = await getDoc(privacyStatusRef());
       const complete = snapshot.exists() && snapshot.data().schemaVersion === EVALUATION_SCHEMA_VERSION &&
         snapshot.data().status === 'complete';
+      // הסבה שהושלמה היא היסטוריה, לא פעולה זמינה — הכרטיס מוסתר לגמרי
+      // במקום להישאר בפאנל עם כפתור מנוטרל.
+      document.getElementById('privacy-migration-card').hidden = complete;
       document.getElementById('privacy-migration-btn').disabled = complete;
       setPrivacyMigrationStatus(complete
         ? `ההסבה הושלמה. ${snapshot.data().racesMigrated || 0} סבבים ו־${snapshot.data().notesMigrated || 0} מסמכי הערות הועברו.`
         : 'ההסבה טרם הושלמה. ניתן להפעיל אותה בבטחה שוב אם ריצה קודמת נעצרה.',
         complete ? 'success' : 'info');
     } catch (error) {
+      // כישלון קריאה אינו ראיה שההסבה הושלמה. הכרטיס נחשף, אחרת שגיאה זמנית
+      // הייתה מסתירה לצמיתות את הדרך היחידה להריץ אותה.
+      document.getElementById('privacy-migration-card').hidden = false;
       setPrivacyMigrationStatus('לא ניתן לקרוא את סטטוס ההסבה: ' + error.message, 'error');
     }
   }
