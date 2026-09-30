@@ -411,6 +411,25 @@
     </div>
   </div>
 
+  <!-- מחיקת נתוני גיבוש קודם -->
+  <div class="card" style="border:1px solid var(--danger)">
+    <h2 class="mb-16">🗑 מחיקת נתוני גיבוש קודם</h2>
+    <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px">
+      מוחק לצמיתות מהאפליקציה את כל נתוני הגיבוש שנבחר: סבבים, הערכות, סדרי הגעה,
+      מועמדים, צוותים, לוז, סגל, דיווחי תקלות והערות. הפעולה אינה הפיכה.
+      <strong>קבצי Google Sheets אינם נמחקים.</strong>
+      הגיבוש הפעיל אינו ניתן למחיקה — יש לסגור אותו תחילה.
+    </p>
+    <div class="flex gap-8 mb-12" style="flex-wrap:wrap">
+      <select id="purge-event-select" class="form-input" style="flex:1; min-width:220px">
+        <option value="">— טוען גיבושים —</option>
+      </select>
+      <button class="btn btn-ghost" onclick="loadPurgeableEvents()" style="padding:6px 12px">↻ רענן</button>
+      <button class="btn btn-danger" id="purge-btn" onclick="purgePreviousEvent()">מחק את כל נתוני הגיבוש</button>
+    </div>
+    <div id="purge-status" style="font-size:13px; white-space:pre-wrap; color:var(--text-muted)"></div>
+  </div>
+
 </div>
 
 <div id="toast-container"></div>
@@ -437,7 +456,7 @@
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     getFirestore, collection, getDocs, doc, getDoc,
-    updateDoc, deleteDoc, deleteField, setDoc, serverTimestamp, query, where, orderBy, limit, runTransaction
+    updateDoc, deleteDoc, deleteField, setDoc, serverTimestamp, query, where, orderBy, limit, runTransaction, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -464,6 +483,7 @@
     loadPrivacyMigrationStatus();
     loadFormationEventStatus();
     loadDriveTarget();
+    loadPurgeableEvents();
   });
 
   window.doLogout = async () => { await signOut(auth); window.location.href = 'index.html'; };
@@ -1821,6 +1841,171 @@
     const el = document.createElement('div');
     el.className = `toast ${type}`; el.textContent = msg;
     c.appendChild(el); setTimeout(() => el.remove(), 3500);
+  };
+
+  // ═══════════════════════════════════════════════════════════
+  //  מחיקת נתוני גיבוש קודם
+  // ═══════════════════════════════════════════════════════════
+
+  // ה-SDK בדפדפן אינו יכול לגלות תת-אוספים, ולכן כל אחד נמחק בשמו.
+  // אוסף חדש תחת events/{id} חייב להתווסף גם לרשימה הזו, אחרת מחיקת
+  // גיבוש תשאיר אותו מאחור בשקט.
+  const PURGE_EVENT_SUBCOLLECTIONS = [
+    'candidates', 'candidateStatusEvents', 'dropoutRecommendations',
+    'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts'
+  ];
+  const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
+
+  function setPurgeStatus(text) {
+    document.getElementById('purge-status').textContent = text;
+  }
+
+  // מגבלת Firestore היא 500 פעולות לאצווה; 400 משאיר מרווח.
+  async function deleteRefsInBatches(refs) {
+    const CHUNK = 400;
+    for (let i = 0; i < refs.length; i += CHUNK) {
+      const batch = writeBatch(db);
+      for (const ref of refs.slice(i, i + CHUNK)) batch.delete(ref);
+      await batch.commit();
+    }
+    return refs.length;
+  }
+
+  async function refsIn(path) {
+    const snapshot = await getDocs(collection(db, ...path));
+    return snapshot.docs.map(d => d.ref);
+  }
+
+  function noteKeyFor(data) {
+    return String(data.team).padStart(2, '0') + '_' + String(data.participantId);
+  }
+
+  window.loadPurgeableEvents = async () => {
+    const select = document.getElementById('purge-event-select');
+    try {
+      const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
+      const activeId = pointer.exists() ? String(pointer.data().eventId || '') : '';
+      const snapshot = await getDocs(collection(db, 'events'));
+      const events = snapshot.docs
+        .map(d => ({ id: d.id, ...d.data() }))
+        // הכללים דוחים כל אחד מאלה ממילא; הסינון כאן מונע ניסיון מבולבל.
+        .filter(event => event.id !== activeId && ['draft', 'closed'].includes(event.status));
+      if (!events.length) {
+        select.innerHTML = '<option value="">אין גיבושים שניתן למחוק</option>';
+        return;
+      }
+      select.innerHTML = '<option value="">— בחר גיבוש —</option>' + events.map(event => {
+        const name = String(event.name || event.id);
+        const label = name + ' · ' + (event.status === 'draft' ? 'טיוטה' : 'סגור');
+        return '<option value="' + escHtml(event.id) + '" data-name="' + escHtml(name) + '">' +
+          escHtml(label) + '</option>';
+      }).join('');
+    } catch (error) {
+      select.innerHTML = '<option value="">שגיאה בטעינה</option>';
+      showToast('שגיאה בטעינת גיבושים: ' + error.message, 'error');
+    }
+  };
+
+  window.purgePreviousEvent = async () => {
+    const select = document.getElementById('purge-event-select');
+    const eventId = select.value;
+    if (!eventId) { showToast('בחר גיבוש למחיקה', 'error'); return; }
+    const name = select.options[select.selectedIndex]?.dataset.name || eventId;
+
+    // דאבל צ׳ק. האישור הראשון מפרט מה נמחק; השני דורש הקלדת שם הגיבוש,
+    // כדי ששתי לחיצות אישור רצופות לא יוכלו למחוק גיבוש בטעות.
+    const warning = 'פעולה הרסנית ובלתי הפיכה.\n\n' +
+      'כל נתוני הגיבוש "' + name + '" יימחקו מהאפליקציה:\n' +
+      'סבבים, הערכות, סדרי הגעה, מועמדים, צוותים, לוז, סגל, דיווחי תקלות והערות.\n\n' +
+      'קבצי Google Sheets לא ייגעו.\n\nלהמשיך?';
+    if (!confirm(warning)) return;
+    const typed = prompt('אישור אחרון. הקלד את שם הגיבוש בדיוק כדי למחוק:\n\n' + name);
+    if (typed === null) return;
+    if (typed.trim() !== String(name).trim()) {
+      showToast('השם שהוקלד אינו תואם — לא נמחק דבר', 'error');
+      return;
+    }
+
+    const button = document.getElementById('purge-btn');
+    button.disabled = true;
+    const counts = {};
+    const remarks = [];
+    try {
+      // 1. מועמדי הגיבוש נקראים לפני המחיקה — הם המפתח להערות הכלליות.
+      setPurgeStatus('קורא את רשימת המועמדים…');
+      const candidates = await getDocs(collection(db, 'events', eventId, 'candidates'));
+      const noteKeys = candidates.docs.map(d => noteKeyFor(d.data()));
+
+      // 2. סבבים ותת-האוספים שלהם. סבב ישן ללא eventId אינו משויך לגיבוש
+      //    ולכן אינו נמחק — הוא מדווח בסיכום.
+      setPurgeStatus('מוחק סבבים והערכות…');
+      const races = await getDocs(query(collection(db, 'races'), where('eventId', '==', eventId)));
+      const raceRefs = [];
+      for (const race of races.docs) {
+        for (const sub of PURGE_RACE_SUBCOLLECTIONS) {
+          raceRefs.push(...await refsIn(['races', race.id, sub]));
+        }
+        raceRefs.push(race.ref);
+      }
+      counts['סבבים והערכות'] = await deleteRefsInBatches(raceRefs);
+
+      // 3. דיווחי תקלות של הגיבוש.
+      setPurgeStatus('מוחק דיווחי תקלות…');
+      const issues = await getDocs(query(collection(db, 'issue_reports'), where('eventId', '==', eventId)));
+      counts['דיווחי תקלות'] = await deleteRefsInBatches(issues.docs.map(d => d.ref));
+
+      // 4. הערות כלליות. מפתח המסמך הוא {צוות}_{מספר מועמד} ואינו כולל אירוע,
+      //    ולכן זוג שקיים גם בגיבוש הפעיל מדולג — אחרת מחיקת גיבוש ישן הייתה
+      //    מוחקת הערות חיות על מועמד אחר שקיבל את אותו מספר.
+      setPurgeStatus('מוחק הערות כלליות…');
+      const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
+      const activeId = pointer.exists() ? String(pointer.data().eventId || '') : '';
+      const liveKeys = new Set();
+      if (activeId && activeId !== eventId) {
+        const live = await getDocs(collection(db, 'events', activeId, 'candidates'));
+        live.forEach(d => liveKeys.add(noteKeyFor(d.data())));
+      }
+      const noteRefs = [];
+      let skippedNotes = 0;
+      for (const key of noteKeys) {
+        if (liveKeys.has(key)) { skippedNotes++; continue; }
+        noteRefs.push(...await refsIn(['general_notes', key, 'authors']));
+        noteRefs.push(doc(db, 'general_notes', key));
+      }
+      counts['הערות כלליות'] = await deleteRefsInBatches(noteRefs);
+      if (skippedNotes) {
+        remarks.push('דולגו ' + skippedNotes + ' הערות שמשותפות לגיבוש הפעיל ' +
+          '(אותו צוות ואותו מספר מועמד). מחיקתן הייתה פוגעת בנתונים חיים.');
+      }
+
+      // 5. תת-האוספים של האירוע.
+      let eventDocs = 0;
+      for (const sub of PURGE_EVENT_SUBCOLLECTIONS) {
+        setPurgeStatus('מוחק ' + sub + '…');
+        eventDocs += await deleteRefsInBatches(await refsIn(['events', eventId, sub]));
+      }
+      counts['נתוני האירוע'] = eventDocs;
+
+      // 6. מסמך האירוע אחרון: כל כללי המחיקה קוראים אותו כדי לאמת שהגיבוש
+      //    סגור. מחיקתו מוקדם יותר הייתה חוסמת את כל השאר.
+      setPurgeStatus('מוחק את מסמך הגיבוש…');
+      await deleteDoc(doc(db, 'events', eventId));
+
+      const summary = Object.entries(counts)
+        .map(([label, value]) => label + ': ' + value).join(' · ');
+      setPurgeStatus('✓ הגיבוש "' + name + '" נמחק.\n' + summary +
+        (remarks.length ? '\n\n⚠ ' + remarks.join('\n⚠ ') : ''));
+      showToast('הגיבוש נמחק', 'success');
+      await loadPurgeableEvents();
+      await loadRaces();
+      await loadFormationEventStatus();
+    } catch (error) {
+      setPurgeStatus('✗ המחיקה נעצרה: ' + error.message +
+        '\nייתכן שחלק מהנתונים כבר נמחק. אפשר להריץ שוב — המחיקה מתחילה מההתחלה ומדלגת על מה שכבר אינו קיים.');
+      showToast('המחיקה נכשלה: ' + error.message, 'error');
+    } finally {
+      button.disabled = false;
+    }
   };
 </script>
 </body>

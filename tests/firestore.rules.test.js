@@ -737,3 +737,84 @@ test('an administrator can read and triage issue reports', async () => {
     handledAt: serverTimestamp(), handledBy: 'admin1'
   }));
 });
+
+// ═══════════════════════════════════════════════════════════
+//  מחיקת נתוני גיבוש קודם
+// ═══════════════════════════════════════════════════════════
+
+// כל תת-האוספים שמחיקת גיבוש חייבת לנקות. הרשימה נבדקת במלואה כדי
+// ש-`allow delete: if false` שנשאר מאחור ייפול כאן ולא בשדה, מול מנהל
+// שמאמין שמחק גיבוש ובפועל השאיר את רובו.
+const PURGEABLE_SUBCOLLECTIONS = [
+  ['teams', '01'], ['schedule', 'master'], ['teamSchedules', '01'],
+  ['scheduleRevisions', 'rev-1'], ['candidates', '01_100'],
+  ['dropoutRecommendations', '01_100'], ['candidateStatusEvents', 'transition-1'],
+  ['staff', 'evaluator1'], ['artifacts', 'artifact-1']
+];
+
+async function seedFormationEvent(eventId, status) {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'events', eventId), {
+      name: 'גיבוש ' + eventId, status, schemaVersion: 3
+    });
+    for (const [subcollection, id] of PURGEABLE_SUBCOLLECTIONS) {
+      await setDoc(doc(db, 'events', eventId, subcollection, id), { seeded: true });
+    }
+  });
+}
+
+test('an administrator can delete every part of a closed formation', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  const admin = userDb('admin1');
+  for (const [subcollection, id] of PURGEABLE_SUBCOLLECTIONS) {
+    await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', subcollection, id)));
+  }
+  // מסמך האירוע נמחק אחרון: כל שאר הכללים נשענים על קריאתו.
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old')));
+});
+
+test('a draft formation is discardable the same way', async () => {
+  await seedFormationEvent('event-draft', 'draft');
+  const admin = userDb('admin1');
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-draft', 'candidates', '01_100')));
+  await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-draft')));
+});
+
+test('the running formation can never be deleted, not even by an administrator', async () => {
+  const admin = userDb('admin1');
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-1')));
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-1', 'teams', '01')));
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-1', 'candidates', '01_100')));
+});
+
+// אירוע שנסגר אך המצביע עדיין עליו הוא בדיוק המצב שבו מנהל עלול למחוק
+// את הגיבוש שממנו האפליקציה עדיין קוראת. הסטטוס לבדו אינו מספיק.
+test('a closed formation still referenced by the active pointer is protected', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'settings', 'activeEvent'), {
+      eventId: 'event-old', status: 'closed', schemaVersion: 3
+    });
+  });
+  const admin = userDb('admin1');
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-old', 'candidates', '01_100')));
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-old')));
+});
+
+test('only an administrator may delete a closed formation', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  for (const uid of ['formation1', 'operator1', 'evaluator1']) {
+    await assertFails(deleteDoc(doc(userDb(uid), 'events', 'event-old', 'candidates', '01_100')));
+    await assertFails(deleteDoc(doc(userDb(uid), 'events', 'event-old')));
+  }
+});
+
+test('the privacy archive survives a formation purge', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'privacy_migration_archive', 'archive-1'), {
+      eventId: 'event-old', capturedAt: Timestamp.now()
+    });
+  });
+  await assertFails(deleteDoc(doc(userDb('admin1'), 'privacy_migration_archive', 'archive-1')));
+});
