@@ -196,7 +196,7 @@
       </select>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-      עריכת שמות הפרמטרים, ההערות המהירות וסוג המדידה. שינויים חלים על כל הצוותים.
+      עריכת הנחיית התחנה, שמות הפרמטרים, ההערות המהירות וסוג המדידה. שינויים חלים על כל הצוותים.
       <b>הערות מהירות</b> — בטוח לשנות בכל עת. <b>שם פרמטר / מדידה</b> — משפיע גם על עמודות ה-Sheet.
     </p>
 
@@ -221,6 +221,22 @@
             <option value="3">3 — גבוהה</option>
           </select>
         </label>
+      </div>
+
+      <div class="section mb-12">
+        <div class="flex flex-center flex-between mb-8" style="flex-wrap:wrap; gap:8px">
+          <h3 style="margin:0">הנחיית התחנה</h3>
+          <button class="btn btn-ghost" onclick="resetStMarkingNote()"
+                  style="font-size:12px; padding:5px 10px">↩ שחזר ברירת מחדל</button>
+        </div>
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
+          הטקסט שמוצג למפק״צ ולמעריך בסקירת התחנה, מעל נתוני הסבב.
+          ריק — לא מוצגת הנחיה כלל.
+        </p>
+        <textarea id="sttype-markingnote" class="form-input" rows="3" maxlength="400"
+                  style="width:100%; resize:vertical"
+                  oninput="onStMarkingNoteChange(this.value)"
+                  placeholder="לדוגמה: לסמן מספר סבבים סופי של כל מועמד (לא כל סיבוב)"></textarea>
       </div>
 
       <div id="sttype-params"></div>
@@ -1521,6 +1537,7 @@
     document.getElementById('sttype-measurelabel').value = def.measureLabel || '';
     document.getElementById('sttype-intensity').value = String(Number.isInteger(Number(def.intensity)) ? Number(def.intensity) : 0);
     document.getElementById('sttype-measurelabel-wrap').style.display = def.measure === 'reps' ? '' : 'none';
+    document.getElementById('sttype-markingnote').value = def.markingNote || '';
     renderStParams();
   };
 
@@ -1534,6 +1551,22 @@
     if (!currentStType) return;
     stationTypesData[currentStType].measureLabel = (v || '').trim();
     setStTypeStatus('שינויים לא שמורים');
+  };
+  // ההנחיה נשמרת כפי שהוקלדה, למעט רווחים בקצוות: שורות חדשות בתוך הטקסט
+  // הן ניסוח של המנהל ולא רעש.
+  window.onStMarkingNoteChange = (v) => {
+    if (!currentStType) return;
+    stationTypesData[currentStType].markingNote = String(v || '').trim();
+    setStTypeStatus('שינויים לא שמורים');
+  };
+  // ברירת המחדל נשארת זמינה גם אחרי עריכה — אחרת ניסוח מקורי שנמחק אבוד.
+  window.resetStMarkingNote = () => {
+    if (!currentStType) return;
+    const original = String(window.DEFAULT_STATION_TYPES?.[currentStType]?.markingNote || '');
+    stationTypesData[currentStType].markingNote = original;
+    document.getElementById('sttype-markingnote').value = original;
+    setStTypeStatus(original ? 'שוחזרה ברירת המחדל — שינויים לא שמורים'
+                             : 'לסוג התחנה הזה אין הנחיית ברירת מחדל');
   };
   window.onStTypeIntensityChange = (v) => {
     if (!currentStType) return;
