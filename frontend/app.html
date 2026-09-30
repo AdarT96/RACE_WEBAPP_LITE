@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>מערכת תזמון גיבוש</title>
+  <title>מערכת גיבוש עוקץ</title>
   <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
@@ -680,7 +680,7 @@
 <nav class="navbar">
   <div class="navbar-brand">
     <span class="logo">📡</span>
-    <span>מערכת תזמון גיבוש</span>
+    <span>מערכת גיבוש עוקץ</span>
   </div>
   <div class="navbar-actions">
     <div class="conn-indicator" id="conn-status">
@@ -2531,7 +2531,7 @@
 
   // ═════════ Session actions ═════════
   window.startSession = async () => {
-    if (!canControlSession()) { showToast('רק מפק״צ יכול להתחיל סבב', 'error'); return; }
+    if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
     const teamData = teamsCache[selectedTeam];
@@ -2822,7 +2822,7 @@
   };
 
   window.endSession = async () => {
-    if (!canControlSession()) { showToast('רק מפק״צ יכול לסיים סבב', 'error'); return; }
+    if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים לסיים סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!latestRace || latestRace.status !== 'running') return;
     if (!isSessionEffectivelyRunning(latestRace)) {

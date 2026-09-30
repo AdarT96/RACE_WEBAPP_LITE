@@ -26,8 +26,12 @@ export function roleNeedsTeam(role) {
   return [ROLES.OPERATOR, ROLES.EVALUATOR].includes(String(role || ''));
 }
 
+// המפק״צ מפעיל את התחנה שלו; המנהל יכול להפעיל כל תחנה. החוקים כבר
+// התירו למנהל ליצור ולעדכן סבבים (`allow create/update: if isAdmin()`),
+// והחסימה הייתה בממשק בלבד — כלומר מנהל שנדרש לפתוח סבב במקום מפק״צ נעדר
+// היה צריך להחליף תפקיד לעצמו כדי לעשות זאת.
 export function canControlSession(role) {
-  return String(role || '') === ROLES.OPERATOR;
+  return [ROLES.OPERATOR, ROLES.ADMIN].includes(String(role || ''));
 }
 
 export function canEvaluate(role) {

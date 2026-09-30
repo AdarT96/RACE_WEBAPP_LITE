@@ -42,3 +42,13 @@ test('event staffing overrides the global role and rejects missing assignments',
     status:'active', eventId:'legacy-event'
   }, null).eventAccess, true);
 });
+
+// למנהל אין תפקיד משלו במסך התחנה: הוא מקבל את יכולות המעריך וגם את
+// הפעלת הסבב, כדי שיוכל לכסות על מפק״צ נעדר בלי לשנות לעצמו תפקיד.
+// הכלים החוצה-צוותיים נשארים של מפקד הגיבוש.
+test('an administrator can both evaluate and run a station round', () => {
+  assert.equal(canControlSession(ROLES.ADMIN), true);
+  assert.equal(canEvaluate(ROLES.ADMIN), true);
+  assert.equal(roleNeedsTeam(ROLES.ADMIN), false);
+  assert.equal(canRecommendDropout(ROLES.ADMIN), false);
+});
