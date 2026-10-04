@@ -17,9 +17,11 @@ service cloud.firestore {
     }
 
     function isApprovedRole(role) {
-      return signedIn() && caller().approved == true && caller().role == role &&
-        (!usesEventStaffing() ||
-         (exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
+      let eventScoped = usesEventStaffing();
+      return signedIn() && caller().approved == true &&
+        ((!eventScoped && caller().role == role) ||
+         (eventScoped &&
+          exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
           get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.active == true &&
           get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.role == role));
     }
@@ -31,10 +33,9 @@ service cloud.firestore {
 
     function usesEventStaffing() {
       return activeEventId() != '' &&
-        exists(/databases/$(database)/documents/events/$(activeEventId())) &&
-        get(/databases/$(database)/documents/events/$(activeEventId())).data.keys()
-          .hasAny(['setupSchemaVersion']) &&
-        get(/databases/$(database)/documents/events/$(activeEventId())).data.setupSchemaVersion == 1;
+        get(/databases/$(database)/documents/settings/activeEvent).data.keys()
+          .hasAny(['eventStaffingSchemaVersion']) &&
+        get(/databases/$(database)/documents/settings/activeEvent).data.eventStaffingSchemaVersion == 1;
     }
 
     function isFormationCommander() {
@@ -42,7 +43,13 @@ service cloud.firestore {
     }
 
     function isOwnTeam(team) {
-      return int(team) == int(caller().team);
+      let eventScoped = usesEventStaffing();
+      return signedIn() &&
+        ((!eventScoped && int(team) == int(caller().team)) ||
+         (eventScoped &&
+          exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.active == true &&
+          int(team) == int(get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.team)));
     }
 
     function isActiveEvent(eventId) {
@@ -778,7 +785,7 @@ service cloud.firestore {
             return signedIn() && request.auth.uid == authorUid &&
               isActiveEvent(eventId) &&
               (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
-              int(noteId.split('_')[0]) == int(caller().team);
+              isOwnTeam(noteId.split('_')[0]);
           }
 
           function validPrivateNotesShape() {
@@ -815,7 +822,7 @@ service cloud.firestore {
     // Teams (participants + station mapping): team members read, admins write.
     match /teams/{teamNumber} {
       allow read: if isAdmin() ||
-        ((isApprovedRole('operator') || isApprovedRole('evaluator')) && int(teamNumber) == int(caller().team));
+        ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
       allow write: if isAdmin();
     }
 
@@ -830,22 +837,22 @@ service cloud.firestore {
     match /general_notes/{noteId} {
       allow read: if isAdmin() || (!privacyMigrationComplete() &&
         signedIn() && caller().approved == true &&
-        int(noteId.split('_')[0]) == int(caller().team));
+        isOwnTeam(noteId.split('_')[0]));
       allow write: if isAdmin();
       allow create: if !privacyMigrationComplete() &&
         (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
-        int(noteId.split('_')[0]) == int(caller().team);
+        isOwnTeam(noteId.split('_')[0]);
       allow update, delete: if !privacyMigrationComplete() &&
         (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
         (!resource.data.keys().hasAny(['privacySchemaVersion']) ||
           resource.data.privacySchemaVersion != 2) &&
-        int(noteId.split('_')[0]) == int(caller().team);
+        isOwnTeam(noteId.split('_')[0]);
 
       match /authors/{authorUid} {
         function ownsPrivateNotes() {
           return signedIn() && request.auth.uid == authorUid &&
             (isApprovedRole('operator') || isApprovedRole('evaluator')) &&
-            int(noteId.split('_')[0]) == int(caller().team);
+            isOwnTeam(noteId.split('_')[0]);
         }
 
         function validPrivateNotesShape() {
@@ -954,11 +961,11 @@ service cloud.firestore {
           request.resource.data.reporterUid == request.auth.uid &&
           request.resource.data.reporterName is string &&
           request.resource.data.reporterName.size() <= 200 &&
-          request.resource.data.reporterRole == caller().role &&
           request.resource.data.reporterRole in ['operator', 'evaluator', 'admin'] &&
+          (isAdmin() || isApprovedRole(request.resource.data.reporterRole)) &&
           request.resource.data.reporterTeam is int &&
           request.resource.data.reporterTeam >= 1 && request.resource.data.reporterTeam <= 20 &&
-          (isAdmin() || request.resource.data.reporterTeam == int(caller().team)) &&
+          (isAdmin() || isOwnTeam(request.resource.data.reporterTeam)) &&
           request.resource.data.category in ['timing', 'arrival_order', 'saving', 'display', 'other'] &&
           request.resource.data.description is string &&
           request.resource.data.description.size() > 0 &&
@@ -972,9 +979,7 @@ service cloud.firestore {
           validIssueContext() && validIssueEnvironment();
       }
 
-      allow create: if signedIn() &&
-        (isAdmin() || isApprovedRole('operator') || isApprovedRole('evaluator')) &&
-        validNewIssueReport();
+      allow create: if signedIn() && validNewIssueReport();
       allow read: if isAdmin() ||
         (isFormationCommander() && resource.data.schemaVersion == 2 &&
          resource.data.eventId is string && isActiveEvent(resource.data.eventId));

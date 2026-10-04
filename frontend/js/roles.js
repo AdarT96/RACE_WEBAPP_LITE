@@ -73,7 +73,7 @@ export function profileForActiveEvent(profile = {}, pointer = {}, staff = null) 
   const team = roleNeedsTeam(role) ? Number(staff?.team) : null;
   const validAssignment = staff?.active === true &&
     [ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(role) &&
-    (!roleNeedsTeam(role) || (Number.isInteger(team) && team >= 1 && team <= 15));
+    (!roleNeedsTeam(role) || (Number.isInteger(team) && team >= 1 && team <= 20));
   if (!validAssignment) return { ...profile, activeEventId, eventAccess:false };
 
   return { ...profile, role, team, activeEventId, eventAccess:true };

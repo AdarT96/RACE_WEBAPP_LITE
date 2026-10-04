@@ -1,8 +1,9 @@
 import {
   CANDIDATE_PROFILE_DEFAULTS, CLEARANCE_STATUSES, isValidEmergencyContactPhone,
-  isValidIsraeliNationalId, normalizeCandidateProfile, padTeam
+  isValidIsraeliNationalId, normalizeCandidateProfile
 } from './formation-operations-model.js';
 import { ROLES } from './roles.js';
+import { padScheduleTeam } from './schedule-model.js';
 
 export const EVENT_SETUP_SCHEMA_VERSION = 1;
 
@@ -20,8 +21,7 @@ export const ARTIFACT_STATUSES = Object.freeze({
 
 const boundedText = (value, maximum) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, maximum);
 export function normalizeEventTeamId(value) {
-  const team = padTeam(value);
-  return team && Number(team) <= 15 ? team : '';
+  return padScheduleTeam(value);
 }
 const uniqueTeams = values => [...new Set((Array.isArray(values) ? values : [])
   .map(value => normalizeEventTeamId(value?.teamNumber ?? value?.team ?? value?.id ?? value)).filter(Boolean))]

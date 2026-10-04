@@ -19,6 +19,7 @@ function setup(action, fail) {
   const button = { textContent:'שמירה', dataset:{}, disabled:false };
   const element = { value:'01', files:[{ name:'test.xlsx' }], addEventListener:(_, callback) => { handler = callback; } };
   const context = {
+    rosterBusy:false, lockRosterWorkspace:() => () => {},
     document:{ getElementById:() => element, querySelectorAll:() => [] },
     repository:{ saveDetails:operation, replaceTeamCandidates:operation, replaceStaff:operation },
     currentEventId:'test-event',

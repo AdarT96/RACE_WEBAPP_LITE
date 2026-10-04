@@ -2,13 +2,13 @@ import {
   collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
-  CANDIDATE_SCHEMA_VERSION, FORMATION_EVENT_SCHEMA_VERSION, TEAM_ROSTER_SCHEMA_VERSION,
-  candidateKey, normalizeCandidateProfile, padTeam
+  CANDIDATE_SCHEMA_VERSION, FORMATION_EVENT_SCHEMA_VERSION, TEAM_ROSTER_SCHEMA_VERSION
 } from './formation-operations-model.js';
 import {
   EVENT_SETUP_SCHEMA_VERSION, EVENT_STATUSES, normalizeEventStaff, normalizeEventTeamId
 } from './event-setup-model.js';
 import { EVENT_STAFFING_SCHEMA_VERSION, ROLES } from './roles.js';
+import { planEventRoster, PROFILE_FIELDS } from './event-roster-plan.js';
 // מקור אמת יחיד למספר הצוותים. המספר היה כתוב כאן בנפרד, וזה בדיוק סוג
 // הכפילות שמשאירה מגבלה ישנה אחרי שהעלו אותה במקום אחר.
 import { SCHEDULE_MAX_TEAMS as MAX_EVENT_TEAMS } from './schedule-model.js';
@@ -25,6 +25,17 @@ async function commitOperations(db, operations) {
 
 const snapshotRows = snapshot => snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
 
+export class RosterImportError extends Error {
+  constructor(cause, completedTeams, pendingTeams) {
+    const saved = completedTeams.length ? `נשמרו צוותים: ${completedTeams.map(Number).join(', ')}. ` : '';
+    super(`${saved}הייבוא לא הושלם. רענן את הנתונים ובדוק לפני ניסיון חוזר. ${cause.message || ''}`);
+    this.name = 'RosterImportError';
+    this.cause = cause;
+    this.completedTeams = [...completedTeams];
+    this.pendingTeams = [...pendingTeams];
+  }
+}
+
 export function createEventSetupRepository(db, adminUser) {
   if (!db || !adminUser?.uid || adminUser.role !== 'admin') {
     throw new Error('הגדרת אירוע זמינה למנהל בלבד.');
@@ -32,9 +43,92 @@ export function createEventSetupRepository(db, adminUser) {
   const uid = adminUser.uid;
   const eventRef = eventId => doc(db, 'events', String(eventId));
   const teamRef = (eventId, team) => doc(db, 'events', String(eventId), 'teams', String(team));
-  const candidateRef = (eventId, team, participantId) =>
-    doc(db, 'events', String(eventId), 'candidates', candidateKey(team, participantId));
   const staffRef = (eventId, staffUid) => doc(db, 'events', String(eventId), 'staff', String(staffUid));
+
+  async function importCandidates(eventId, groups, source = {}, { onProgress = () => {} } = {}) {
+    // Capture the revision before the collection reads. Another import during
+    // these reads is detected by the transaction, not silently overwritten.
+    const initialEvent = await getDoc(eventRef(eventId));
+    if (!initialEvent.exists()) throw new Error('האירוע אינו קיים.');
+    const [teamSnapshot, candidateSnapshot] = await Promise.all([
+      getDocs(collection(db, 'events', String(eventId), 'teams')),
+      getDocs(collection(db, 'events', String(eventId), 'candidates'))
+    ]);
+    const event = initialEvent.data();
+    const plan = planEventRoster({ status:event.status, teams:snapshotRows(teamSnapshot),
+      existing:snapshotRows(candidateSnapshot), groups, source });
+    let revision = Number(event.rosterRevision || 0);
+    let candidateCount = candidateSnapshot.size;
+    const completedTeams = plan.plans.filter(team => !team.writeCount).map(team => team.team);
+    // Reporting must never turn a committed write into an apparent failure.
+    const report = () => { try { onProgress({ completedTeams:completedTeams.length, totalTeams:plan.plans.length }); } catch (_) {} };
+    report();
+    for (const chunk of plan.chunks) {
+      const nextCount = candidateCount + chunk.reduce((sum, team) => sum + team.delta, 0);
+      try {
+        await runTransaction(db, async transaction => {
+          const [currentEvent, ...currentTeams] = await Promise.all([
+            transaction.get(eventRef(eventId)),
+            ...chunk.map(team => transaction.get(teamRef(eventId, team.team)))
+          ]);
+          if (!currentEvent.exists() || currentEvent.data().status !== event.status ||
+              Number(currentEvent.data().rosterRevision || 0) !== revision) {
+            throw new Error('האירוע או רשימת המועמדים השתנו במכשיר אחר.');
+          }
+          chunk.forEach((team, index) => {
+            const { id, ...expected } = team.previousTeam;
+            if (!currentTeams[index].exists() || JSON.stringify(currentTeams[index].data()) !== JSON.stringify(expected)) {
+              throw new Error(`נתוני צוות ${Number(team.team)} השתנו במכשיר אחר.`);
+            }
+          });
+          // Updates are protected by profileRevision in Firestore rules. Draft
+          // deletions additionally read the document to avoid deleting an edit.
+          const deletions = chunk.flatMap(team => team.changes.filter(change => change.kind === 'delete'));
+          const deletedSnapshots = await Promise.all(deletions.map(change =>
+            transaction.get(doc(db, 'events', String(eventId), 'candidates', change.id))));
+          deletions.forEach((change, index) => {
+            if (!deletedSnapshots[index].exists() || deletedSnapshots[index].data().profileRevision !== change.previous.profileRevision) {
+              throw new Error('פרטי מועמד השתנו במכשיר אחר.');
+            }
+          });
+          for (const team of chunk) {
+            for (const change of team.changes) {
+              const reference = doc(db, 'events', String(eventId), 'candidates', change.id);
+              if (change.kind === 'delete') { transaction.delete(reference); continue; }
+              const profile = Object.fromEntries(PROFILE_FIELDS.map(field => [field, change.candidate[field]]));
+              Object.assign(profile, {
+                profileRevision:change.previous ? Number(change.previous.profileRevision || 0) + 1 : 0,
+                profileUpdatedAt:serverTimestamp(), profileUpdatedBy:uid
+              });
+              if (change.kind === 'update') transaction.update(reference, profile);
+              else transaction.set(reference, {
+                participantId:change.candidate.participantId, team:team.team, ...profile,
+                status:'active', reasonCode:'', reasonLabel:'', statusRevision:0,
+                lastTransitionId:'', statusChangedAt:serverTimestamp(), statusChangedBy:uid,
+                schemaVersion:CANDIDATE_SCHEMA_VERSION
+              });
+            }
+            if (team.teamChanged) transaction.update(teamRef(eventId, team.team), {
+              participantIds:team.participantIds, rosterSource:team.rosterSource,
+              updatedAt:serverTimestamp(), updatedBy:uid
+            });
+          }
+          transaction.update(eventRef(eventId), {
+            candidateCount:nextCount, rosterRevision:revision + 1,
+            updatedAt:serverTimestamp(), updatedBy:uid
+          });
+        });
+      } catch (error) {
+        throw new RosterImportError(error, completedTeams,
+          plan.plans.filter(team => !completedTeams.includes(team.team)).map(team => team.team));
+      }
+      candidateCount = nextCount;
+      revision += 1;
+      completedTeams.push(...chunk.map(team => team.team));
+      report();
+    }
+    return { teams:plan.plans.length, importedCount:plan.importedCount, candidateCount:plan.candidateCount };
+  }
 
   return {
     async listEvents() {
@@ -119,7 +213,7 @@ export function createEventSetupRepository(db, adminUser) {
       const existingIds = new Set(existing.docs.map(item => item.id));
       const completeTeamIds = [...new Set([...existingIds, ...teamIds])]
         .filter(normalizeEventTeamId).sort((left, right) => Number(left) - Number(right));
-      if (completeTeamIds.length > 15) throw new Error('ניתן להגדיר עד 15 צוותים.');
+      if (completeTeamIds.length > MAX_EVENT_TEAMS) throw new Error(`ניתן להגדיר עד ${MAX_EVENT_TEAMS} צוותים.`);
       const operations = completeTeamIds.filter(team => !existingIds.has(team)).map(team => batch => batch.set(teamRef(eventId, team), {
         teamNumber:team,
         participantIds:[],
@@ -139,69 +233,11 @@ export function createEventSetupRepository(db, adminUser) {
       return completeTeamIds;
     },
 
-    async replaceTeamCandidates(eventId, teamValue, candidateValues, source = {}) {
-      const team = normalizeEventTeamId(teamValue);
-      if (!team) throw new Error('מספר הצוות אינו תקין.');
-      const eventSnapshot = await getDoc(eventRef(eventId));
-      if (!eventSnapshot.exists() || ![EVENT_STATUSES.DRAFT, EVENT_STATUSES.ACTIVE].includes(eventSnapshot.data().status)) {
-        throw new Error('לא ניתן לערוך מועמדים באירוע במצב הנוכחי.');
-      }
-      const candidates = (Array.isArray(candidateValues) ? candidateValues : []).map(normalizeCandidateProfile);
-      const participantIds = candidates.map(candidate => candidate.participantId);
-      if (participantIds.some(value => !value || value === '0' || !/^\d+$/.test(value))) {
-        throw new Error('לכל מועמד נדרש מספר מועמד מספרי.');
-      }
-      if (new Set(participantIds).size !== participantIds.length) throw new Error('מספר מועמד מופיע יותר מפעם אחת.');
-      const existing = await getDocs(collection(db, 'events', String(eventId), 'candidates'));
-      const existingTeam = existing.docs.filter(item => padTeam(item.data().team) === team);
-      const existingByKey = new Map(existingTeam.map(item => [item.id, item]));
-      const nextKeys = new Set(participantIds.map(participantId => candidateKey(team, participantId)));
-      const persistedParticipantIds = eventSnapshot.data().status === EVENT_STATUSES.ACTIVE
-        ? [...new Set([...existingTeam.map(item => String(item.data().participantId)), ...participantIds])]
-            .sort((left, right) => Number(left) - Number(right))
-        : participantIds;
-      if (persistedParticipantIds.length > 20) throw new Error('ניתן לשייך עד 20 מועמדים לצוות.');
-      const operations = candidates.map(candidate => batch => {
-        const reference = candidateRef(eventId, team, candidate.participantId);
-        const previous = existingByKey.get(candidateKey(team, candidate.participantId));
-        const profile = {
-          firstName:candidate.firstName,
-          nationalId:candidate.nationalId,
-          emergencyContactPhone:candidate.emergencyContactPhone,
-          doctorClearance:candidate.doctorClearance,
-          medicClearance:candidate.medicClearance,
-          profileRevision:Math.max(0, Number(previous?.data()?.profileRevision || 0)) + (previous ? 1 : 0),
-          profileUpdatedAt:serverTimestamp(), profileUpdatedBy:uid
-        };
-        if (previous) batch.update(reference, profile);
-        else batch.set(reference, {
-          participantId:candidate.participantId, team, ...profile,
-          status:'active', reasonCode:'', reasonLabel:'', statusRevision:0,
-          lastTransitionId:'', statusChangedAt:serverTimestamp(), statusChangedBy:uid,
-          schemaVersion:CANDIDATE_SCHEMA_VERSION
-        });
-      });
-      if (eventSnapshot.data().status === EVENT_STATUSES.DRAFT) {
-        existingTeam.filter(item => !nextKeys.has(item.id)).forEach(item => {
-          operations.push(batch => batch.delete(item.ref));
-        });
-      }
-      operations.push(batch => batch.set(teamRef(eventId, team), {
-        participantIds:persistedParticipantIds,
-        rosterSource:{
-          type:String(source.type || 'manual').slice(0, 30),
-          sourceId:String(source.sourceId || 'event-setup').slice(0, 200),
-          fileName:String(source.fileName || '').slice(0, 240)
-        },
-        updatedAt:serverTimestamp(), updatedBy:uid
-      }, { merge:true }));
-      await commitOperations(db, operations);
+    importCandidates,
 
-      const allCandidates = await getDocs(collection(db, 'events', String(eventId), 'candidates'));
-      await writeBatch(db).update(eventRef(eventId), {
-        candidateCount:allCandidates.size, updatedAt:serverTimestamp(), updatedBy:uid
-      }).commit();
-      return candidates.length;
+    async replaceTeamCandidates(eventId, team, candidates, source = {}) {
+      const result = await importCandidates(eventId, [{ team, candidates }], source);
+      return result.importedCount;
     },
 
     async replaceStaff(eventId, staffValues) {
