@@ -63,3 +63,44 @@ test('Excel adapter preserves leading-zero identity and maps Hebrew clearance la
   assert.equal(adapted.rows[0].doctorClearance, 1);
   assert.equal(adapted.rows[0].medicClearance, 2);
 });
+
+// הכותרות והערכים כאן הועתקו מקובץ אמיתי שנמסר לייבוא. הבדיקה קיימת כדי
+// שניסוח מקובל בשטח לא יישבר בשקט: כותרת שלא מזוהה מפילה עמודה שלמה,
+// והייבוא ממשיך כאילו השדה היה ריק.
+const REAL_WORLD_HEADERS = [
+  'מספר זהות', 'שם משפחה', 'שם פרטי', 'מספר חולצה', 'מספר צוות',
+  'כשיר רופא', 'כשיר חובש ', 'איש קשר', 'טלפון איש קשר'
+];
+
+test('a real roster file maps onto the canonical fields', () => {
+  const { rows, errors } = candidateRowsFromMatrix([
+    REAL_WORLD_HEADERS,
+    ['435688940', 'אברהם', 'יונתן', 1, 1, 'לא', 'לא', 'דליה חזן', '054-9958810'],
+    ['449243328', 'חדד', 'אפרת', 2, 2, 'כן', '', 'הדס פרידמן', '055-8275345']
+  ]);
+
+  assert.deepEqual(errors, []);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].nationalId, '435688940');
+  assert.equal(rows[0].participantId, 1);
+  assert.equal(rows[0].team, 1);
+  assert.equal(rows[0].firstName, 'יונתן');
+  assert.equal(rows[0].emergencyContactPhone, '0549958810');
+  assert.equal(rows[0].doctorClearance, 2);   // לא → לא כשיר
+  assert.equal(rows[1].doctorClearance, 1);   // כן → כשיר
+  assert.equal(rows[1].medicClearance, 0);    // ריק → טרם נבדק
+});
+
+test('a missing team or candidate column is reported instead of silently emptied', () => {
+  const withoutTeam = candidateRowsFromMatrix([
+    ['מספר זהות', 'שם פרטי', 'מספר חולצה'], ['435688940', 'יונתן', 1]
+  ]);
+  assert.equal(withoutTeam.errors.length, 1);
+  assert.match(withoutTeam.errors[0], /צוות/);
+
+  const withoutParticipant = candidateRowsFromMatrix([
+    ['מספר זהות', 'שם פרטי', 'מספר צוות'], ['435688940', 'יונתן', 1]
+  ]);
+  assert.equal(withoutParticipant.errors.length, 1);
+  assert.match(withoutParticipant.errors[0], /מועמד/);
+});
