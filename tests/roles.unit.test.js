@@ -43,6 +43,16 @@ test('event staffing overrides the global role and rejects missing assignments',
   }, null).eventAccess, true);
 });
 
+test('event staffing accepts every supported event team', () => {
+  const profile = { role:ROLES.EVALUATOR, team:1, approved:true };
+  const pointer = { status:'active', eventId:'event-2', eventStaffingSchemaVersion:1 };
+  assert.deepEqual(profileForActiveEvent(profile, pointer, {
+    active:true, role:ROLES.OPERATOR, team:'20'
+  }), {
+    ...profile, role:ROLES.OPERATOR, team:20, activeEventId:'event-2', eventAccess:true
+  });
+});
+
 // למנהל אין תפקיד משלו במסך התחנה: הוא מקבל את יכולות המעריך וגם את
 // הפעלת הסבב, כדי שיוכל לכסות על מפק״צ נעדר בלי לשנות לעצמו תפקיד.
 // הכלים החוצה-צוותיים נשארים של מפקד הגיבוש.

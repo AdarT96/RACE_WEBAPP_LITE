@@ -47,5 +47,6 @@ test('staff normalization keeps only operational event assignments', () => {
     uid:'u1', displayName:'אורי', role:'evaluator', team:'03', active:true
   });
   assert.equal(normalizeEventStaff({ uid:'u2', role:'admin', team:1 }).role, '');
-  assert.equal(normalizeEventTeamId(16), '');
+  assert.equal(normalizeEventTeamId(20), '20');
+  assert.equal(normalizeEventTeamId(21), '');
 });

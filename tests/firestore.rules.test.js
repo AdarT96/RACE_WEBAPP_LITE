@@ -11,6 +11,7 @@ import {
 import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
 } from '../frontend/js/issue-report.js';
+import { createEventSetupRepository } from './helpers/event-setup-repository.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
 let testEnv;
@@ -204,6 +205,43 @@ test('only the own-team commander can create and stop a race', async () => {
   }));
   await assertFails(updateDoc(doc(userDb('operator2'), 'races', 'race_01_07_1'), {
     status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator2', endedReason: 'manual'
+  }));
+});
+
+test('active-event staffing is the source of truth for operational role and team', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await updateDoc(doc(db, 'events', 'event-1'), { setupSchemaVersion:1 });
+    await updateDoc(doc(db, 'settings', 'activeEvent'), { eventStaffingSchemaVersion:1 });
+    await setDoc(doc(db, 'events', 'event-1', 'staff', 'evaluator1'), {
+      eventId:'event-1', uid:'evaluator1', displayName:'מפקצית משובצת',
+      role:'operator', team:'02', active:true,
+      createdAt:Timestamp.now(), createdBy:'admin1', updatedAt:Timestamp.now(), updatedBy:'admin1'
+    });
+    await setDoc(doc(db, 'events', 'event-1', 'staff', 'operator2'), {
+      eventId:'event-1', uid:'operator2', displayName:'מעריך משובץ',
+      role:'evaluator', team:'01', active:true,
+      createdAt:Timestamp.now(), createdBy:'admin1', updatedAt:Timestamp.now(), updatedBy:'admin1'
+    });
+  });
+
+  await assertSucceeds(setDoc(doc(userDb('evaluator1'), 'races', 'event-role-race'), {
+    eventId:'event-1', team:'02', station:'07', round:2, status:'running',
+    startedAt:serverTimestamp(), startedBy:'evaluator1', participantIds:['200'], tags:[],
+    timeLimitSeconds:2400, evaluationSchemaVersion:2
+  }));
+  await assertSucceeds(updateDoc(doc(userDb('evaluator1'), 'races', 'event-role-race'), {
+    status:'stopped', endedAt:serverTimestamp(), endedBy:'evaluator1', endedReason:'manual'
+  }));
+  await assertFails(setDoc(doc(userDb('evaluator1'), 'races', 'stale-global-team-race'), {
+    eventId:'event-1', team:'01', station:'07', round:2, status:'running',
+    startedAt:serverTimestamp(), startedBy:'evaluator1', participantIds:['100'], tags:[],
+    timeLimitSeconds:2400, evaluationSchemaVersion:2
+  }));
+  await assertFails(setDoc(doc(userDb('operator2'), 'races', 'stale-global-role-race'), {
+    eventId:'event-1', team:'01', station:'07', round:2, status:'running',
+    startedAt:serverTimestamp(), startedBy:'operator2', participantIds:['100'], tags:[],
+    timeLimitSeconds:2400, evaluationSchemaVersion:2
   }));
 });
 
@@ -583,6 +621,47 @@ test('only an admin can correct candidate identity and cannot do so without a pr
   }));
 });
 
+test('event roster repository imports 400 candidates atomically, retries unchanged, and replaces draft rosters in bounded chunks', async () => {
+  const db = userDb('admin1');
+  const repository = createEventSetupRepository(db, { uid:'admin1',role:'admin' });
+  const eventId = await repository.createDraft('בדיקת ייבוא');
+  const teams = Array.from({length:20},(_,i)=>String(i+1).padStart(2,'0'));
+  await repository.ensureTeams(eventId, teams);
+  const groups = offset => teams.map(team=>({team,candidates:Array.from({length:20},(_,i)=>({participantId:String(i+1+offset)}))}));
+  const progress=[];
+  await repository.importCandidates(eventId, groups(0), {}, {onProgress:value=>progress.push(value)});
+  let event = (await getDoc(doc(db,'events',eventId))).data();
+  assert.equal(event.candidateCount,400);
+  assert.equal(event.rosterRevision,1);
+  assert.deepEqual(progress.map(item=>item.completedTeams),[0,20]);
+  await repository.importCandidates(eventId,groups(0));
+  assert.equal((await getDoc(doc(db,'events',eventId))).data().rosterRevision,1);
+  await repository.importCandidates(eventId,groups(100));
+  event = (await getDoc(doc(db,'events',eventId))).data();
+  assert.equal(event.rosterRevision,3);
+  assert.equal(event.candidateCount,400);
+  assert.equal((await getDocs(collection(db,'events',eventId,'candidates'))).size,400);
+  assert.equal((await getDoc(doc(db,'events',eventId,'candidates','01_1'))).exists(),false);
+});
+
+test('event import updates profiles without changing dropout state or removing absent active candidates', async () => {
+  const db=userDb('admin1');
+  const repository=createEventSetupRepository(db,{uid:'admin1',role:'admin'});
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    await updateDoc(doc(context.firestore(),'events','event-1','candidates','01_100'),{
+      status:'withdrawn',reasonCode:'medical',reasonLabel:'רפואי',statusRevision:5
+    });
+  });
+  await repository.importCandidates('event-1',[{team:'01',candidates:[{participantId:'101'}]}]);
+  await repository.replaceTeamCandidates('event-1','01',[{participantId:'100',firstName:'תיקון'}]);
+  const candidate=(await getDoc(doc(db,'events','event-1','candidates','01_100'))).data();
+  assert.equal(candidate.status,'withdrawn');
+  assert.equal(candidate.statusRevision,5);
+  assert.equal(candidate.firstName,'תיקון');
+  assert.deepEqual((await getDoc(doc(db,'events','event-1','teams','01'))).data().participantIds,['100','101']);
+  assert.equal((await getDoc(doc(db,'events','event-1'))).data().candidateCount,3);
+});
+
 test('an admin can build a draft event while operational users cannot read it', async () => {
   const admin = userDb('admin1');
   await assertSucceeds(setDoc(doc(admin, 'events', 'event-draft'), {
@@ -625,6 +704,9 @@ test('an admin can build a draft event while operational users cannot read it', 
 test('new events enforce event-scoped staff membership', async () => {
   const admin = userDb('admin1');
   await assertSucceeds(updateDoc(doc(admin, 'events', 'event-1'), { setupSchemaVersion:1 }));
+  await assertSucceeds(updateDoc(doc(admin, 'settings', 'activeEvent'), {
+    eventStaffingSchemaVersion:1
+  }));
   await assertSucceeds(setDoc(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
     eventId:'event-1', uid:'evaluator1', displayName:'מעריך 1', role:'evaluator', team:'01',
     active:true, createdAt:serverTimestamp(), createdBy:'admin1',

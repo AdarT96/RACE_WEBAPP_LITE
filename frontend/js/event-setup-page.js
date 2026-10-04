@@ -27,6 +27,7 @@ let scheduleRepository = null;
 let currentEventId = '';
 let bundle = null;
 let users = [];
+let rosterBusy = false;
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 
 const escapeHtml = value => String(value ?? '')
@@ -72,6 +73,23 @@ function defaultStationMap() {
     String(index + 1).padStart(2, '0'), typeId
   ]));
 }
+
+function lockRosterWorkspace() {
+  rosterBusy = true;
+  const controls = [...document.querySelectorAll('#setup-workspace button, #setup-workspace input, #setup-workspace select')];
+  const states = controls.map(control => control.disabled);
+  controls.forEach(control => { control.disabled = true; });
+  return () => {
+    controls.forEach((control, index) => { control.disabled = states[index]; });
+    rosterBusy = false;
+  };
+}
+
+window.addEventListener('beforeunload', event => {
+  if (!rosterBusy) return;
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 function stationMapForTeam(team) {
   return bundle?.teams?.find(item => item.id === team)?.stationMap || defaultStationMap();
@@ -396,7 +414,9 @@ document.getElementById('candidate-table').addEventListener('click', event => {
 });
 
 document.getElementById('save-candidates-button').addEventListener('click', async event => {
+  if (rosterBusy) return;
   const button = event.currentTarget;
+  const unlock = lockRosterWorkspace();
   setBusy(button, true);
   try {
     const team = document.getElementById('candidate-team').value;
@@ -407,12 +427,17 @@ document.getElementById('save-candidates-button').addEventListener('click', asyn
     await repository.replaceTeamCandidates(currentEventId, team, candidates);
     await refreshBundle(); showToast(`מועמדי צוות ${Number(team)} נשמרו.`, 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(button, false); }
+  finally { unlock(); setBusy(button, false); }
 });
 
 document.getElementById('import-candidates-button').addEventListener('click', async event => {
+  if (rosterBusy) return;
   const button = event.currentTarget;
+  const unlock = lockRosterWorkspace();
+  const progress = document.getElementById('candidate-import-progress');
   setBusy(button, true, 'מייבא…');
+  progress.textContent = 'קורא את הקובץ ובודק את הנתונים…';
+  let saved = false;
   try {
     const file = document.getElementById('candidate-file').files[0];
     const adapted = candidateRowsFromMatrix(await workbookMatrix(file));
@@ -424,12 +449,24 @@ document.getElementById('import-candidates-button').addEventListener('click', as
     const knownTeams = new Set(teamIds());
     const unknown = result.teams.find(item => !knownTeams.has(item.team));
     if (unknown) throw new Error(`צוות ${Number(unknown.team)} אינו קיים בלו״ז. יש להוסיף אותו תחילה.`);
-    for (const group of result.teams) {
-      await repository.replaceTeamCandidates(currentEventId, group.team, group.candidates, result.source);
-    }
-    await refreshBundle(); showToast(`יובאו ${result.teams.length} צוותים.`, 'success');
-  } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(button, false); }
+    progress.textContent = 'טוען את הרשימות הקיימות ומכין את השמירה…';
+    const summary = await repository.importCandidates(currentEventId, result.teams, result.source, {
+      onProgress:({ completedTeams, totalTeams }) => {
+        progress.textContent = `נשמרו ${completedTeams} מתוך ${totalTeams} צוותים…`;
+      }
+    });
+    saved = true;
+    progress.textContent = `נשמרו ${summary.importedCount} מועמדים ב־${summary.teams} צוותים. מרענן את המסך…`;
+    await refreshBundle();
+    progress.textContent = `הייבוא הושלם: ${summary.importedCount} מועמדים ב־${summary.teams} צוותים.`;
+    showToast('ייבוא המועמדים הושלם.', 'success');
+  } catch (error) {
+    progress.textContent = saved
+      ? 'הייבוא נשמר, אך רענון המסך נכשל. יש לרענן את הדף; אין צורך לייבא שוב.'
+      : error.message;
+    showToast(progress.textContent, 'error');
+  }
+  finally { unlock(); setBusy(button, false); }
 });
 
 document.getElementById('staff-list').addEventListener('change', event => {
