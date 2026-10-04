@@ -2552,16 +2552,19 @@
     setControlActionBusy(true);
     try {
       await runTransaction(db, async (transaction) => {
-        const reads = [transaction.get(raceRef), transaction.get(eventRef)];
+        // Do not read raceRef before creation. A missing race has no team field,
+        // so a least-privilege read rule cannot authorize that lookup. The
+        // deterministic id is still race-safe: if another device creates it
+        // first, this set becomes an update and the lifecycle rules reject it.
+        const reads = [transaction.get(eventRef)];
         if (previousRaceRef) reads.push(transaction.get(previousRaceRef));
         roster.forEach(participantId => reads.push(transaction.get(
           formationRepository.candidateRef(activeFormationEvent.id, selectedTeam, participantId)
         )));
         const snapshots = await Promise.all(reads);
-        const existing = snapshots[0];
-        const eventSnapshot = snapshots[1];
-        const previous = previousRaceRef ? snapshots[2] : null;
-        const stateOffset = previousRaceRef ? 3 : 2;
+        const eventSnapshot = snapshots[0];
+        const previous = previousRaceRef ? snapshots[1] : null;
+        const stateOffset = previousRaceRef ? 2 : 1;
         const states = roster.map((participantId, index) => normalizeCandidateRecord(
           snapshots[stateOffset + index]?.exists() ? snapshots[stateOffset + index].data() : null,
           { team: selectedTeam, participantId }
@@ -2569,7 +2572,6 @@
         const participants = activeParticipantIds({
           id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
         }, states);
-        if (existing.exists()) throw new Error('הסבב כבר נוצר. המסך יתעדכן אוטומטית.');
         if (!eventSnapshot.exists() || eventSnapshot.data().status !== 'active') {
           throw new Error('אירוע הגיבוש אינו פעיל');
         }
