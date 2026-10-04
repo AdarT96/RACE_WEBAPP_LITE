@@ -245,6 +245,30 @@ test('active-event staffing is the source of truth for operational role and team
   }));
 });
 
+test('a commander can create a deterministic race in a transaction without reading the missing race', async () => {
+  const db = userDb('operator1');
+  const raceRef = doc(db, 'races', 'race_event-1_01_04_1');
+  const eventRef = doc(db, 'events', 'event-1');
+  const candidateRef = doc(db, 'events', 'event-1', 'candidates', '01_100');
+  await assertSucceeds(runTransaction(db, async transaction => {
+    const [eventSnapshot, candidateSnapshot] = await Promise.all([
+      transaction.get(eventRef), transaction.get(candidateRef)
+    ]);
+    assert.equal(eventSnapshot.data().status, 'active');
+    assert.equal(candidateSnapshot.data().status, 'active');
+    transaction.set(raceRef, {
+      eventId:'event-1', team:'01', station:'04', round:1, status:'running',
+      startedAt:serverTimestamp(), startedBy:'operator1', participantIds:['100'], tags:[],
+      timeLimitSeconds:2400, evaluationSchemaVersion:2
+    });
+  }));
+  await assertFails(setDoc(raceRef, {
+    eventId:'event-1', team:'01', station:'04', round:1, status:'running',
+    startedAt:serverTimestamp(), startedBy:'operator1', participantIds:['100'], tags:[],
+    timeLimitSeconds:2400, evaluationSchemaVersion:2
+  }));
+});
+
 test('a formation commander can register only as an unapproved global role', async () => {
   const newCommander = userDb('new-formation');
   await assertSucceeds(setDoc(doc(newCommander, 'users', 'new-formation'), {
