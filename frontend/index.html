@@ -7,7 +7,10 @@
 <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
   <script>
     // מצב חוץ — ברירת מחדל מופעל
-    if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+    // הסקריפט רץ ב-<head>, לפני שקיים body — מחילים כשהמסמך מוכן
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+    });
   </script>
   <style>
     .role-option {

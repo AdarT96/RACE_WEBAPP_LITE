@@ -1130,8 +1130,9 @@
   import {
     arrivalEntriesInOrder, arrivalOrderSignature, arrivalWithOrder, moveParticipantInOrder
   } from "./js/arrival-order-model.js";
-  import { ROLES, roleLabel } from "./js/roles.js";
+  import { EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel } from "./js/roles.js";
   import { resolveActiveUserContext } from "./js/active-user-context.js";
+  import { staffAssignmentChange } from "./js/staff-assignment.js";
   import { createForegroundGate, markLoad } from "./js/load-priority.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
@@ -1663,7 +1664,47 @@
     }
     currentUser = { ...data, uid: user.uid };
     initApp();
+    // השיבוץ יכול להשתנות בזמן שהאפליקציה פתוחה — האזנה ברקע, אחרי הסבב
+    pointerRead.then(item => (item.exists() ? item.data() : null), () => null)
+      .then(pointer => foreground.background(() => watchOwnStaffAssignment(pointer)));
   });
+
+  // ═════════ שינוי שיבוץ בזמן אירוע ═════════
+  // המנהל יכול להעביר מעריך או מפק״צ לצוות אחר באמצע אירוע. התפקיד והצוות
+  // נקראים רק בפתיחת הדף, וההרשאות בשרת עוברות לצוות החדש מיד — ולכן מסך
+  // ישן ייכשל בשמירה. מציגים פס עם כפתור רענון ולא מרעננים אוטומטית, כדי
+  // לא לאבד הזנה באמצע.
+  function watchOwnStaffAssignment(pointer) {
+    if (isAdmin() || pointer?.status !== 'active' || !pointer.eventId ||
+        Number(pointer.eventStaffingSchemaVersion || 0) !== EVENT_STAFFING_SCHEMA_VERSION) return;
+    onSnapshot(doc(db, 'events', String(pointer.eventId), 'staff', currentUser.uid), snapshot => {
+      showAssignmentBanner(staffAssignmentChange(currentUser, snapshot.exists() ? snapshot.data() : null));
+    }, () => { /* אירוע שנסגר אינו קריא עוד — אין מה להודיע */ });
+  }
+
+  function showAssignmentBanner(change) {
+    let banner = document.getElementById('assignment-banner');
+    if (!change) { if (banner) banner.style.display = 'none'; return; }
+    if (!banner) {
+      banner = document.createElement('button');
+      banner.id = 'assignment-banner';
+      banner.type = 'button';
+      banner.className = 'alert alert-info';
+      banner.style.cssText = 'position:sticky; top:0; z-index:1000; width:100%; margin:0; ' +
+        'border-radius:0; font:inherit; font-weight:800; text-align:center; cursor:pointer;';
+      banner.addEventListener('click', async () => {
+        banner.disabled = true;
+        try { await commitPendingReps(); } catch (error) { /* הרענון חשוב יותר */ }
+        // פרמטרי צוות/תחנה בכתובת שייכים לשיבוץ הישן. בלעדיהם — טעינה מחדש
+        // רגילה (ניווט לאותה כתובת עם # לא היה טוען את הדף מחדש).
+        if (location.search) location.href = location.pathname + location.hash;
+        else location.reload();
+      });
+      document.body.prepend(banner);
+    }
+    banner.textContent = '🔄 ' + change.message;
+    banner.style.display = 'block';
+  }
   window.logout = async () => { await signOut(auth); window.location.href = 'index.html'; };
 
   // ═════════ Init ═════════
