@@ -556,8 +556,8 @@ onAuthStateChanged(auth, async user => {
     document.getElementById('setup-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
     repository = createEventSetupRepository(db, currentUser);
     scheduleRepository = createScheduleRepository(db, currentUser);
-    await Promise.all([loadStationTypes(), loadUsers()]);
-    const events = await repository.listEvents();
+    // שלוש קריאות בלתי תלויות — יוצאות יחד
+    const [events] = await Promise.all([repository.listEvents(), loadStationTypes(), loadUsers()]);
     renderEventPicker(events);
     const requested = new URLSearchParams(location.search).get('eventId');
     if (requested) await selectEvent(requested);
