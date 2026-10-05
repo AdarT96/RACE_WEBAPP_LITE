@@ -336,6 +336,33 @@ document.getElementById('create-event-button').addEventListener('click', async e
   finally { setBusy(button, false); }
 });
 
+// כרטיסי השלבים מתקפלים כמו בפאנל המנהל. המצב נזכר במכשיר; קישור לשלב —
+// מסרגל השלבים או מכתובת עם # (למשל מפאנל המנהל לשלב 5) — פותח את הכרטיס.
+// את ה-# שומרים כבר עכשיו: selectEvent מחליף את הכתובת ומוחק אותו.
+const initialCardId = location.hash.slice(1);
+const collapseKey = id => `lite:setupCard:${id}`;
+
+function openSetupCard(id, { scroll = false } = {}) {
+  const card = id ? document.getElementById(id) : null;
+  if (card?.tagName !== 'DETAILS') return;
+  card.open = true;
+  if (scroll) card.scrollIntoView({ block: 'start' });
+}
+
+document.querySelectorAll('details.collapsible-card').forEach(card => {
+  try {
+    const saved = localStorage.getItem(collapseKey(card.id));
+    if (saved !== null) card.open = saved === '1';
+  } catch (_) { /* בלי אחסון — נשארים בברירת המחדל */ }
+  card.addEventListener('toggle', () => {
+    try { localStorage.setItem(collapseKey(card.id), card.open ? '1' : '0'); } catch (_) { /* לא קריטי */ }
+  });
+});
+// הפתיחה קודמת לגלילה של הקישור עצמו, כך שהדפדפן גולל לכרטיס פתוח
+document.querySelectorAll('.setup-steps a[href^="#"]').forEach(link => {
+  link.addEventListener('click', () => openSetupCard(link.getAttribute('href').slice(1)));
+});
+
 document.getElementById('existing-events').addEventListener('change', event => selectEvent(event.target.value));
 document.getElementById('logout-button').addEventListener('click', async () => {
   await signOut(auth); location.href = 'index.html';
@@ -561,6 +588,8 @@ onAuthStateChanged(auth, async user => {
     renderEventPicker(events);
     const requested = new URLSearchParams(location.search).get('eventId');
     if (requested) await selectEvent(requested);
+    // סביבת העבודה הוסתרה בטעינה, ולכן הדפדפן לא גלל ל-# בעצמו
+    if (requested) openSetupCard(initialCardId, { scroll: true });
   } catch (error) {
     showAlert('טעינת מסך ההגדרה נכשלה: ' + error.message, 'danger');
   }

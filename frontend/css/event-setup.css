@@ -59,3 +59,14 @@
   .setup-heading, .activation-bar { align-items:stretch; flex-direction:column; }
   .setup-inline-form > *, .setup-actions > * { width:100%; }
 }
+
+/* כרטיסים מתקפלים — כמו בפאנל המנהל */
+.collapsible-card > summary { list-style:none; cursor:pointer; user-select:none; }
+.collapsible-card > summary::-webkit-details-marker { display:none; }
+.collapsible-summary { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.collapsible-chevron { margin-inline-start:auto; color:var(--text-muted); transition:transform .15s ease; }
+.collapsible-card[open] > summary .collapsible-chevron { transform:rotate(180deg); }
+.setup-card-head.collapsible-summary { justify-content:flex-start; }
+/* כרטיס סגור: הכותרת בלבד, בלי קו ההפרדה והרווח שמתחתיה */
+.setup-card:not([open]) > .setup-card-head { border-bottom:0; padding-bottom:0; margin-bottom:0; }
+.setup-start-card:not([open]) { gap:0; }
