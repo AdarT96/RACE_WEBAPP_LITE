@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildIssueReportData } from '../frontend/js/issue-report.js';
+import { SCHEDULE_MAX_TEAMS } from '../frontend/js/schedule-model.js';
 
 function validInput() {
   return {
@@ -47,6 +48,17 @@ test('requires a description and trusted reporter identity', () => {
   const noEvent = validInput();
   noEvent.eventId = '';
   assert.throws(() => buildIssueReportData(noEvent), /אירוע/);
+});
+
+test('accepts every team up to the event team cap', () => {
+  // הקוד החזיק 15 קשיח אחרי שהתקרה עלתה ל-20, וצוותים 16–20 לא יכלו לדווח
+  const lastTeam = validInput();
+  lastTeam.reporter.team = SCHEDULE_MAX_TEAMS;
+  assert.equal(buildIssueReportData(lastTeam).reporterTeam, SCHEDULE_MAX_TEAMS);
+
+  const aboveCap = validInput();
+  aboveCap.reporter.team = SCHEDULE_MAX_TEAMS + 1;
+  assert.throws(() => buildIssueReportData(aboveCap), /צוות/);
 });
 
 test('normalizes numeric context and caps diagnostic text lengths', () => {

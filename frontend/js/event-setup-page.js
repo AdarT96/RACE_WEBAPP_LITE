@@ -14,7 +14,7 @@ import { CLEARANCE_LABELS, padTeam } from './formation-operations-model.js';
 import { ROLES, roleLabel } from './roles.js';
 import { analyzeScheduleLoad } from './schedule-load-policy.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
-import { normalizeSchedule, scheduleIssues } from './schedule-model.js';
+import { SCHEDULE_MAX_TEAMS, normalizeSchedule, scheduleIssues } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
@@ -40,7 +40,7 @@ const teamIds = () => bundle?.schedule?.teamIds?.length
 function teamIdsFromInput() {
   const tokens = document.getElementById('team-numbers').value.split(/[,;\s]+/).filter(Boolean);
   const invalid = tokens.find(token => !normalizeEventTeamId(token));
-  if (invalid) throw new Error(`מספר הצוות "${invalid}" אינו תקין. ניתן להזין 1–15.`);
+  if (invalid) throw new Error(`מספר הצוות "${invalid}" אינו תקין. ניתן להזין 1–${SCHEDULE_MAX_TEAMS}.`);
   return [...new Set(tokens.map(normalizeEventTeamId))];
 }
 
@@ -377,7 +377,7 @@ document.getElementById('import-schedule-button').addEventListener('click', asyn
   try {
     const matrix = await workbookMatrix(document.getElementById('schedule-file').files[0]);
     const provisional = buildScheduleImport({ matrix, stationCatalogByTeam:Object.fromEntries(
-      Array.from({ length:15 }, (_, index) => String(index + 1).padStart(2, '0')).map(team => [team,
+      Array.from({ length:SCHEDULE_MAX_TEAMS }, (_, index) => String(index + 1).padStart(2, '0')).map(team => [team,
         Object.entries(defaultStationMap()).map(([id, typeId]) => ({ id, name:stationTypes[typeId]?.name || typeId }))])
     ) });
     const structuralError = provisional.errors.find(error => !error.includes('אינה מוכרת'));

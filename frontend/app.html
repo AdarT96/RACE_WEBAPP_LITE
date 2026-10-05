@@ -1697,7 +1697,7 @@
       const teamSel = document.getElementById('team-select');
       teamSel.style.display = '';
       teamSel.innerHTML = '';
-      const max = APP_CONFIG.maxTeamNumber || 15;
+      const max = APP_CONFIG.maxTeamNumber || 20;
       const empty = document.createElement('option');
       empty.value = ''; empty.textContent = '— בחר צוות —';
       teamSel.appendChild(empty);
@@ -3723,7 +3723,7 @@
       const empty = document.createElement('option');
       empty.value = ''; empty.textContent = '— בחר צוות —';
       teamSel.appendChild(empty);
-      const max = APP_CONFIG.maxTeamNumber || 15;
+      const max = APP_CONFIG.maxTeamNumber || 20;
       for (let i = 1; i <= max; i++) {
         const id = pad2(i);
         const opt = document.createElement('option');

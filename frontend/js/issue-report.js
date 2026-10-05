@@ -1,4 +1,5 @@
 import { DEFAULT_SESSION_LIMIT_SECONDS } from './session-policy.js';
+import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 
 export const ISSUE_REPORT_CATEGORIES = Object.freeze([
   'timing',
@@ -38,7 +39,7 @@ export function buildIssueReportData({ draft, reporter, context, environment, ev
   if (!reporterUid || !['operator', 'evaluator', 'admin'].includes(reporterRole)) {
     throw new Error('זהות המדווח אינה זמינה');
   }
-  if (!Number.isInteger(reporterTeam) || reporterTeam < 1 || reporterTeam > 15) {
+  if (!Number.isInteger(reporterTeam) || reporterTeam < 1 || reporterTeam > SCHEDULE_MAX_TEAMS) {
     throw new Error('לא ניתן לשלוח דיווח בלי צוות מזוהה');
   }
   if (!formationEventId) {
