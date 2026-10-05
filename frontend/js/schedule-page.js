@@ -106,7 +106,7 @@ async function loadStationTypes() {
 
 // מזהה האירוע ידוע מיד (מהכתובת או ממצביע האירוע הפעיל), ולכן מסמך האירוע
 // והצוותים נקראים במקביל ולא בזה אחר זה. הצוותים מוצגים רק אם האירוע תקף.
-async function loadEventAndTeams(pointerSnapshot) {
+async function loadEventAndTeams(pointerRead) {
   const requestedEventId = new URLSearchParams(location.search).get('eventId');
   let eventId = '';
   let allowedStatuses = ['active'];
@@ -115,6 +115,8 @@ async function loadEventAndTeams(pointerSnapshot) {
     eventId = requestedEventId;
     allowedStatuses = ['draft', 'active'];
   } else {
+    // המצביע נדרש רק כשלא התבקש אירוע מסוים בכתובת
+    const pointerSnapshot = await pointerRead;
     const pointer = pointerSnapshot?.exists() ? pointerSnapshot.data() : null;
     if (!pointer || pointer.status !== 'active' || !pointer.eventId) return null;
     eventId = String(pointer.eventId);
@@ -662,13 +664,17 @@ function subscribeToOperationalRaces() {
     if (!operationalRacesLoaded) markLoad(`operational races loaded (${operationalRaces.length})`);
     operationalRacesLoaded = true;
     stationOperationalDialog()?.refresh({ races: operationalRaces, loading: false, nowMs: Date.now() });
-  }, error => showToast('מצב הסבבים אינו זמין כרגע: ' + error.message, 'error'));
+  }, error => {
+    showToast('מצב הסבבים אינו זמין כרגע: ' + error.message, 'error');
+    // לא להשאיר את חלון התחנה תקוע על "טוען"
+    stationOperationalDialog()?.refresh({ races: operationalRaces, loading: false, nowMs: Date.now() });
+  });
 }
 
 async function initializePage(pointerRead) {
   updateBackLink();
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
-  const [, event] = await Promise.all([stationTypesRead, pointerRead.then(loadEventAndTeams)]);
+  const [, event] = await Promise.all([stationTypesRead, loadEventAndTeams(pointerRead)]);
   activeEvent = event;
   markLoad('event and teams loaded');
   if (!activeEvent) { showBlocking('לא נמצא אירוע זמין.'); return; }
