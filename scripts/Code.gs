@@ -19,6 +19,10 @@ var TEAM_REGISTRY_TAB     = "קבצי צוותים";
 var TEAM_FOLDER_NAME      = "קבצי צוותים";
 var TEAM_REGISTRY_HEADERS = ["צוות", "File ID", "קישור", "נוצר", "Event ID"];
 
+// המקום היחיד שיוצר קבצים משויכים לאירוע. הודעות "חסר קובץ" מפנות לכאן —
+// כפתורי היצירה הישנים בפאנל המנהל יצרו קבצים ללא Event ID, שהסנכרון לא מוצא.
+var CREATE_FILES_HINT = "הגדרת אירוע → שלב 5 \"צור/בדוק קבצי אירוע\"";
+
 // תיקיית האירוע ב-Drive — אחת לכל האירוע (2–4 ימים). ריק = מחושב אוטומטית
 // "גיבוש <חודש> <שנה>" מהתאריך הנוכחי (אירוע אחד בחודש). אפשר לקבע שם ידני.
 var EVENT_FOLDER_NAME = "";
@@ -104,7 +108,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-09-30-target-fallback";
+var CODE_VERSION = "2026-10-05-event-scoped-hints";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -272,7 +276,7 @@ function msToClock_(ms) {
 }
 
 function missingTeamFileMsg_(team) {
-  return "אין קובץ לצוות " + team + " — צור אותו בפאנל המנהל (\"קבצי צוותים\") לפני הסנכרון";
+  return "אין קובץ לצוות " + team + " באירוע הזה — צור אותו ב" + CREATE_FILES_HINT + " לפני הסנכרון";
 }
 
 // שמות פרמטרים/מדידה/שם תחנה — מה-payload אם הגיע, אחרת מברירת המחדל
@@ -421,10 +425,10 @@ function findTeamFile_(ss, team, eventId) {
   if (!entry || !entry.fileId) return null;
   return openSpreadsheet_(entry.fileId,
     "קובץ הצוות " + team + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
-    "פאנל מנהל → קבצי Google Sheets → \"צור קבצי צוותים\" ייצור קובץ חדש במקומו");
+    CREATE_FILES_HINT + " ייצור קובץ חדש במקומו");
 }
 
-// יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהפאנל),
+// יצירה — נקראת אך ורק מ-handleEnsureTeamSheet_ (פעולה יזומה מהגדרת האירוע),
 // לעולם לא מנתיב הסנכרון.
 function createTeamFile_(ss, team, eventId, eventName) {
   var suffix = eventName || eventId || "גיבוש";
@@ -443,7 +447,7 @@ function createTeamFile_(ss, team, eventId, eventName) {
   return { ss: newSs, placement: placement };
 }
 
-// הקצאה יזומה מהפאנל. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
+// הקצאה יזומה מהגדרת האירוע. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
 function handleEnsureTeamSheet_(ss, payload) {
   var team = parseInt(String(payload.team || "").replace(/\D+/g, ""), 10);
   if (!team) return buildResponse(false, "Missing team");
@@ -724,13 +728,13 @@ function mirrorToEvaluatorFile_(ss, payload, fn) {
 
   var entry = findEvaluatorEntry_(ss, uid, name, eventId_(payload));
   if (!entry || !entry.fileId) {
-    return "אין קובץ רשום למעריך " + (name || uid) + " — צור אותו בפאנל המנהל";
+    return "אין קובץ רשום למעריך " + (name || uid) + " באירוע הזה — צור אותו ב" + CREATE_FILES_HINT;
   }
   var evalSs;
   try {
     evalSs = openSpreadsheet_(entry.fileId,
       "קובץ המעריך " + (name || uid) + " רשום אבל לא נגיש (נמחק או הועבר לסל). " +
-      "פאנל מנהל → כפתור \"צור מחדש\" ליד שם המעריך");
+      CREATE_FILES_HINT + " ייצור קובץ חדש במקומו");
   } catch (err) {
     return err.message;
   }
@@ -882,7 +886,7 @@ function mirrorEvaluatorBatches_(ss, rows, warnings) {
 
     var entry = findEvaluatorEntry_(ss, uid, name, eventId_(group[0]));
     if (!entry || !entry.fileId) {
-      warnings.push("אין קובץ רשום למעריך " + (name || evalKey) + " — צור אותו בפאנל המנהל");
+      warnings.push("אין קובץ רשום למעריך " + (name || evalKey) + " באירוע הזה — צור אותו ב" + CREATE_FILES_HINT);
       continue;
     }
     try {

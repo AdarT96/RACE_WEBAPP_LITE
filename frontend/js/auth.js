@@ -10,6 +10,7 @@ import { getAuth, createUserWithEmailAndPassword,
 import { getFirestore, doc, setDoc,
          getDoc, serverTimestamp }     from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 import { ROLES, destinationForRole, isKnownRole, roleNeedsTeam } from './roles.js';
+import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
@@ -68,8 +69,8 @@ async function registerUser() {
     return showMsg('reg-msg', 'הסיסמאות אינן תואמות.');
   
   const teamNum = roleNeedsTeam(role) ? parseInt(team) : null;
-  if (roleNeedsTeam(role) && (isNaN(teamNum) || teamNum < 1 || teamNum > 15))
-    return showMsg('reg-msg', 'מספר צוות חייב להיות בין 1 ל-15.');
+  if (roleNeedsTeam(role) && (isNaN(teamNum) || teamNum < 1 || teamNum > SCHEDULE_MAX_TEAMS))
+    return showMsg('reg-msg', `מספר צוות חייב להיות בין 1 ל-${SCHEDULE_MAX_TEAMS}.`);
 
   setLoading('reg-btn', true);
   try {

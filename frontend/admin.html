@@ -156,8 +156,8 @@
     </summary>
     <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
       <span style="font-size:12px; color:var(--text-muted)">
-        שינוי תפקיד, שיוך צוות ומחיקת חשבון — כאן. יצירת קבצים לכל המעריכים נמצאת
-        בכרטיס <b>קבצי Google Sheets</b>.
+        שינוי תפקיד, שיוך צוות ומחיקת חשבון — כאן. קבצי המעריכים של אירוע נוצרים
+        ב<b>הגדרת האירוע, שלב 5</b>.
       </span>
       <button class="btn btn-ghost" onclick="loadUsers()" style="font-size:13px; padding:6px 12px">↻ רענן</button>
     </div>
@@ -339,12 +339,19 @@
       <button class="btn btn-ghost" onclick="auditSheetFiles()" style="font-size:13px; padding:6px 12px">🔍 בדיקת קבצים</button>
     </div>
     <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-      כל הקבצים נוצרים כאן <strong>מראש</strong>, לפני האירוע. הסנכרון עצמו רק כותב לקבצים
-      קיימים ולעולם לא יוצר חדשים — כך נמנעת יצירת קובץ כפול בכל שורה.
-      <br>
-      <strong>"צור קבצים חדשים ביעד"</strong> מייצר קבצים חדשים בתיקיית היעד גם כשקיימים קבצים
-      במקום אחר, ומפנה את הסנכרון אליהם. הקבצים הישנים נשארים שלמים כארכיון. מיועד לתחילת אירוע.
+      הקבצים נוצרים <strong>מראש</strong>, לפני האירוע, ושייכים לאירוע מסוים. הסנכרון עצמו רק
+      כותב לקבצים קיימים של האירוע ולעולם לא יוצר חדשים — כך נמנעת יצירת קובץ כפול בכל שורה.
     </p>
+
+    <div class="section mb-12">
+      <h3 class="mb-8">📁 קבצי צוותים ומעריכים</h3>
+      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
+        קובץ לכל צוות (טאב לכל תחנה) וקובץ לכל מעריך (טאב לכל מועמד) — רק לצוותים ולמעריכים
+        שבאירוע. נוצרים ב<b>הגדרת האירוע, שלב 5</b>. בטוח להריץ שוב: קובץ קיים לא ישוכפל,
+        וקובץ שנמחק ייווצר מחדש.
+      </p>
+      <a id="event-files-link" class="btn btn-primary" href="event-setup.html#drive-card">📁 צור/בדוק קבצי אירוע</a>
+    </div>
 
     <div class="section mb-12">
       <h3 class="mb-8">🔄 סנכרון האירוע כולו</h3>
@@ -355,39 +362,6 @@
         נפתח דף התחנה, שבו יושבים הנתונים וההרשאות שהסנכרון צריך.
       </p>
       <a class="btn btn-primary" href="app.html#sync-all">🔄 פתח וסנכרן הכל</a>
-    </div>
-
-    <div class="section mb-12">
-      <h3 class="mb-8">📁 קבצי צוותים</h3>
-      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
-        קובץ לכל צוות, טאב לכל תחנה — סדר ההגעה וההערות של כל הצוות.
-      </p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button id="btn-create-team-sheets" class="btn btn-primary" onclick="createAllTeamSheets()">
-          צור קבצי צוותים חסרים
-        </button>
-        <button id="btn-recreate-team-sheets" class="btn btn-warning" onclick="createAllTeamSheets(true)">
-          🆕 צור קבצים חדשים ביעד
-        </button>
-      </div>
-    </div>
-
-    <div class="section mb-12">
-      <h3 class="mb-8">📄 קבצי מעריכים</h3>
-      <p style="font-size:12px; color:var(--text-muted); margin-bottom:8px">
-        קובץ לכל מעריך, טאב לכל מועמד. קובץ למעריך יחיד נוצר משורת המשתמש
-        בכרטיס <b>כל המשתמשים</b>.
-      </p>
-      <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button id="btn-create-all-sheets" class="btn btn-primary" onclick="createAllEvaluatorSheets()"
-                title="יוצר קובץ שיט לכל מעריך שאין לו עדיין">
-          צור קבצי מעריכים חסרים
-        </button>
-        <button id="btn-recreate-all-sheets" class="btn btn-warning" onclick="createAllEvaluatorSheets(true)"
-                title="יוצר קבצים חדשים בתיקיית היעד לכל המעריכים, גם למי שכבר יש לו">
-          🆕 צור קבצים חדשים ביעד
-        </button>
-      </div>
     </div>
 
     <!-- יעד ב-Drive -->
@@ -539,11 +513,15 @@
     candidateRosterIssues, normalizeCandidateRoster,
     normalizeEmergencyContactPhone, normalizeNationalId, padTeam
   } from "./js/formation-operations-model.js";
-  import { ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam } from "./js/roles.js";
+  import {
+    EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam
+  } from "./js/roles.js";
+  import { staffPatchForUserChange } from "./js/staff-assignment.js";
+  import { markLoad } from "./js/load-priority.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
-    getFirestore, collection, getDocs, doc, getDoc,
+    getFirestore, collection, getDocs, getCountFromServer, doc, getDoc,
     updateDoc, deleteDoc, deleteField, setDoc, serverTimestamp, query, where, orderBy, limit, runTransaction, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
@@ -561,15 +539,22 @@
       return;
     }
     currentAdmin = { ...snap.data(), uid: user.uid };
-    await loadStationTypesData();   // לפני מיפוי הצוותים והעורך — שמות מעודכנים
-    initStTypeEditor();
-    loadUsers();
+    markLoad('profile resolved');
+    // מה שגלוי בפתיחה: כרטיס האירוע והמונים שבראש הדף. מונה הסבבים נספר
+    // בשרת — רשימת הסבבים המלאה יושבת בכרטיס מקופל ונטענת אחר כך.
+    await Promise.allSettled([
+      loadFormationEventStatus(),
+      loadUsers(),
+      loadIssueReports(),
+      loadRaceCount(),
+      // לפני מיפוי הצוותים והעורך — שמות מעודכנים
+      loadStationTypesData().then(() => { initStTypeEditor(); initTeamManagement(); })
+    ]);
+    markLoad('overview rendered');
+    // הכרטיסים המקופלים — אחרי שהסקירה הוצגה
     loadRaces();
-    loadIssueReports();
-    initTeamManagement();
     loadQuickTags();
     loadPrivacyMigrationStatus();
-    loadFormationEventStatus();
     loadDriveTarget();
     loadPurgeableEvents();
     loadNotesMigrationEvents();
@@ -594,8 +579,12 @@
     const actions = document.getElementById('formation-event-active-actions');
     const link = document.getElementById('formation-dashboard-link');
     const scheduleLink = document.getElementById('formation-schedule-link');
+    const filesLink = document.getElementById('event-files-link');
     try {
       const event = await activeFormationEvent();
+      filesLink.href = event
+        ? `event-setup.html?eventId=${encodeURIComponent(event.id)}#drive-card`
+        : 'event-setup.html#drive-card';
       if (!event) {
         summary.textContent = 'אין אירוע פעיל. יש ליצור אירוע לפני עבודה בתחנות.';
         create.style.display = '';
@@ -710,7 +699,7 @@
       const statusBadge = u.role === 'admin'
         ? '<span class="badge badge-warning">מנהל</span>'
         : u.approved ? '<span class="badge badge-success">מאושר</span>' : '<span class="badge badge-danger">ממתין</span>';
-      const teamOptions = Array.from({length:15}, (_,i) => {
+      const teamOptions = Array.from({length:APP_CONFIG.maxTeamNumber || 20}, (_,i) => {
         const v = i+1;
         return `<option value="${v}" ${Number(u.team)===v ? 'selected':''}>${v}</option>`;
       }).join('');
@@ -761,14 +750,42 @@
     try { await deleteDoc(doc(db,'users',uid)); showToast('המשתמש נדחה והוסר.','info'); loadUsers(); }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
   };
+  // בזמן אירוע פעיל האפליקציה וחוקי ההרשאות קוראים תפקיד וצוות משיבוץ
+  // האירוע, לא מרשומת המשתמש. שינוי כאן נכתב לשניהם באותה פעולה — אחרת
+  // המשתמש נשאר בתפקיד ובצוות הישנים למרות שכאן הוא מוצג בחדשים.
+  async function updateUserAssignment(uid, userPatch, staffChange) {
+    const [pointerSnapshot, userSnapshot] = await Promise.all([
+      getDoc(activeEventPointerRef()), getDoc(doc(db, 'users', uid))
+    ]);
+    const pointer = pointerSnapshot.exists() ? pointerSnapshot.data() : null;
+    const staffed = pointer?.status === 'active' && pointer.eventId &&
+      Number(pointer.eventStaffingSchemaVersion || 0) === EVENT_STAFFING_SCHEMA_VERSION;
+    const staffRef = staffed ? doc(db, 'events', String(pointer.eventId), 'staff', uid) : null;
+    const staffSnapshot = staffRef ? await getDoc(staffRef) : null;
+    const staff = staffSnapshot?.exists() ? staffSnapshot.data() : null;
+    // זורק לפני כל כתיבה, כך שרשומת המשתמש והשיבוץ לא נפרדים
+    const staffPatch = staffPatchForUserChange(staff, staffChange, userSnapshot.data()?.team);
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'users', uid), userPatch);
+    if (staffPatch) {
+      batch.update(staffRef, { ...staffPatch, updatedAt: serverTimestamp(), updatedBy: currentAdmin.uid });
+    }
+    await batch.commit();
+    if (staffPatch) return { note: ' · עודכן גם בשיבוץ האירוע הפעיל', type: 'success' };
+    if (staffRef && staffChange.role !== ROLES.ADMIN) {
+      return { note: ' · שים לב: המשתמש אינו משובץ בסגל האירוע הפעיל', type: 'info' };
+    }
+    return { note: '', type: 'success' };
+  }
+
   window.changeRole = async (uid, newRole) => {
     try {
       const patch = roleNeedsTeam(newRole) ? { role:newRole } : { role:newRole, team:null };
-      await updateDoc(doc(db,'users',uid),patch);
-      showToast('תפקיד עודכן: '+roleLabel(newRole),'success');
-      loadUsers();
+      const result = await updateUserAssignment(uid, patch, { role: newRole });
+      showToast('תפקיד עודכן: ' + roleLabel(newRole) + result.note, result.type);
     }
     catch(e) { showToast('שגיאה: '+e.message,'error'); }
+    loadUsers(); // גם בכשל — מחזיר את הבחירה במסך לערך השמור
   };
 
   // ═══════════════════════════════════════════════════════════
@@ -838,10 +855,11 @@
   };
 
   // ═══════════════════════════════════════════════════════════
-  //  קבצי צוותים — הקצאה מראש
+  //  קריאה ל-Apps Script
   // ═══════════════════════════════════════════════════════════
-  // הסנכרון כבר לא יוצר קבצים, ולכן חייבים ליצור אותם כאן לפני האירוע.
-  // idempotent: קובץ צוות שכבר קיים מוחזר כמו שהוא.
+  // יצירת קבצי צוותים ומעריכים לאירוע נעשית בהגדרת האירוע (שלב 5), שם היא
+  // מוגבלת לצוותי האירוע ומשויכת ל-Event ID. כפתורי "צור הכל" שהיו כאן יצרו
+  // צוותים 1..maxTeamNumber בלי Event ID — קבצים שהסנכרון לעולם לא מוצא.
   async function postToSheets(body) {
     if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
       body.key = APP_CONFIG.sheetsApiKey;
@@ -852,55 +870,6 @@
     if (!data.success) throw new Error(data.message || 'הפעולה נכשלה');
     return data;
   }
-
-  window.createAllTeamSheets = async (force = false) => {
-    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
-      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
-    }
-    const max = APP_CONFIG.maxTeamNumber || 15;
-    const question = force
-      ? `ליצור קבצים חדשים בתיקיית היעד לצוותים 1–${max}?\n\n` +
-        `הסנכרון יופנה אליהם מרגע זה. הקבצים הקיימים לא יימחקו — הם יישארו כארכיון ` +
-        `ולא יקבלו עוד נתונים.`
-      : `ליצור קבצי גיליון לצוותים 1–${max}? (צוות שכבר יש לו קובץ יידלג)`;
-    if (!confirm(question)) return;
-
-    const btn = document.getElementById(force ? 'btn-recreate-team-sheets' : 'btn-create-team-sheets');
-    const orig = btn ? btn.innerHTML : null;
-    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
-    try {
-      let created = 0, existed = 0, failed = 0;
-      const reasons = new Map(); // הסיבה עצמה, לא רק המונה
-      // רציף בכוונה — כל יצירה תופסת את נעילת הסקריפט
-      for (let t = 1; t <= max; t++) {
-        if (btn) btn.innerHTML = `⏳ צוות ${t}/${max}…`;
-        try {
-          const data = await postToSheets({ type: 'ensure_team_sheet', team: String(t), force });
-          if (/created/i.test(data.message || '')) created++; else existed++;
-          // הצלחה עם אזהרה היא עדיין בעיה: הקובץ נוצר אבל לא בהכרח היכן
-          // שביקשת. בליעת האזהרה כאן הסתירה כשל הרשאות שלם.
-          for (const warning of [data.warning, ...(data.warnings || [])].filter(Boolean)) {
-            reasons.set(warning, (reasons.get(warning) || 0) + 1);
-          }
-        } catch (e) {
-          failed++;
-          reasons.set(e.message, (reasons.get(e.message) || 0) + 1);
-          console.warn(`[team sheet ${t}]`, e.message);
-        }
-      }
-      let msg = `נוצרו ${created} · קיימים ${existed}`;
-      if (failed) msg += ` · נכשלו ${failed}`;
-      if (reasons.size) {
-        msg += ' — ' + [...reasons]
-          .map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
-      }
-      showToast(msg, (failed || reasons.size) ? 'error' : 'success');
-    } catch (e) {
-      showToast('שגיאה: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; if (orig) btn.innerHTML = orig; }
-    }
-  };
 
   // ═══════════════════════════════════════════════════════════
   //  יעד השמירה ב-Drive
@@ -986,56 +955,15 @@
     return `<div style="margin-bottom:14px"><strong>${title}</strong>${rows}</div>`;
   }
 
-  // יצירה לכל המעריכים הקיימים בבת אחת.
-  // force=true יוצר קבצים חדשים ביעד הנוכחי גם למי שכבר יש לו קובץ,
-  // במקביל ל"צור קבצים חדשים ביעד" של הצוותים.
-  window.createAllEvaluatorSheets = async (force = false) => {
-    if (!APP_CONFIG.sheetsApiUrl || APP_CONFIG.sheetsApiUrl.startsWith('YOUR_')) {
-      showToast('כתובת Google Sheets לא הוגדרה', 'error'); return;
-    }
-    if (force && !confirm('ליצור קבצי מעריכים חדשים בתיקיית היעד?\n\n' +
-        'הסנכרון יופנה אליהם. הקבצים הקיימים לא יימחקו — הם יישארו כארכיון.')) return;
-
-    const btn = document.getElementById(force ? 'btn-recreate-all-sheets' : 'btn-create-all-sheets');
-    const orig = btn ? btn.innerHTML : null;
-    if (btn) { btn.disabled = true; btn.innerHTML = '⏳ יוצר…'; }
-    try {
-      const snap = await getDocs(collection(db, 'users'));
-      const evaluators = [];
-      snap.forEach(d => { const u = d.data(); if (u.role === 'evaluator') evaluators.push({ uid: d.id, ...u }); });
-      if (evaluators.length === 0) { showToast('אין מעריכים במערכת', 'info'); return; }
-
-      let created = 0, skipped = 0, failed = 0;
-      const reasons = new Map();
-      // רציף בכוונה — כל יצירת קובץ תופסת נעילת סקריפט ולוקחת כמה שניות
-      for (const u of evaluators) {
-        try {
-          const r = await ensureSheetForUser(u.uid, u, force);
-          if (r.status === 'created') created++;
-          else if (r.status === 'skipped') skipped++;
-          if (r.warning) reasons.set(r.warning, (reasons.get(r.warning) || 0) + 1);
-        } catch (e) {
-          failed++;
-          reasons.set(e.message, (reasons.get(e.message) || 0) + 1);
-        }
-      }
-      loadUsers();
-      let msg = `נוצרו ${created} · דילוג (כבר קיים) ${skipped}`;
-      if (failed) msg += ` · נכשלו ${failed}`;
-      if (reasons.size) {
-        msg += ' — ' + [...reasons].map(([r, c]) => `${r}${c > 1 ? ` (×${c})` : ''}`).join(' · ');
-      }
-      showToast(msg, (failed || reasons.size) ? 'error' : 'success');
-    } catch (e) {
-      showToast('שגיאה: ' + e.message, 'error');
-    } finally {
-      if (btn) { btn.disabled = false; if (orig) btn.innerHTML = orig; }
-    }
-  };
   window.changeTeam = async (uid, newTeam) => {
     const teamNum = newTeam ? parseInt(newTeam) : null;
-    try { await updateDoc(doc(db,'users',uid),{team: teamNum || ''}); showToast('צוות עודכן: ' + (teamNum || '—'),'success'); }
-    catch(e) { showToast('שגיאה: '+e.message,'error'); }
+    try {
+      const result = await updateUserAssignment(uid, { team: teamNum || '' }, { team: teamNum });
+      showToast('צוות עודכן: ' + (teamNum || '—') + result.note, result.type);
+    } catch(e) {
+      showToast('שגיאה: '+e.message,'error');
+      loadUsers(); // מחזיר את הבחירה במסך לערך השמור
+    }
   };
   window.deleteUserRecord = async (uid) => {
     if (!confirm('למחוק רשומת משתמש זו? (חשבון Firebase Auth נשאר)')) return;
@@ -1387,6 +1315,18 @@
   // ההיסטוריה מוצגת לגיבוש הפעיל בלבד. אירוע יחיד מחזיק מאות סבבים
   // (20 צוותים × 17 תחנות × סבבים), וקריאת כל האוסף גם איטית וגם מטעה —
   // המנהל צריך לראות את הגיבוש שרץ עכשיו, לא את כל מה שהיה.
+  // ספירה בשרת: מספר אחד במקום כל מסמכי הסבבים, כדי שהמונה לא יחכה לרשימה
+  async function loadRaceCount() {
+    const counter = document.getElementById('count-races');
+    try {
+      const event = await activeFormationEvent();
+      if (!event) { counter.textContent = '0'; return; }
+      const count = await getCountFromServer(query(collection(db, 'races'), where('eventId', '==', event.id)));
+      // loadRaces מעדכן את אותו מונה; לא דורסים ערך שכבר נכתב ממנו
+      if (counter.textContent === '—') counter.textContent = count.data().count;
+    } catch (e) { /* המונה יתמלא מ-loadRaces */ }
+  }
+
   window.loadRaces = async () => {
     const container = document.getElementById('races-list');
     const counter   = document.getElementById('count-races');
@@ -1704,7 +1644,7 @@
   function initTeamManagement() {
     const sel = document.getElementById('team-select');
     if (!sel) return;
-    const max = APP_CONFIG.maxTeamNumber || 15;
+    const max = APP_CONFIG.maxTeamNumber || 20;
     // ה-<option> הראשון ("בחר צוות") כבר קיים
     for (let i = 1; i <= max; i++) {
       const o = document.createElement('option');

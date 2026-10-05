@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, where
+  collection, doc, getDoc, getDocs, getFirestore
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
@@ -14,12 +14,13 @@ import { ScheduleConflictError, createScheduleRepository } from './schedule-repo
 import {
   normalizeScheduleDraft, schedulePublicationLabel
 } from './schedule-publication-model.js';
-import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
-import './station-operational-dialog.js';
 import {
   ROLES, canManageSchedule, canViewSchedule, roleLabel
 } from './roles.js';
 import { resolveActiveUserContext } from './active-user-context.js';
+import { createForegroundGate, markLoad } from './load-priority.js';
+
+markLoad('script loaded');
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -41,8 +42,9 @@ let saving = false;
 let conflict = false;
 let currentWarnings = [];
 let teamProjection = null;
-let operationalRaces = [];
-let unsubscribeOperationalRaces = null;
+let stationTypesRead = Promise.resolve();
+// הלו״ז הוא מה שהמשתמש פתח. היסטוריית הגרסאות נטענת אחריו.
+const foreground = createForegroundGate();
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -97,30 +99,41 @@ async function loadStationTypes() {
   }
 }
 
-async function getActiveEvent() {
+// מזהה האירוע ידוע מיד (מהכתובת או ממצביע האירוע הפעיל), ולכן מסמך האירוע
+// והצוותים נקראים במקביל ולא בזה אחר זה. הצוותים מוצגים רק אם האירוע תקף.
+async function loadEventAndTeams(pointerRead) {
   const requestedEventId = new URLSearchParams(location.search).get('eventId');
+  let eventId = '';
+  let allowedStatuses = ['active'];
   if (requestedEventId) {
     if (currentUser?.role !== ROLES.ADMIN) return null;
-    const requested = await getDoc(doc(db, 'events', requestedEventId));
-    return requested.exists() && ['draft', 'active'].includes(requested.data().status)
-      ? { id:requested.id, ...requested.data() } : null;
+    eventId = requestedEventId;
+    allowedStatuses = ['draft', 'active'];
+  } else {
+    // המצביע נדרש רק כשלא התבקש אירוע מסוים בכתובת
+    const pointerSnapshot = await pointerRead;
+    const pointer = pointerSnapshot?.exists() ? pointerSnapshot.data() : null;
+    if (!pointer || pointer.status !== 'active' || !pointer.eventId) return null;
+    eventId = String(pointer.eventId);
   }
-  const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
-  if (!pointer.exists() || pointer.data().status !== 'active' || !pointer.data().eventId) return null;
-  const snapshot = await getDoc(doc(db, 'events', String(pointer.data().eventId)));
-  return snapshot.exists() && snapshot.data().status === 'active'
-    ? { id: snapshot.id, ...snapshot.data() } : null;
+  // כשל בקריאת הצוותים של אירוע לא תקף אינו רלוונטי — נבדק רק אחרי האירוע
+  const teamsResult = readEventTeams(eventId).then(value => ({ value }), error => ({ error }));
+  const snapshot = await getDoc(doc(db, 'events', eventId));
+  if (!snapshot.exists() || !allowedStatuses.includes(snapshot.data().status)) return null;
+  const teams = await teamsResult;
+  if (teams.error) throw teams.error;
+  eventTeams = teams.value;
+  return { id: snapshot.id, ...snapshot.data() };
 }
 
-async function loadEventTeams() {
+async function readEventTeams(eventId) {
   if (canManageSchedule(currentUser.role)) {
-    const snapshot = await getDocs(collection(db, 'events', activeEvent.id, 'teams'));
-    eventTeams = Object.fromEntries(snapshot.docs.map(item => [item.id, { id: item.id, ...item.data() }]));
-  } else {
-    const team = pad2(currentUser.team);
-    const snapshot = await getDoc(doc(db, 'events', activeEvent.id, 'teams', team));
-    eventTeams = snapshot.exists() ? { [team]: { id: team, ...snapshot.data() } } : {};
+    const snapshot = await getDocs(collection(db, 'events', eventId, 'teams'));
+    return Object.fromEntries(snapshot.docs.map(item => [item.id, { id: item.id, ...item.data() }]));
   }
+  const team = pad2(currentUser.team);
+  const snapshot = await getDoc(doc(db, 'events', eventId, 'teams', team));
+  return snapshot.exists() ? { [team]: { id: team, ...snapshot.data() } } : {};
 }
 
 function teamIds() {
@@ -163,10 +176,6 @@ function dateLabel(dateKey) {
 
 function evaluationUrl(team, stationId) {
   return `app.html?team=${encodeURIComponent(team)}&station=${encodeURIComponent(stationId)}`;
-}
-
-function stationOperationalDialog() {
-  return document.getElementById('station-operational-dialog');
 }
 
 function setSaveStatus(message) {
@@ -245,7 +254,9 @@ function renderManagerSchedule() {
              oninput="updateCommanderName('${team}',this.value)" placeholder="שם מפקד הצוות">
     </label></th>`).join('')}
   </tr>`;
-  document.getElementById('schedule-matrix-body').innerHTML = draftSchedule.rows.map(row => {
+  document.getElementById('schedule-matrix-body').innerHTML = draftSchedule.rows.map((row, index) => {
+    // פס דגש בתחילת כל יום — השורות ממוינות לפי תאריך ושעה
+    const dayStart = index > 0 && row.date !== draftSchedule.rows[index - 1].date ? ' class="day-start"' : '';
     const rowTypeOptions = `<select class="form-select" onchange="updateRowKind('${escapeHtml(row.id)}',this.value)">
       <option value="rotation" ${row.kind === 'rotation' ? 'selected' : ''}>תחנות</option>
       <option value="global" ${row.kind === 'global' ? 'selected' : ''}>משותף</option>
@@ -258,13 +269,13 @@ function renderManagerSchedule() {
       <div class="schedule-row-actions">${rowTypeOptions}<button type="button" class="btn btn-ghost" onclick="removeScheduleRow('${escapeHtml(row.id)}')">מחק</button></div>
     </td>`;
     if (row.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
-      return `<tr data-schedule-row="${escapeHtml(row.id)}">${timeCell}
+      return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}
         <td class="global-row-cell" colspan="${Math.max(1, ids.length)}">
           <input class="form-input" maxlength="160" value="${escapeHtml(row.label)}"
                  oninput="updateGlobalLabel('${escapeHtml(row.id)}',this.value)" placeholder="שם הפעילות המשותפת">
         </td></tr>`;
     }
-    return `<tr data-schedule-row="${escapeHtml(row.id)}">${timeCell}${ids.map(team => {
+    return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}${ids.map(team => {
       const assignment = row.assignments[team] || { stationId:'', routeNumber:'' };
       const intensity = stationIntensity(team, assignment.stationId);
       return `<td class="schedule-station-cell intensity-${intensity}">
@@ -274,10 +285,7 @@ function renderManagerSchedule() {
           </select>
           <input class="form-input" maxlength="20" value="${escapeHtml(assignment.routeNumber)}"
                  oninput="updateAssignment('${escapeHtml(row.id)}','${team}','routeNumber',this.value)" placeholder="מספר מסלול">
-          <div class="station-cell-meta"><span><i class="intensity-dot intensity-${intensity}"></i> ${INTENSITY_LABELS[intensity]}</span>
-            ${assignment.stationId
-              ? `<button type="button" class="station-open-link" onclick="openStationDetails('${escapeHtml(row.id)}','${team}')">פרטי תחנה</button>` : ''}
-          </div>
+          <div class="station-cell-meta"><span><i class="intensity-dot intensity-${intensity}"></i> ${INTENSITY_LABELS[intensity]}</span></div>
         </div></td>`;
     }).join('')}</tr>`;
   }).join('');
@@ -346,18 +354,6 @@ window.removeScheduleRow = rowId => {
   if (!row || !confirm(`למחוק את השורה של ${formatScheduleTime(row.startMinute)}?`)) return;
   draftSchedule.rows = draftSchedule.rows.filter(item => item.id !== row.id);
   window.markScheduleDirty(); renderManagerSchedule();
-};
-
-window.openStationDetails = (rowId, team) => {
-  const row = findRow(rowId);
-  const assignment = row?.kind === SCHEDULE_ROW_KINDS.ROTATION ? row.assignments?.[team] : null;
-  if (!row || !assignment?.stationId) return;
-  stationOperationalDialog()?.show({
-    team, stationId: assignment.stationId, stationName: stationName(team, assignment.stationId),
-    routeNumber: assignment.routeNumber,
-    scheduledLabel: `${dateLabel(row.date)} · ${formatScheduleTime(row.startMinute)}`,
-    races: operationalRaces, nowMs: Date.now()
-  });
 };
 
 window.toggleNewRowLabel = () => {
@@ -604,11 +600,14 @@ function subscribeToSchedule() {
         document.getElementById('schedule-conflict').hidden = false;
         setSaveStatus('הלו״ז השתנה במכשיר אחר');
       }
+      scheduleShown();
     }, error => showBlocking('טעינת הלו״ז נכשלה: ' + error.message));
-    unsubscribeRevisions = repository.subscribeRevisions(activeEvent.id, values => {
-      publishedRevisions = values;
-      renderScheduleHistory();
-    }, error => showToast('היסטוריית הגרסאות אינה זמינה: ' + error.message, 'error'));
+    foreground.background(() => {
+      unsubscribeRevisions = repository.subscribeRevisions(activeEvent.id, values => {
+        publishedRevisions = values;
+        renderScheduleHistory();
+      }, error => showToast('היסטוריית הגרסאות אינה זמינה: ' + error.message, 'error'));
+    });
   } else {
     const team = pad2(currentUser.team);
     document.getElementById('schedule-manager').hidden = true;
@@ -616,32 +615,28 @@ function subscribeToSchedule() {
     unsubscribeSchedule = repository.subscribeTeam(activeEvent.id, team, value => {
       teamProjection = value;
       renderTeamSchedule();
+      scheduleShown();
     }, error => showBlocking('טעינת הלו״ז הצוותי נכשלה: ' + error.message));
   }
 }
 
-function subscribeToOperationalRaces() {
-  unsubscribeOperationalRaces?.();
-  operationalRaces = [];
-  if (!canManageSchedule(currentUser?.role) || !activeEvent?.id) return;
-  unsubscribeOperationalRaces = onSnapshot(query(collection(db, 'races'),
-    where('eventId', '==', activeEvent.id),
-    where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION)), snapshot => {
-    operationalRaces = snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
-    stationOperationalDialog()?.refresh({ races: operationalRaces, nowMs: Date.now() });
-  }, error => showToast('מצב הסבבים אינו זמין כרגע: ' + error.message, 'error'));
+function scheduleShown() {
+  if (foreground.released) return;
+  markLoad('schedule rendered');
+  foreground.release();
 }
 
-async function initializePage() {
+async function initializePage(pointerRead) {
   updateBackLink();
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
-  await Promise.all([loadStationTypes(), getActiveEvent().then(value => { activeEvent = value; })]);
+  const [, event] = await Promise.all([stationTypesRead, loadEventAndTeams(pointerRead)]);
+  activeEvent = event;
+  markLoad('event and teams loaded');
   if (!activeEvent) { showBlocking('לא נמצא אירוע זמין.'); return; }
   document.getElementById('schedule-title').textContent = activeEvent.name || 'לו״ז גיבוש';
   document.getElementById('schedule-subtitle').textContent = canManageSchedule(currentUser.role)
     ? `${activeEvent.status === 'draft' ? 'טיוטה · ' : ''}מבט־על ועריכת שיבוץ לכל הצוותים`
     : `לו״ז צוות ${Number(currentUser.team)}`;
-  await loadEventTeams();
   if (!teamIds().length) { showBlocking('לא נמצאו צוותים באירוע. יש להוסיף צוותים במסך הגדרת האירוע.'); return; }
   repository = createScheduleRepository(db, currentUser);
   const clock = localScheduleClock(new Date());
@@ -650,7 +645,6 @@ async function initializePage() {
     Math.min(1435, Math.ceil(clock.startMinute / 5) * 5)
   );
   window.toggleNewRowLabel();
-  subscribeToOperationalRaces();
   subscribeToSchedule();
 }
 
@@ -670,15 +664,22 @@ document.addEventListener('keydown', event => {
 setInterval(() => {
   if (canManageSchedule(currentUser?.role)) applyCurrentRowHighlight();
   else if (teamProjection) renderTeamSchedule();
-  stationOperationalDialog()?.refresh({ races: operationalRaces, nowMs: Date.now() });
 }, 30000);
 
 onAuthStateChanged(auth, async user => {
   if (!user) { location.href = 'index.html'; return; }
+  markLoad('auth ready');
   try {
+    // שלוש קריאות בלתי תלויות יוצאות יחד. ה-catch הריק רק מסמן את ההבטחה
+    // כמטופלת; מי שממתין לה עדיין מקבל את השגיאה.
+    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    pointerRead.catch(() => {});
+    stationTypesRead = loadStationTypes();
     const snapshot = await getDoc(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
-    const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile) : null;
+    const profile = rawProfile
+      ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
+    markLoad('profile resolved');
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canViewSchedule(profile.role)) {
       await signOut(auth); location.href = 'index.html'; return;
     }
@@ -687,7 +688,7 @@ onAuthStateChanged(auth, async user => {
       return;
     }
     currentUser = { ...profile, uid:user.uid };
-    await initializePage();
+    await initializePage(pointerRead);
   } catch (error) {
     showBlocking('הכניסה ללו״ז נכשלה: ' + error.message);
   }

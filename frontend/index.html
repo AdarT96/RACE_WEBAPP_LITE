@@ -7,7 +7,10 @@
 <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
   <script>
     // מצב חוץ — ברירת מחדל מופעל
-    if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+    // הסקריפט רץ ב-<head>, לפני שקיים body — מחילים כשהמסמך מוכן
+    document.addEventListener('DOMContentLoaded', () => {
+      if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode');
+    });
   </script>
   <style>
     .role-option {
@@ -87,7 +90,7 @@
         </div>
 
         <div class="form-group" id="reg-team-group">
-          <label class="form-label">צוות (1-15)</label>
+          <label class="form-label">צוות (1-20)</label>
           <select id="reg-team" class="form-select">
             <option value="">— בחר צוות —</option>
           </select>
@@ -173,9 +176,9 @@
       o.value = r; o.text = r;
       sel.appendChild(o);
     });
-    // populate team selector (1-15)
+    // populate team selector (1..maxTeamNumber)
     const teamSel = document.getElementById('reg-team');
-    for (let i = 1; i <= 15; i++) {
+    for (let i = 1; i <= ((window.APP_CONFIG && window.APP_CONFIG.maxTeamNumber) || 20); i++) {
       const o = document.createElement('option');
       o.value = i; o.textContent = 'צוות ' + i;
       teamSel.appendChild(o);
