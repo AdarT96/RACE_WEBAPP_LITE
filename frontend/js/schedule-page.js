@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore, onSnapshot, query, where
+  collection, doc, getDoc, getDocs, getFirestore
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
@@ -14,8 +14,6 @@ import { ScheduleConflictError, createScheduleRepository } from './schedule-repo
 import {
   normalizeScheduleDraft, schedulePublicationLabel
 } from './schedule-publication-model.js';
-import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
-import './station-operational-dialog.js';
 import {
   ROLES, canManageSchedule, canViewSchedule, roleLabel
 } from './roles.js';
@@ -44,11 +42,8 @@ let saving = false;
 let conflict = false;
 let currentWarnings = [];
 let teamProjection = null;
-let operationalRaces = [];
-let operationalRacesLoaded = false;
-let unsubscribeOperationalRaces = null;
 let stationTypesRead = Promise.resolve();
-// הלו״ז הוא מה שהמשתמש פתח. מצב הסבבים והיסטוריית הגרסאות נטענים אחריו.
+// הלו״ז הוא מה שהמשתמש פתח. היסטוריית הגרסאות נטענת אחריו.
 const foreground = createForegroundGate();
 
 const escapeHtml = value => String(value ?? '')
@@ -183,10 +178,6 @@ function evaluationUrl(team, stationId) {
   return `app.html?team=${encodeURIComponent(team)}&station=${encodeURIComponent(stationId)}`;
 }
 
-function stationOperationalDialog() {
-  return document.getElementById('station-operational-dialog');
-}
-
 function setSaveStatus(message) {
   document.getElementById('schedule-save-status').textContent = message;
   document.getElementById('schedule-save-draft-button').disabled = saving || !dirty || conflict;
@@ -263,7 +254,9 @@ function renderManagerSchedule() {
              oninput="updateCommanderName('${team}',this.value)" placeholder="שם מפקד הצוות">
     </label></th>`).join('')}
   </tr>`;
-  document.getElementById('schedule-matrix-body').innerHTML = draftSchedule.rows.map(row => {
+  document.getElementById('schedule-matrix-body').innerHTML = draftSchedule.rows.map((row, index) => {
+    // פס דגש בתחילת כל יום — השורות ממוינות לפי תאריך ושעה
+    const dayStart = index > 0 && row.date !== draftSchedule.rows[index - 1].date ? ' class="day-start"' : '';
     const rowTypeOptions = `<select class="form-select" onchange="updateRowKind('${escapeHtml(row.id)}',this.value)">
       <option value="rotation" ${row.kind === 'rotation' ? 'selected' : ''}>תחנות</option>
       <option value="global" ${row.kind === 'global' ? 'selected' : ''}>משותף</option>
@@ -276,13 +269,13 @@ function renderManagerSchedule() {
       <div class="schedule-row-actions">${rowTypeOptions}<button type="button" class="btn btn-ghost" onclick="removeScheduleRow('${escapeHtml(row.id)}')">מחק</button></div>
     </td>`;
     if (row.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
-      return `<tr data-schedule-row="${escapeHtml(row.id)}">${timeCell}
+      return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}
         <td class="global-row-cell" colspan="${Math.max(1, ids.length)}">
           <input class="form-input" maxlength="160" value="${escapeHtml(row.label)}"
                  oninput="updateGlobalLabel('${escapeHtml(row.id)}',this.value)" placeholder="שם הפעילות המשותפת">
         </td></tr>`;
     }
-    return `<tr data-schedule-row="${escapeHtml(row.id)}">${timeCell}${ids.map(team => {
+    return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}${ids.map(team => {
       const assignment = row.assignments[team] || { stationId:'', routeNumber:'' };
       const intensity = stationIntensity(team, assignment.stationId);
       return `<td class="schedule-station-cell intensity-${intensity}">
@@ -292,10 +285,7 @@ function renderManagerSchedule() {
           </select>
           <input class="form-input" maxlength="20" value="${escapeHtml(assignment.routeNumber)}"
                  oninput="updateAssignment('${escapeHtml(row.id)}','${team}','routeNumber',this.value)" placeholder="מספר מסלול">
-          <div class="station-cell-meta"><span><i class="intensity-dot intensity-${intensity}"></i> ${INTENSITY_LABELS[intensity]}</span>
-            ${assignment.stationId
-              ? `<button type="button" class="station-open-link" onclick="openStationDetails('${escapeHtml(row.id)}','${team}')">פרטי תחנה</button>` : ''}
-          </div>
+          <div class="station-cell-meta"><span><i class="intensity-dot intensity-${intensity}"></i> ${INTENSITY_LABELS[intensity]}</span></div>
         </div></td>`;
     }).join('')}</tr>`;
   }).join('');
@@ -364,20 +354,6 @@ window.removeScheduleRow = rowId => {
   if (!row || !confirm(`למחוק את השורה של ${formatScheduleTime(row.startMinute)}?`)) return;
   draftSchedule.rows = draftSchedule.rows.filter(item => item.id !== row.id);
   window.markScheduleDirty(); renderManagerSchedule();
-};
-
-window.openStationDetails = (rowId, team) => {
-  const row = findRow(rowId);
-  const assignment = row?.kind === SCHEDULE_ROW_KINDS.ROTATION ? row.assignments?.[team] : null;
-  if (!row || !assignment?.stationId) return;
-  // נלחץ לפני שהרקע התחיל? המשתמש ביקש את זה עכשיו — מתחילים מיד
-  subscribeToOperationalRaces();
-  stationOperationalDialog()?.show({
-    team, stationId: assignment.stationId, stationName: stationName(team, assignment.stationId),
-    routeNumber: assignment.routeNumber,
-    scheduledLabel: `${dateLabel(row.date)} · ${formatScheduleTime(row.startMinute)}`,
-    races: operationalRaces, loading: !operationalRacesLoaded, nowMs: Date.now()
-  });
 };
 
 window.toggleNewRowLabel = () => {
@@ -650,27 +626,6 @@ function scheduleShown() {
   foreground.release();
 }
 
-// מצב הסבבים משמש רק את חלון פרטי התחנה. רץ ברקע אחרי הלו״ז, או מיד
-// כשהמשתמש פותח תחנה לפני כן. קריאה חוזרת אינה פותחת מנוי שני.
-function subscribeToOperationalRaces() {
-  if (unsubscribeOperationalRaces) return;
-  if (!canManageSchedule(currentUser?.role) || !activeEvent?.id) return;
-  operationalRaces = [];
-  operationalRacesLoaded = false;
-  unsubscribeOperationalRaces = onSnapshot(query(collection(db, 'races'),
-    where('eventId', '==', activeEvent.id),
-    where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION)), snapshot => {
-    operationalRaces = snapshot.docs.map(item => ({ id:item.id, ...item.data() }));
-    if (!operationalRacesLoaded) markLoad(`operational races loaded (${operationalRaces.length})`);
-    operationalRacesLoaded = true;
-    stationOperationalDialog()?.refresh({ races: operationalRaces, loading: false, nowMs: Date.now() });
-  }, error => {
-    showToast('מצב הסבבים אינו זמין כרגע: ' + error.message, 'error');
-    // לא להשאיר את חלון התחנה תקוע על "טוען"
-    stationOperationalDialog()?.refresh({ races: operationalRaces, loading: false, nowMs: Date.now() });
-  });
-}
-
 async function initializePage(pointerRead) {
   updateBackLink();
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
@@ -691,7 +646,6 @@ async function initializePage(pointerRead) {
   );
   window.toggleNewRowLabel();
   subscribeToSchedule();
-  foreground.background(subscribeToOperationalRaces);
 }
 
 window.logout = async () => { await signOut(auth); location.href = 'index.html'; };
@@ -710,7 +664,6 @@ document.addEventListener('keydown', event => {
 setInterval(() => {
   if (canManageSchedule(currentUser?.role)) applyCurrentRowHighlight();
   else if (teamProjection) renderTeamSchedule();
-  stationOperationalDialog()?.refresh({ races: operationalRaces, nowMs: Date.now() });
 }, 30000);
 
 onAuthStateChanged(auth, async user => {

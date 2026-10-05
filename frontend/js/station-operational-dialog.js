@@ -64,12 +64,9 @@ class StationOperationalDialog extends HTMLElement {
     this.shadowRoot.querySelector('.close').focus();
   }
 
-  refresh({ races, loading, nowMs = Date.now() } = {}) {
+  refresh({ races, nowMs = Date.now() } = {}) {
     if (!this.context || !this.hasAttribute('open')) return;
-    this.context = {
-      ...this.context, ...(Array.isArray(races) ? { races } : {}),
-      ...(typeof loading === 'boolean' ? { loading } : {}), nowMs
-    };
+    this.context = { ...this.context, ...(Array.isArray(races) ? { races } : {}), nowMs };
     this.render();
   }
 
@@ -90,18 +87,6 @@ class StationOperationalDialog extends HTMLElement {
     this.shadowRoot.querySelector('#subtitle').textContent = [
       schedule, route ? `מסלול ${route}` : ''
     ].filter(Boolean).join(' · ') || 'פרטי תחנה תפעוליים';
-    const warning = this.shadowRoot.querySelector('#warning');
-    // הסבבים נטענים ברקע אחרי הלו״ז. עד שהגיעו — "טוען", לא "טרם התחיל" שגוי.
-    if (this.context.loading) {
-      this.shadowRoot.querySelector('#details').innerHTML = `
-        <div class="field"><span>מצב התחנה</span><strong>טוען…</strong></div>
-        <div class="field"><span>סבב</span><strong>…</strong></div>
-        <div class="field"><span>סבבים שהושלמו</span><strong>…</strong></div>
-        <div class="field"><span>סך כל הסבבים שנפתחו</span><strong>…</strong></div>`;
-      warning.hidden = true;
-      warning.textContent = '';
-      return;
-    }
     const roundLabel = snapshot.status === 'running' ? 'סבב פעיל'
       : snapshot.totalRoundCount ? 'סבב אחרון' : 'סבב';
     this.shadowRoot.querySelector('#details').innerHTML = `
@@ -109,6 +94,7 @@ class StationOperationalDialog extends HTMLElement {
       <div class="field"><span>${roundLabel}</span><strong>${snapshot.currentRound || '—'}</strong></div>
       <div class="field"><span>סבבים שהושלמו</span><strong>${snapshot.completedRoundCount}</strong></div>
       <div class="field"><span>סך כל הסבבים שנפתחו</span><strong>${snapshot.totalRoundCount}</strong></div>`;
+    const warning = this.shadowRoot.querySelector('#warning');
     warning.hidden = !snapshot.hasConcurrentRaces;
     warning.textContent = snapshot.hasConcurrentRaces
       ? `אזהרה: בתחנה קיימים ${snapshot.activeRaceCount} סבבים פעילים במקביל.` : '';
