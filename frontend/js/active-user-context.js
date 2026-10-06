@@ -3,11 +3,13 @@ import {
   EVENT_STAFFING_SCHEMA_VERSION, ROLES, profileForActiveEvent
 } from './roles.js';
 
-export async function resolveActiveUserContext(db, uid, profile = {}) {
+// pointerRead: אופציונלי — קריאה של settings/activeEvent שהדף כבר שלח במקביל
+// לקריאת המשתמש (הבטחה או מסמך). חוסך המתנה נוספת בשרשרת הטעינה.
+export async function resolveActiveUserContext(db, uid, profile = {}, { pointerRead = null } = {}) {
   if (!db || !uid) throw new Error('לא ניתן לזהות את המשתמש המחובר.');
   if (profile.role === ROLES.ADMIN) return profileForActiveEvent(profile);
 
-  const pointerSnapshot = await getDoc(doc(db, 'settings', 'activeEvent'));
+  const pointerSnapshot = await (pointerRead || getDoc(doc(db, 'settings', 'activeEvent')));
   const pointer = pointerSnapshot.exists() ? pointerSnapshot.data() : {};
   if (pointer.status !== 'active' || !pointer.eventId ||
       Number(pointer.eventStaffingSchemaVersion || 0) !== EVENT_STAFFING_SCHEMA_VERSION) {

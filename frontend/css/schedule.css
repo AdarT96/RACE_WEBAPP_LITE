@@ -20,6 +20,11 @@
 .schedule-table thead th { position:sticky; top:0; z-index:4; min-width:170px; padding:11px; background:var(--card); }
 .schedule-table .time-column { position:sticky; right:0; z-index:5; width:178px; min-width:178px; background:var(--card); }
 .schedule-table tbody .time-column { z-index:3; padding:9px; }
+/* הפרדה בין שורות: פס בצבע הרקע בין שורה לשורה, עמודת שעה מתחלפת כדי
+   שהעין תעקוב אחרי שורה לרוחב כל הצוותים, ופס דגש בתחילת כל יום */
+.schedule-table tbody td { border-bottom:5px solid var(--bg); }
+.schedule-table tbody tr:nth-child(even) .time-column { background:var(--surface); }
+.schedule-table tbody tr.day-start td { border-top:3px solid var(--accent); }
 .team-header { display:grid; gap:7px; }
 .team-header strong { font-size:14px; }
 .team-header input { min-width:145px; font-size:12px; padding:7px 9px; }
@@ -35,8 +40,6 @@
 .station-cell-editor { display:grid; gap:7px; }
 .station-cell-editor select, .station-cell-editor input { padding:7px 8px; font-size:12px; }
 .station-cell-meta { display:flex; align-items:center; justify-content:space-between; gap:7px; min-height:21px; font-size:10px; color:var(--text-muted); }
-.station-open-link { padding:0; border:0; background:transparent; color:#a5b4fc; font:inherit; text-decoration:none; font-weight:700; cursor:pointer; }
-.station-open-link:hover { text-decoration:underline; }
 .global-row-cell { min-width:400px; padding:13px; background:rgba(59,130,246,.12); }
 .global-row-cell input { width:100%; text-align:center; font-weight:800; }
 .schedule-table tr.current-row td { box-shadow:inset 0 3px 0 #60a5fa, inset 0 -3px 0 #60a5fa; }
@@ -95,4 +98,6 @@
 body.outdoor-mode .schedule-savebar { background:rgba(240,244,248,.95); }
 body.outdoor-mode .schedule-table thead th,
 body.outdoor-mode .schedule-table .time-column { background:#fff; }
-body.outdoor-mode .station-open-link { color:#3730a3; }
+/* במצב יום הכרטיס והרקע כמעט לבנים — פס ההפרדה וההתחלפות צריכים גוון כהה יותר */
+body.outdoor-mode .schedule-table tbody td { border-bottom-color:#d3dae4; }
+body.outdoor-mode .schedule-table tbody tr:nth-child(even) .time-column { background:#eef2f7; }

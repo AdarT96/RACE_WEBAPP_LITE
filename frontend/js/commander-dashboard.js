@@ -16,6 +16,7 @@ import { ROLES, canManageFormation } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
+import { markLoad } from './load-priority.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -97,6 +98,7 @@ function attachEvent(nextEventId) {
       return;
     }
     eventData = { id: snapshot.id, ...snapshot.data() };
+    markLoad('event loaded');
     renderDashboard();
   }, fail('האירוע')));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'teams'), snapshot => {
@@ -115,6 +117,7 @@ function attachEvent(nextEventId) {
     where('eventId', '==', eventId),
     where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION)), snapshot => {
     races = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+    markLoad(`races loaded (${races.length})`);
     renderDashboard();
   }, fail('מצב התחנות')));
   eventSubscriptions.push(onSnapshot(doc(db, 'events', eventId, 'schedule', 'master'), snapshot => {
@@ -471,10 +474,15 @@ onAuthStateChanged(auth, async user => {
     location.href = 'index.html';
     return;
   }
+  markLoad('auth ready');
   try {
+    // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
+    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    pointerRead.catch(() => {});
     const snapshot = await getDoc(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
-    const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile) : null;
+    const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
+    markLoad('profile resolved');
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canManageFormation(profile.role)) {
       await signOut(auth);
       location.href = 'index.html';
@@ -502,6 +510,10 @@ onAuthStateChanged(auth, async user => {
       stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
       renderDashboard();
     });
+    // המצביע כבר נקרא: מחברים את מנויי האירוע מיד, בלי לחכות לתשובה הראשונה
+    // של מנוי המצביע. אותו מזהה אירוע לא יחובר פעמיים (attachEvent נבדק מולו).
+    const pointer = await pointerRead.then(item => (item.exists() ? item.data() : null), () => null);
+    if (pointer?.status === 'active' && pointer.eventId) attachEvent(String(pointer.eventId));
     subscribeToActiveEvent();
     clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {

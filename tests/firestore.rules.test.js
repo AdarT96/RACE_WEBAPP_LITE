@@ -6,7 +6,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection, doc, getDoc, getDocs, query, where,
-  deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction
+  deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction, writeBatch
 } from 'firebase/firestore';
 import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
@@ -818,6 +818,33 @@ test('new events enforce event-scoped staff membership', async () => {
   }));
   await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'staff', 'evaluator1')));
   await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '01_100')));
+});
+
+test('an administrator moves a staffed evaluator to another team mid-event', async () => {
+  const admin = userDb('admin1');
+  await assertSucceeds(updateDoc(doc(admin, 'events', 'event-1'), { setupSchemaVersion:1 }));
+  await assertSucceeds(updateDoc(doc(admin, 'settings', 'activeEvent'), {
+    eventStaffingSchemaVersion:1
+  }));
+  await assertSucceeds(setDoc(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
+    eventId:'event-1', uid:'evaluator1', displayName:'מעריך 1', role:'evaluator', team:'01',
+    active:true, createdAt:serverTimestamp(), createdBy:'admin1',
+    updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
+  // הפאנל כותב את רשומת המשתמש ואת השיבוץ יחד — כמו updateUserAssignment
+  const batch = writeBatch(admin);
+  batch.update(doc(admin, 'users', 'evaluator1'), { team:2 });
+  batch.update(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
+    role:'evaluator', team:'02', updatedAt:serverTimestamp(), updatedBy:'admin1'
+  });
+  await assertSucceeds(batch.commit());
+  // ההרשאות עוברות לצוות החדש מיד
+  await assertSucceeds(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '02_200')));
+  await assertFails(getDoc(doc(userDb('evaluator1'), 'events', 'event-1', 'candidates', '01_100')));
+  // שיבוץ מעריך בלי צוות נדחה גם בשרת, לא רק בממשק
+  await assertFails(updateDoc(doc(admin, 'events', 'event-1', 'staff', 'evaluator1'), {
+    team:'', updatedAt:serverTimestamp(), updatedBy:'admin1'
+  }));
 });
 
 test('direct formation status changes append an atomic immutable audit event', async () => {

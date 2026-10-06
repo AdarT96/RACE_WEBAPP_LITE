@@ -15,6 +15,30 @@ function filesIn(directory, extension) {
   });
 }
 
+// רוב הלוגיקה של app.html ו-admin.html כתובה בתוך הדף. בלי הבדיקה הזו שגיאת
+// תחביר שם עוברת את הבדיקות ומתגלה רק כשהדף נפתח ונשאר ריק.
+function checkInlineScripts(file, document) {
+  const scripts = [];
+  const visit = node => {
+    if (node?.nodeName === 'script' && !node.attrs.some(attribute => attribute.name === 'src')) scripts.push(node);
+    (node?.childNodes || []).forEach(visit);
+  };
+  visit(document);
+  for (const script of scripts) {
+    const source = (script.childNodes || []).map(child => child.value || '').join('');
+    const isModule = script.attrs.some(attribute => attribute.name === 'type' && attribute.value === 'module');
+    try {
+      execFileSync(process.execPath, [...(isModule ? ['--input-type=module'] : []), '--check', '-'], {
+        input: source, stdio: ['pipe', 'pipe', 'pipe']
+      });
+    } catch (error) {
+      const line = script.sourceCodeLocation?.startLine || 0;
+      throw new Error(`${relative(root, file)}: inline script at line ${line} has a syntax error\n` +
+        String(error.stderr || '').split('\n').slice(0, 5).join('\n'));
+    }
+  }
+}
+
 function validateHtml(file) {
   const source = readFileSync(file, 'utf8');
   const errors = [];
@@ -31,6 +55,7 @@ function validateHtml(file) {
     if (node?.content) visit(node.content);
   };
   visit(document);
+  checkInlineScripts(file, document);
   const duplicates = ids.filter((id, index) => ids.indexOf(id) !== index);
   if (duplicates.length) throw new Error(`${relative(root, file)} contains duplicate ids: ${[...new Set(duplicates)].join(', ')}`);
   for (const match of source.matchAll(/<(?:script|link)[^>]+(?:src|href)="([^"]+)"/g)) {
