@@ -19,14 +19,14 @@ test('candidate keys keep identical participant numbers isolated by team', () =>
 
 test('every missing candidate profile field receives a type-safe zero default', () => {
   assert.deepEqual(normalizeCandidateProfile({}), {
-    participantId: '0', firstName: '0', nationalId: '0', emergencyContactPhone: '0',
+    participantId: '0', firstName: '0', fullName: '0', nationalId: '0', emergencyContactPhone: '0',
     doctorClearance: 0, medicClearance: 0
   });
 });
 
 test('missing candidate state is active and never treated as withdrawn', () => {
   assert.deepEqual(normalizeCandidateRecord(null, { team: '01', participantId: '100' }), {
-    participantId: '100', firstName: '0', nationalId: '0', emergencyContactPhone: '0',
+    participantId: '100', firstName: '0', fullName: '0', nationalId: '0', emergencyContactPhone: '0',
     doctorClearance: 0, medicClearance: 0, team: '01', status: 'active',
     reasonCode: '', reasonLabel: '', statusRevision: 0, profileRevision: 0,
     lastTransitionId: '', statusChangedAt: null, statusChangedBy: '',
@@ -45,8 +45,8 @@ test('candidate identity remains string based and validates Israeli national IDs
 
 test('legacy team numbers become incomplete profiles that must be completed before an event', () => {
   assert.deepEqual(normalizeCandidateRoster({ participants: ['100', '101'] }), [
-    { participantId: '100', firstName: '0', nationalId: '0', emergencyContactPhone: '0', doctorClearance: 0, medicClearance: 0 },
-    { participantId: '101', firstName: '0', nationalId: '0', emergencyContactPhone: '0', doctorClearance: 0, medicClearance: 0 }
+    { participantId: '100', firstName: '0', fullName: '0', nationalId: '0', emergencyContactPhone: '0', doctorClearance: 0, medicClearance: 0 },
+    { participantId: '101', firstName: '0', fullName: '0', nationalId: '0', emergencyContactPhone: '0', doctorClearance: 0, medicClearance: 0 }
   ]);
   assert.equal(candidateRosterIssues(normalizeCandidateRoster({ participants: ['100'] })).length, 3);
 });

@@ -4,17 +4,16 @@ import {
   collection, doc, getDoc, getDocs, getFirestore
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
-  buildCandidateRosterImport, candidateRowsFromMatrix
+  buildCandidateRosterImport, candidateRowsFromMatrix, IMPORT_FIELD_LABELS
 } from './candidate-roster-import.js';
 import { createEventSetupRepository } from './event-setup-repository.js';
 import {
-  ARTIFACT_STATUSES, EVENT_STATUSES, eventSetupReadiness, normalizeEventTeamId
+  ARTIFACT_STATUSES, EVENT_STATUSES, eventSetupReadiness, normalizeEventTeamId, eventTeamIds
 } from './event-setup-model.js';
-import { CLEARANCE_LABELS, padTeam } from './formation-operations-model.js';
-import { ROLES, roleLabel } from './roles.js';
-import { analyzeScheduleLoad } from './schedule-load-policy.js';
+import { CLEARANCE_LABELS, padTeam, normalizeCandidateProfile } from './formation-operations-model.js';
+import { ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
-import { normalizeSchedule, scheduleIssues } from './schedule-model.js';
+import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
@@ -28,19 +27,18 @@ let currentEventId = '';
 let bundle = null;
 let users = [];
 let rosterBusy = false;
+let candidateImportPreview = null;
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const activeStaff = () => (bundle?.staff || []).filter(member => member.active !== false);
-const teamIds = () => bundle?.schedule?.teamIds?.length
-  ? bundle.schedule.teamIds : (bundle?.teams || []).filter(team => team.active !== false).map(team => team.id)
-    .sort((left, right) => Number(left) - Number(right));
+const teamIds = () => eventTeamIds(bundle || {});
 
 function teamIdsFromInput() {
   const tokens = document.getElementById('team-numbers').value.split(/[,;\s]+/).filter(Boolean);
   const invalid = tokens.find(token => !normalizeEventTeamId(token));
-  if (invalid) throw new Error(`מספר הצוות "${invalid}" אינו תקין. ניתן להזין 1–15.`);
+  if (invalid) throw new Error(`מספר הצוות "${invalid}" אינו תקין. ניתן להזין 1–${SCHEDULE_MAX_TEAMS}.`);
   return [...new Set(tokens.map(normalizeEventTeamId))];
 }
 
@@ -76,7 +74,7 @@ function defaultStationMap() {
 
 function lockRosterWorkspace() {
   rosterBusy = true;
-  const controls = [...document.querySelectorAll('#setup-workspace button, #setup-workspace input, #setup-workspace select')];
+  const controls = [...document.querySelectorAll('#setup-workspace button, #setup-workspace input, #setup-workspace select, #existing-events, #create-event-button, #new-event-name')];
   const states = controls.map(control => control.disabled);
   controls.forEach(control => { control.disabled = true; });
   return () => {
@@ -160,10 +158,11 @@ function clearanceOptions(selected) {
 
 function candidateRow(candidate = {}) {
   const removalDisabled = Boolean(candidate.id && bundle?.event?.status === EVENT_STATUSES.ACTIVE);
+  candidate = normalizeCandidateProfile(candidate);
   return `<div class="candidate-row" data-candidate-row>
     <label><span>מספר מועמד</span><input class="form-input" data-field="participantId" inputmode="numeric" value="${escapeHtml(candidate.participantId || '')}" placeholder="מספר"
       ${removalDisabled ? 'readonly title="מספר מועמד קיים אינו משתנה לאחר הפעלת האירוע"' : ''}></label>
-    <label><span>שם פרטי</span><input class="form-input" data-field="firstName" value="${escapeHtml(candidate.firstName === '0' ? '' : candidate.firstName || '')}" placeholder="0 אם חסר"></label>
+    <label><span>שם מלא</span><input class="form-input" data-field="fullName" maxlength="80" value="${escapeHtml(candidate.fullName === '0' ? '' : candidate.fullName || '')}" placeholder="0 אם חסר"></label>
     <label><span>תעודת זהות</span><input class="form-input" data-field="nationalId" inputmode="numeric" value="${escapeHtml(candidate.nationalId === '0' ? '' : candidate.nationalId || '')}" placeholder="0 אם חסר"></label>
     <label><span>טלפון חירום</span><input class="form-input" data-field="emergencyContactPhone" inputmode="tel" value="${escapeHtml(candidate.emergencyContactPhone === '0' ? '' : candidate.emergencyContactPhone || '')}" placeholder="0 אם חסר"></label>
     <label><span>כשירות רופא</span><select class="form-select" data-field="doctorClearance">${clearanceOptions(candidate.doctorClearance || 0)}</select></label>
@@ -178,7 +177,7 @@ function renderCandidateRows() {
     .sort((left, right) => Number(left.participantId) - Number(right.participantId));
   const container = document.getElementById('candidate-table');
   container.innerHTML = `<div class="candidate-row header">
-    <span>מספר מועמד</span><span>שם פרטי</span><span>תעודת זהות</span><span>טלפון חירום</span>
+    <span>מספר מועמד</span><span>שם מלא</span><span>תעודת זהות</span><span>טלפון חירום</span>
     <span>כשירות רופא</span><span>כשירות חובש</span><span></span>
   </div>${rows.map(candidateRow).join('')}`;
   if (!rows.length) container.insertAdjacentHTML('beforeend', candidateRow());
@@ -203,9 +202,10 @@ function renderStaff() {
         <option value="evaluator" ${role === ROLES.EVALUATOR ? 'selected' : ''}>מעריך</option>
         <option value="formation_commander" ${role === ROLES.FORMATION_COMMANDER ? 'selected' : ''}>מפקד הגיבוש</option>
       </select>
-      <select class="form-select" data-field="team" ${role === ROLES.FORMATION_COMMANDER ? 'disabled' : ''}>
+      <select class="form-select" data-field="team" ${roleNeedsTeam(role) ? '' : 'disabled hidden'}>
         ${teams.map(id => `<option value="${id}" ${id === team ? 'selected' : ''}>צוות ${Number(id)}</option>`).join('')}
       </select>
+      <span data-team-scope ${roleNeedsTeam(role) ? 'hidden' : ''}>כל הגיבוש</span>
     </div>`;
   }).join('') || '<p>אין משתמשים זמינים לשיבוץ. יש לאשר משתמשים בפאנל המנהל.</p>';
 }
@@ -271,6 +271,7 @@ function selectedStaffFromDom() {
 }
 
 async function selectEvent(eventId) {
+  clearCandidateImportPreview();
   currentEventId = String(eventId || '');
   if (!currentEventId) return;
   history.replaceState(null, '', `event-setup.html?eventId=${encodeURIComponent(currentEventId)}`);
@@ -281,24 +282,6 @@ async function saveTeamTopology(ids) {
   const mergedIds = [...new Set([...teamIds(), ...ids].map(normalizeEventTeamId).filter(Boolean))]
     .sort((left, right) => Number(left) - Number(right));
   await repository.ensureTeams(currentEventId, mergedIds, defaultStationMap);
-  await refreshBundle({ render:false });
-  const source = bundle.schedule || { teamIds:mergedIds, commanderNames:{}, rows:[] };
-  const schedule = normalizeSchedule({ ...source, teamIds:mergedIds }, mergedIds);
-  const warnings = analyzeScheduleLoad(schedule, {
-    teamStationMaps:Object.fromEntries(mergedIds.map(team => [team, stationMapForTeam(team)])), stationTypes
-  });
-  const reason = String(source.overrideReason || '');
-  if (warnings.length && !reason) {
-    throw new Error('שינוי הצוותים יוצר אזהרת עומס. פתח את עורך הלו״ז, תקן או תעד סיבת חריגה.');
-  }
-  await scheduleRepository.saveDraft({
-    eventId:currentEventId,
-    schedule,
-    expectedPublishedRevision:Number(bundle.publishedSchedule?.revision || 0),
-    expectedDraftRevision:Number(bundle.schedule?.draftRevision || 0),
-    warnings, overrideReason:reason,
-    stationIdsByTeam:Object.fromEntries(mergedIds.map(team => [team, Object.keys(stationMapForTeam(team))]))
-  });
   await refreshBundle();
 }
 
@@ -357,7 +340,7 @@ document.getElementById('save-teams-button').addEventListener('click', async eve
   try {
     const ids = teamIdsFromInput();
     await saveTeamTopology([...new Set(ids)]);
-    showToast('רשימת הצוותים נשמרה בלו״ז.', 'success');
+    showToast('רשימת הצוותים נשמרה באירוע. ניתן לשבץ אותם בלו״ז בנפרד.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
   finally { setBusy(button, false); }
 });
@@ -376,28 +359,15 @@ document.getElementById('import-schedule-button').addEventListener('click', asyn
   setBusy(button, true, 'מייבא…');
   try {
     const matrix = await workbookMatrix(document.getElementById('schedule-file').files[0]);
-    const provisional = buildScheduleImport({ matrix, stationCatalogByTeam:Object.fromEntries(
-      Array.from({ length:15 }, (_, index) => String(index + 1).padStart(2, '0')).map(team => [team,
-        Object.entries(defaultStationMap()).map(([id, typeId]) => ({ id, name:stationTypes[typeId]?.name || typeId }))])
+    const imported = buildScheduleImport({ matrix, stationCatalogByTeam:stationCatalogByTeam(
+      Array.from({ length:SCHEDULE_MAX_TEAMS }, (_, index) => String(index + 1).padStart(2, '0'))
     ) });
-    const structuralError = provisional.errors.find(error => !error.includes('אינה מוכרת'));
-    if (structuralError) throw new Error(structuralError);
-    const omittedTeam = teamIds().find(team => !provisional.schedule.teamIds.includes(team));
-    if (omittedTeam) throw new Error(`הקובץ אינו כולל את צוות ${Number(omittedTeam)} שכבר קיים באירוע. ייבוא אינו מסיר צוותים.`);
-    await repository.ensureTeams(currentEventId, provisional.schedule.teamIds, defaultStationMap);
-    await refreshBundle({ render:false });
-    const imported = buildScheduleImport({ matrix, stationCatalogByTeam:stationCatalogByTeam(provisional.schedule.teamIds) });
     if (imported.errors.length) throw new Error(imported.errors[0]);
-    const warnings = analyzeScheduleLoad(imported.schedule, {
-      teamStationMaps:Object.fromEntries(imported.schedule.teamIds.map(team => [team, stationMapForTeam(team)])), stationTypes
-    });
-    const overrideReason = document.getElementById('schedule-import-reason').value.trim();
-    if (warnings.length && !overrideReason) throw new Error('נמצאו אזהרות עומס. יש להזין סיבת חריגה או לערוך את הלו״ז.');
     await scheduleRepository.saveDraft({
       eventId:currentEventId, schedule:imported.schedule,
+      ensureTeamStationMaps:Object.fromEntries(imported.schedule.teamIds.map(team => [team, stationMapForTeam(team)])),
       expectedPublishedRevision:Number(bundle.publishedSchedule?.revision || 0),
       expectedDraftRevision:Number(bundle.schedule?.draftRevision || 0),
-      warnings, overrideReason,
       stationIdsByTeam:Object.fromEntries(imported.schedule.teamIds.map(team => [team, Object.keys(stationMapForTeam(team))]))
     });
     await refreshBundle(); showToast('הלו״ז יובא ונשמר כטיוטה.', 'success');
@@ -430,7 +400,48 @@ document.getElementById('save-candidates-button').addEventListener('click', asyn
   finally { unlock(); setBusy(button, false); }
 });
 
+function clearCandidateImportPreview() {
+  candidateImportPreview = null;
+  document.getElementById('candidate-import-preview').hidden = true;
+  document.getElementById('confirm-candidate-import').hidden = true;
+}
+
+document.getElementById('candidate-file').addEventListener('change', clearCandidateImportPreview);
+
 document.getElementById('import-candidates-button').addEventListener('click', async event => {
+  if (rosterBusy) return;
+  const button = event.currentTarget;
+  const unlock = lockRosterWorkspace();
+  setBusy(button, true, 'בודק…');
+  clearCandidateImportPreview();
+  try {
+    const file = document.getElementById('candidate-file').files[0];
+    const adapted = candidateRowsFromMatrix(await workbookMatrix(file));
+    if (adapted.errors.length) throw new Error(adapted.errors.join('\n'));
+    const result = buildCandidateRosterImport({ rows:adapted.rows,
+      source:{ type:'excel', fileName:file.name }, allowIncompleteProfiles:true });
+    if (result.errors.length) throw new Error(result.errors.join('\n'));
+    const preview = document.getElementById('candidate-import-preview');
+    preview.innerHTML = `<h3>${adapted.rows.length} מועמדים · ${result.teams.length} צוותים</h3>
+      <p>ייבוא מעדכן פרטים שסופקו בקובץ. שדה ריק או עמודה חסרה לא מוחקים מידע קיים.
+      באירוע פעיל הערכות וסטטוס מועמד נשמרים; בטיוטה רשימת כל צוות בקובץ מוחלפת.</p>
+      <ul>${result.teams.map(group => `<li>צוות ${Number(group.team)}: ${group.candidates.length} מועמדים${teamIds().includes(group.team) ? '' : ' — צוות חדש'}</li>`).join('')}</ul>
+      <table><thead><tr><th>שדה</th><th>עמודה שזוהתה</th></tr></thead><tbody>${Object.entries(adapted.mapping)
+        .map(([field, header]) => `<tr><td>${escapeHtml(IMPORT_FIELD_LABELS[field])}</td><td>${escapeHtml(header || 'לא נמצאה')}</td></tr>`).join('')}</tbody></table>
+      <ul>${adapted.warnings.map(warning => `<li>${escapeHtml(warning)}</li>`).join('')}</ul>
+      <details><summary>דוגמה לנתונים שייקלטו</summary><table><thead><tr><th>צוות</th><th>מועמד</th><th>שם מלא</th><th>תעודת זהות</th></tr></thead>
+      <tbody>${adapted.rows.slice(0,5).map(candidate => `<tr><td>${escapeHtml(candidate.team)}</td><td>${escapeHtml(candidate.participantId)}</td><td>${escapeHtml(candidate.fullName)}</td><td dir="ltr">${escapeHtml(candidate.nationalId)}</td></tr>`).join('')}</tbody></table></details>`;
+    candidateImportPreview = { eventId:currentEventId, result };
+    preview.hidden = false;
+    document.getElementById('confirm-candidate-import').hidden = false;
+    document.getElementById('candidate-import-progress').textContent = 'הבדיקה הסתיימה. עדיין לא נשמר דבר — יש לאשר את הייבוא.';
+  } catch (error) {
+    document.getElementById('candidate-import-progress').textContent = error.message;
+    showToast(error.message, 'error');
+  } finally { unlock(); setBusy(button, false); }
+});
+
+document.getElementById('confirm-candidate-import').addEventListener('click', async event => {
   if (rosterBusy) return;
   const button = event.currentTarget;
   const unlock = lockRosterWorkspace();
@@ -439,16 +450,8 @@ document.getElementById('import-candidates-button').addEventListener('click', as
   progress.textContent = 'קורא את הקובץ ובודק את הנתונים…';
   let saved = false;
   try {
-    const file = document.getElementById('candidate-file').files[0];
-    const adapted = candidateRowsFromMatrix(await workbookMatrix(file));
-    if (adapted.errors.length) throw new Error(adapted.errors[0]);
-    const result = buildCandidateRosterImport({
-      rows:adapted.rows, source:{ type:'excel', fileName:file.name }, allowIncompleteProfiles:true
-    });
-    if (result.errors.length) throw new Error(result.errors[0]);
-    const knownTeams = new Set(teamIds());
-    const unknown = result.teams.find(item => !knownTeams.has(item.team));
-    if (unknown) throw new Error(`צוות ${Number(unknown.team)} אינו קיים בלו״ז. יש להוסיף אותו תחילה.`);
+    if (!candidateImportPreview || candidateImportPreview.eventId !== currentEventId) throw new Error('יש לבדוק את הקובץ מחדש לפני הייבוא.');
+    const { result } = candidateImportPreview;
     progress.textContent = 'טוען את הרשימות הקיימות ומכין את השמירה…';
     const summary = await repository.importCandidates(currentEventId, result.teams, result.source, {
       onProgress:({ completedTeams, totalTeams }) => {
@@ -456,6 +459,7 @@ document.getElementById('import-candidates-button').addEventListener('click', as
       }
     });
     saved = true;
+    clearCandidateImportPreview();
     progress.textContent = `נשמרו ${summary.importedCount} מועמדים ב־${summary.teams} צוותים. מרענן את המסך…`;
     await refreshBundle();
     progress.textContent = `הייבוא הושלם: ${summary.importedCount} מועמדים ב־${summary.teams} צוותים.`;
@@ -472,7 +476,10 @@ document.getElementById('import-candidates-button').addEventListener('click', as
 document.getElementById('staff-list').addEventListener('change', event => {
   const row = event.target.closest('[data-staff-row]');
   if (!row || event.target.dataset.field !== 'role') return;
-  row.querySelector('[data-field="team"]').disabled = event.target.value === ROLES.FORMATION_COMMANDER;
+  const teamSelect = row.querySelector('[data-field="team"]');
+  teamSelect.disabled = !roleNeedsTeam(event.target.value);
+  teamSelect.hidden = teamSelect.disabled;
+  row.querySelector('[data-team-scope]').hidden = !teamSelect.disabled;
 });
 document.getElementById('save-staff-button').addEventListener('click', async event => {
   const button = event.currentTarget;
@@ -554,7 +561,7 @@ onAuthStateChanged(auth, async user => {
     }
     currentUser = { uid:user.uid, ...snapshot.data() };
     document.getElementById('setup-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
-    repository = createEventSetupRepository(db, currentUser);
+    repository = createEventSetupRepository(db, currentUser, { stationMapFactory:defaultStationMap });
     scheduleRepository = createScheduleRepository(db, currentUser);
     await Promise.all([loadStationTypes(), loadUsers()]);
     const events = await repository.listEvents();

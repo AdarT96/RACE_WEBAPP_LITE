@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { planEventRoster, ROSTER_WRITE_LIMIT } from '../frontend/js/event-roster-plan.js';
 import { normalizeCandidateProfile } from '../frontend/js/formation-operations-model.js';
+import { candidateRowsFromMatrix, buildCandidateRosterImport } from '../frontend/js/candidate-roster-import.js';
 
 const candidate = (team, id, extra = {}) => ({
   ...normalizeCandidateProfile({ participantId:String(id) }),
@@ -11,8 +12,29 @@ const team = id => ({ id, participantIds:[], active:true });
 const input = { status:'draft', teams:[team('01'), team('02')], existing:[],
   groups:[{ team:'01', candidates:[{ participantId:'100' }] }] };
 
+test('candidates may create teams without a schedule', () => {
+  const plan = planEventRoster({...input,teams:[]});
+  assert.equal(plan.teamCount,1);
+  assert.equal(plan.plans[0].previousTeam,undefined);
+  assert.equal(plan.candidateCount,1);
+});
+
+test('missing columns and blank cells preserve stored profile values on reimport', () => {
+  const adapted=candidateRowsFromMatrix([['צוות','מספר מועמד','שם מלא','מספר זהות'],[1,100,'שם חדש','']]);
+  const groups=buildCandidateRosterImport({rows:adapted.rows,allowIncompleteProfiles:true}).teams;
+  const existing=[candidate('01','100',{...normalizeCandidateProfile({participantId:'100',fullName:'שם קודם',nationalId:'000000018',emergencyContactPhone:'0501234567',doctorClearance:1,medicClearance:2}),status:'withdrawn'})];
+  const plan=planEventRoster({...input,status:'active',existing,groups});
+  const saved=plan.plans[0].changes[0].candidate;
+  assert.equal(saved.fullName,'שם חדש');
+  assert.equal(saved.nationalId,'000000018');
+  assert.equal(saved.emergencyContactPhone,'0501234567');
+  assert.equal(saved.doctorClearance,1);
+  assert.equal(saved.medicClearance,2);
+  assert.equal(existing[0].status,'withdrawn');
+});
+
 test('event plan validates all teams before any storage work', () => {
-  for (const groups of [[], [{team:'03',candidates:[]}], [{team:'01',candidates:[{participantId:'0'}]}],
+  for (const groups of [[], [{team:'21',candidates:[]}], [{team:'01',candidates:[{participantId:'0'}]}],
     [{team:'01',candidates:[]},{team:'01',candidates:[]}]]) {
     assert.throws(() => planEventRoster({ ...input, groups }));
   }

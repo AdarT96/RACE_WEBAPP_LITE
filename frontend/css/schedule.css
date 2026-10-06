@@ -4,7 +4,7 @@
 .schedule-revision, .schedule-user { color:var(--text-muted); font-size:12px; }
 .schedule-toolbar { display:grid; grid-template-columns:minmax(220px,1.4fr) repeat(4,minmax(130px,.7fr)) auto; gap:12px; align-items:end; margin-bottom:14px; }
 .schedule-toolbar-title p { font-size:12px; margin-top:5px; }
-.schedule-toolbar label, .load-warning-card label { display:grid; gap:5px; color:var(--text-muted); font-size:12px; }
+.schedule-toolbar label { display:grid; gap:5px; color:var(--text-muted); font-size:12px; }
 .schedule-toolbar .btn { min-height:42px; }
 .schedule-legend { display:flex; gap:14px; flex-wrap:wrap; margin:12px 2px; color:var(--text-muted); font-size:12px; }
 .schedule-legend span { display:inline-flex; align-items:center; gap:6px; }
@@ -42,9 +42,6 @@
 .schedule-table tr.current-row td { box-shadow:inset 0 3px 0 #60a5fa, inset 0 -3px 0 #60a5fa; }
 .schedule-table tr.current-row .time-column::after { content:'עכשיו'; display:inline-block; margin-inline-start:5px; padding:2px 6px; border-radius:999px; background:#2563eb; color:white; font-size:9px; }
 .schedule-empty { padding:34px 18px; text-align:center; color:var(--text-muted); }
-.load-warning-card { margin-top:14px; border-color:rgba(245,158,11,.48); }
-.load-warning-card p { margin:5px 0 10px; font-size:12px; }
-.load-warning-card ul { margin:0 18px 13px 0; color:#fcd34d; font-size:13px; }
 .schedule-history-card { display:grid; grid-template-columns:minmax(220px,.7fr) minmax(0,2fr); gap:16px; margin-top:14px; }
 .schedule-history-card p { margin-top:5px; font-size:12px; }
 .schedule-history-list { display:grid; gap:7px; }

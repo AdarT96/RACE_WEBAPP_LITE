@@ -3,15 +3,14 @@ import {
   runTransaction, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
-  SCHEDULE_SCHEMA_VERSION, SCHEDULE_TIME_ZONE, buildTeamScheduleProjection,
+  SCHEDULE_SCHEMA_VERSION, SCHEDULE_TIME_ZONE, SCHEDULE_MAX_TEAMS, buildTeamScheduleProjection,
   normalizeSchedule, scheduleIssues
 } from './schedule-model.js';
-import { DEFAULT_SCHEDULE_LOAD_POLICY } from './schedule-load-policy.js';
 import {
   SCHEDULE_DRAFT_SCHEMA_VERSION, SCHEDULE_PUBLICATION_TYPES,
-  buildScheduleRelease, normalizeScheduleDraft,
-  normalizeScheduleWarnings
+  buildScheduleRelease, normalizeScheduleDraft
 } from './schedule-publication-model.js';
+import { newEventTeamData } from './event-setup-model.js';
 
 export class ScheduleConflictError extends Error {
   constructor(message = 'הלו״ז השתנה במכשיר אחר. טען את הגרסה העדכנית לפני פעולה נוספת.') {
@@ -24,12 +23,7 @@ const revisionNumber = value => Math.max(0, Math.floor(Number(value) || 0));
 
 function scheduleContent(source, fallbackTeamIds = []) {
   const normalized = normalizeSchedule(source, fallbackTeamIds);
-  const warnings = normalizeScheduleWarnings(source?.loadWarnings);
-  const overrideReason = warnings.length ? String(source?.overrideReason || '').trim().slice(0, 500) : '';
-  if (warnings.length && !overrideReason) {
-    throw new Error('יש לתעד סיבה מפורשת ללו״ז עם אזהרות עומס.');
-  }
-  return { normalized, warnings, overrideReason };
+  return { normalized };
 }
 
 export function createScheduleRepository(db, user) {
@@ -63,9 +57,6 @@ export function createScheduleRepository(db, user) {
       teamIds:release.teamIds,
       commanderNames:release.commanderNames,
       rows:release.rows,
-      loadPolicy:{ ...DEFAULT_SCHEDULE_LOAD_POLICY },
-      loadWarnings:content.warnings,
-      overrideReason:content.overrideReason,
       revision:release.revision,
       revisionKey:release.revisionKey,
       publicationType:release.publicationType,
@@ -87,9 +78,6 @@ export function createScheduleRepository(db, user) {
       teamIds:content.normalized.teamIds,
       commanderNames:content.normalized.commanderNames,
       rows:content.normalized.rows,
-      loadPolicy:{ ...DEFAULT_SCHEDULE_LOAD_POLICY },
-      loadWarnings:content.warnings,
-      overrideReason:content.overrideReason,
       baseRevision:revisionNumber(baseRevision),
       draftRevision:revisionNumber(draftRevision),
       schemaVersion:SCHEDULE_DRAFT_SCHEMA_VERSION,
@@ -179,11 +167,11 @@ export function createScheduleRepository(db, user) {
 
     async saveDraft({
       eventId, schedule, expectedPublishedRevision, expectedDraftRevision,
-      warnings = [], overrideReason = '', stationIdsByTeam = {}
+      stationIdsByTeam = {}, ensureTeamStationMaps = null
     }) {
       const issues = scheduleIssues(schedule, { stationIdsByTeam });
       if (issues.length) throw new Error(issues[0]);
-      const content = scheduleContent({ ...schedule, loadWarnings:warnings, overrideReason }, schedule?.teamIds);
+      const content = scheduleContent(schedule, schedule?.teamIds);
       return runTransaction(db, async transaction => {
         const [eventSnapshot, masterSnapshot, draftSnapshot] = await Promise.all([
           transaction.get(eventRef(eventId)), transaction.get(masterRef(eventId)), transaction.get(draftRef(eventId))
@@ -192,6 +180,22 @@ export function createScheduleRepository(db, user) {
         const revisions = assertWorkspaceRevisions({
           masterSnapshot, draftSnapshot, expectedPublishedRevision, expectedDraftRevision
         });
+        // A schedule import and its newly introduced event teams commit together.
+        if (ensureTeamStationMaps) {
+          if (user.role !== 'admin') throw new Error('רק מנהל יכול להוסיף צוותים לאירוע.');
+          const references = content.normalized.teamIds.map(team => doc(db, 'events', String(eventId), 'teams', team));
+          const snapshots = await Promise.all(references.map(reference => transaction.get(reference)));
+          const additions = snapshots.filter(snapshot => !snapshot.exists()).length;
+          if (Number(eventSnapshot.data().teamCount || 0) + additions > SCHEDULE_MAX_TEAMS) throw new Error('מספר הצוותים גדול מהמותר.');
+          snapshots.forEach((snapshot, index) => {
+            const team = content.normalized.teamIds[index];
+            if (!snapshot.exists()) transaction.set(references[index], newEventTeamData(team, ensureTeamStationMaps[team], user.uid, serverTimestamp()));
+          });
+          if (additions) transaction.update(eventRef(eventId), {
+            teamCount:Number(eventSnapshot.data().teamCount || 0) + additions,
+            updatedAt:serverTimestamp(), updatedBy:user.uid
+          });
+        }
         const nextDraftRevision = revisions.draft + 1;
         transaction.set(draftRef(eventId), draftPayload(eventId, content, {
           baseRevision:revisions.published,

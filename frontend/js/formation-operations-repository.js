@@ -5,7 +5,7 @@ import {
   CANDIDATE_STATUSES, RECOMMENDATION_SCHEMA_VERSION, RECOMMENDATION_STATUSES,
   STATUS_EVENT_SCHEMA_VERSION,
   candidateKey, candidateRosterIssues, dropoutReasonLabel, isDropoutReason,
-  normalizeCandidateRecord, normalizeCandidateProfile,
+  normalizeCandidateRecord, normalizeCandidateProfile, CANDIDATE_PROFILE_FIELDS,
   normalizeRecommendation, padTeam
 } from './formation-operations-model.js';
 
@@ -192,15 +192,11 @@ export function createFormationOperationsRepository(db, user) {
       const snapshot = await transaction.get(reference);
       if (!snapshot.exists()) throw new Error('המועמד אינו רשום באירוע');
       const current = normalizeCandidateRecord(snapshot.data());
-      const unchanged = ['firstName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance']
+      const unchanged = CANDIDATE_PROFILE_FIELDS
         .every(field => current[field] === normalized[field]);
       if (unchanged) return current;
       const payload = {
-        firstName: normalized.firstName,
-        nationalId: normalized.nationalId,
-        emergencyContactPhone: normalized.emergencyContactPhone,
-        doctorClearance: normalized.doctorClearance,
-        medicClearance: normalized.medicClearance,
+        ...Object.fromEntries(CANDIDATE_PROFILE_FIELDS.map(field => [field, normalized[field]])),
         profileRevision: current.profileRevision + 1,
         profileUpdatedAt: serverTimestamp(),
         profileUpdatedBy: uid

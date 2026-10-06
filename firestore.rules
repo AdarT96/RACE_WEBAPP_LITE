@@ -263,8 +263,14 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isAdmin() || isFormationCommander() ||
         (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')));
-      allow create, update: if isAdmin();
+      allow create: if isAdmin() && (request.resource.data.status != 'active' || hasPublishedSchedule(eventId));
+      allow update: if isAdmin() && (request.resource.data.status != 'active' || resource.data.status == 'active' || hasPublishedSchedule(eventId));
       allow delete: if purgeableEvent(eventId);
+
+      function hasPublishedSchedule(id) {
+        return existsAfter(/databases/$(database)/documents/events/$(id)/schedule/master) &&
+          getAfter(/databases/$(database)/documents/events/$(id)/schedule/master).data.rows.size() > 0;
+      }
 
       match /teams/{teamNumber} {
         allow read: if isAdmin() || isFormationCommander() ||
@@ -273,19 +279,31 @@ service cloud.firestore {
         allow delete: if purgeableEvent(eventId);
       }
 
+      match /rosterImports/{attemptId} {
+        allow read: if isAdmin();
+        allow create, update: if adminMayEditEvent(eventId) &&
+          request.resource.data.keys().hasAll(['status', 'errorCode', 'totalTeams', 'completedTeams', 'importedCount', 'updatedAt', 'updatedBy', 'schemaVersion']) &&
+          request.resource.data.keys().hasOnly(['status', 'errorCode', 'totalTeams', 'completedTeams', 'importedCount', 'updatedAt', 'updatedBy', 'schemaVersion']) &&
+          request.resource.data.status in ['started', 'partial', 'complete', 'failed'] &&
+          request.resource.data.errorCode in ['', 'permission-denied', 'unavailable', 'deadline-exceeded', 'aborted', 'resource-exhausted', 'validation-or-conflict'] &&
+          request.resource.data.totalTeams is int && request.resource.data.totalTeams > 0 && request.resource.data.totalTeams <= 20 &&
+          request.resource.data.completedTeams is int && request.resource.data.completedTeams >= 0 && request.resource.data.completedTeams <= request.resource.data.totalTeams &&
+          request.resource.data.importedCount is int && request.resource.data.importedCount >= 0 && request.resource.data.importedCount <= 400 &&
+          request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid && request.resource.data.schemaVersion == 1;
+        allow delete: if purgeableEvent(eventId);
+      }
+
       // The master schedule is visible only to formation management. Team staff
       // read a projection containing their own column, so the full formation
       // movement plan is never exposed as a side effect of opening the team view.
       function validMasterSchedule() {
         return request.resource.data.keys().hasAll([
-            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
-            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
             'publicationType', 'restoredFromRevisionKey',
             'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
           ]) &&
           request.resource.data.keys().hasOnly([
-            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
-            'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy', 'loadWarnings', 'overrideReason', 'revision', 'revisionKey', 'schemaVersion', 'timeZone',
             'publicationType', 'restoredFromRevisionKey',
             'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
           ]) &&
@@ -294,25 +312,6 @@ service cloud.firestore {
           request.resource.data.teamIds.size() <= 20 &&
           request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 20 &&
           request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
-          request.resource.data.loadPolicy is map &&
-          request.resource.data.loadPolicy.keys().hasAll([
-            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
-          ]) &&
-          request.resource.data.loadPolicy.keys().hasOnly([
-            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
-          ]) &&
-          request.resource.data.loadPolicy.windowMinutes is int &&
-          request.resource.data.loadPolicy.windowMinutes >= 30 &&
-          request.resource.data.loadPolicy.maxWindowLoad is int &&
-          request.resource.data.loadPolicy.maxWindowLoad > 0 &&
-          request.resource.data.loadPolicy.highIntensity is int &&
-          request.resource.data.loadPolicy.highIntensity in [1, 2, 3] &&
-          request.resource.data.loadPolicy.maxConsecutiveHigh is int &&
-          request.resource.data.loadPolicy.maxConsecutiveHigh > 0 &&
-          request.resource.data.loadWarnings is list && request.resource.data.loadWarnings.size() <= 100 &&
-          request.resource.data.overrideReason is string &&
-          request.resource.data.overrideReason.size() <= 500 &&
-          (request.resource.data.loadWarnings.size() == 0 || request.resource.data.overrideReason.size() > 0) &&
           request.resource.data.revision is int && request.resource.data.revision > 0 &&
           request.resource.data.revisionKey is string &&
           request.resource.data.revisionKey.matches('^r-[0-9]{6,12}$') &&
@@ -332,13 +331,11 @@ service cloud.firestore {
 
       function validDraftSchedule() {
         return request.resource.data.keys().hasAll([
-            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
-            'loadWarnings', 'overrideReason', 'baseRevision', 'draftRevision',
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'baseRevision', 'draftRevision',
             'schemaVersion', 'timeZone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
           ]) &&
           request.resource.data.keys().hasOnly([
-            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy',
-            'loadWarnings', 'overrideReason', 'baseRevision', 'draftRevision',
+            'eventId', 'teamIds', 'commanderNames', 'rows', 'loadPolicy', 'loadWarnings', 'overrideReason', 'baseRevision', 'draftRevision',
             'schemaVersion', 'timeZone', 'createdAt', 'createdBy', 'updatedAt', 'updatedBy'
           ]) &&
           request.resource.data.eventId == eventId &&
@@ -346,25 +343,6 @@ service cloud.firestore {
           request.resource.data.teamIds.size() <= 20 &&
           request.resource.data.commanderNames is map && request.resource.data.commanderNames.size() <= 20 &&
           request.resource.data.rows is list && request.resource.data.rows.size() <= 100 &&
-          request.resource.data.loadPolicy is map &&
-          request.resource.data.loadPolicy.keys().hasAll([
-            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
-          ]) &&
-          request.resource.data.loadPolicy.keys().hasOnly([
-            'windowMinutes', 'maxWindowLoad', 'highIntensity', 'maxConsecutiveHigh'
-          ]) &&
-          request.resource.data.loadPolicy.windowMinutes is int &&
-          request.resource.data.loadPolicy.windowMinutes >= 30 &&
-          request.resource.data.loadPolicy.maxWindowLoad is int &&
-          request.resource.data.loadPolicy.maxWindowLoad > 0 &&
-          request.resource.data.loadPolicy.highIntensity is int &&
-          request.resource.data.loadPolicy.highIntensity in [1, 2, 3] &&
-          request.resource.data.loadPolicy.maxConsecutiveHigh is int &&
-          request.resource.data.loadPolicy.maxConsecutiveHigh > 0 &&
-          request.resource.data.loadWarnings is list && request.resource.data.loadWarnings.size() <= 100 &&
-          request.resource.data.overrideReason is string &&
-          request.resource.data.overrideReason.size() <= 500 &&
-          (request.resource.data.loadWarnings.size() == 0 || request.resource.data.overrideReason.size() > 0) &&
           request.resource.data.baseRevision is int && request.resource.data.baseRevision >= 0 &&
           request.resource.data.draftRevision is int && request.resource.data.draftRevision > 0 &&
           request.resource.data.schemaVersion == 1 &&
@@ -391,10 +369,7 @@ service cloud.firestore {
         return draft.baseRevision == master.revision &&
           draft.teamIds == master.teamIds &&
           draft.commanderNames == master.commanderNames &&
-          draft.rows == master.rows &&
-          draft.loadPolicy == master.loadPolicy &&
-          draft.loadWarnings == master.loadWarnings &&
-          draft.overrideReason == master.overrideReason;
+          draft.rows == master.rows;
       }
 
       function validPublicationSource() {
@@ -483,12 +458,6 @@ service cloud.firestore {
             getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.commanderNames &&
           request.resource.data.rows ==
             getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.rows &&
-          request.resource.data.loadPolicy ==
-            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.loadPolicy &&
-          request.resource.data.loadWarnings ==
-            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.loadWarnings &&
-          request.resource.data.overrideReason ==
-            getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.overrideReason &&
           request.resource.data.revisionKey ==
             getAfter(/databases/$(database)/documents/events/$(eventId)/schedule/master).data.revisionKey &&
           request.resource.data.publicationType ==
@@ -507,53 +476,57 @@ service cloud.firestore {
         }
 
         function validCandidateRecord() {
-          return request.resource.data.keys().hasAll([
+          let candidate = request.resource.data;
+          return candidate.keys().hasAll([
               'participantId', 'team', 'firstName', 'nationalId', 'emergencyContactPhone',
               'doctorClearance', 'medicClearance',
               'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'profileRevision',
               'lastTransitionId', 'statusChangedAt', 'statusChangedBy',
               'profileUpdatedAt', 'profileUpdatedBy', 'schemaVersion'
             ]) &&
-            request.resource.data.keys().hasOnly([
-              'participantId', 'team', 'firstName', 'nationalId', 'emergencyContactPhone',
+            candidate.keys().hasOnly([
+              'participantId', 'team', 'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
               'doctorClearance', 'medicClearance',
               'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'profileRevision',
               'lastTransitionId', 'statusChangedAt', 'statusChangedBy',
               'profileUpdatedAt', 'profileUpdatedBy', 'schemaVersion'
             ]) &&
-            request.resource.data.participantId is string &&
-            request.resource.data.participantId.size() > 0 &&
-            request.resource.data.participantId.size() <= 100 &&
-            request.resource.data.participantId.matches('^[0-9]+$') &&
-            request.resource.data.participantId != '0' &&
-            request.resource.data.team is string &&
-            candidateId == request.resource.data.team + '_' + request.resource.data.participantId &&
-            request.resource.data.firstName is string &&
-            request.resource.data.firstName.size() > 0 &&
-            request.resource.data.firstName.size() <= 80 &&
-            request.resource.data.nationalId is string &&
-            (request.resource.data.nationalId == '0' ||
-             request.resource.data.nationalId.matches('^[0-9]{9}$')) &&
-            request.resource.data.emergencyContactPhone is string &&
-            (request.resource.data.emergencyContactPhone == '0' ||
-             request.resource.data.emergencyContactPhone.matches('^[0-9]{9,15}$')) &&
-            request.resource.data.doctorClearance is int &&
-            request.resource.data.doctorClearance in [0, 1, 2] &&
-            request.resource.data.medicClearance is int &&
-            request.resource.data.medicClearance in [0, 1, 2] &&
-            request.resource.data.status in ['active', 'withdrawn'] &&
-            ((request.resource.data.status == 'withdrawn' &&
-              validDropoutReason(request.resource.data.reasonCode, request.resource.data.reasonLabel)) ||
-             (request.resource.data.status == 'active' &&
-              request.resource.data.reasonCode == '' && request.resource.data.reasonLabel == '')) &&
-            request.resource.data.statusRevision is int && request.resource.data.statusRevision >= 0 &&
-            request.resource.data.profileRevision is int && request.resource.data.profileRevision >= 0 &&
-            request.resource.data.lastTransitionId is string &&
-            request.resource.data.statusChangedAt is timestamp &&
-            request.resource.data.statusChangedBy is string &&
-            request.resource.data.profileUpdatedAt is timestamp &&
-            request.resource.data.profileUpdatedBy is string &&
-            request.resource.data.schemaVersion == 3;
+            candidate.participantId is string &&
+            candidate.participantId.size() > 0 &&
+            candidate.participantId.size() <= 100 &&
+            candidate.participantId.matches('^[0-9]+$') &&
+            candidate.participantId != '0' &&
+            candidate.team is string &&
+            candidateId == candidate.team + '_' + candidate.participantId &&
+            candidate.firstName is string &&
+            candidate.firstName.size() > 0 &&
+            candidate.firstName.size() <= 80 &&
+            (!candidate.keys().hasAny(['fullName']) ||
+             (candidate.fullName is string && candidate.fullName.size() > 0 && candidate.fullName.size() <= 80 &&
+              candidate.firstName == candidate.fullName)) &&
+            candidate.nationalId is string &&
+            (candidate.nationalId == '0' ||
+             candidate.nationalId.matches('^[0-9]{9}$')) &&
+            candidate.emergencyContactPhone is string &&
+            (candidate.emergencyContactPhone == '0' ||
+             candidate.emergencyContactPhone.matches('^[0-9]{9,15}$')) &&
+            candidate.doctorClearance is int &&
+            candidate.doctorClearance in [0, 1, 2] &&
+            candidate.medicClearance is int &&
+            candidate.medicClearance in [0, 1, 2] &&
+            candidate.status in ['active', 'withdrawn'] &&
+            ((candidate.status == 'withdrawn' &&
+              validDropoutReason(candidate.reasonCode, candidate.reasonLabel)) ||
+             (candidate.status == 'active' &&
+              candidate.reasonCode == '' && candidate.reasonLabel == '')) &&
+            candidate.statusRevision is int && candidate.statusRevision >= 0 &&
+            candidate.profileRevision is int && candidate.profileRevision >= 0 &&
+            candidate.lastTransitionId is string &&
+            candidate.statusChangedAt is timestamp &&
+            candidate.statusChangedBy is string &&
+            candidate.profileUpdatedAt is timestamp &&
+            candidate.profileUpdatedBy is string &&
+            candidate.schemaVersion == 3;
         }
 
         allow read: if isAdmin() || isFormationCommander() ||
@@ -565,12 +538,11 @@ service cloud.firestore {
           request.resource.data.statusChangedBy == request.auth.uid &&
           request.resource.data.profileUpdatedAt == request.time &&
           request.resource.data.profileUpdatedBy == request.auth.uid;
-        allow update: if (isAdmin() || isFormationCommander()) && validCandidateRecord() &&
-          isActiveEvent(eventId) &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'lastTransitionId',
             'statusChangedAt', 'statusChangedBy'
-          ]) &&
+          ]) && (isAdmin() || isFormationCommander()) && validCandidateRecord() &&
+          isActiveEvent(eventId) &&
           request.resource.data.statusRevision == resource.data.statusRevision + 1 &&
           request.resource.data.statusChangedAt == request.time &&
           request.resource.data.statusChangedBy == request.auth.uid &&
@@ -581,12 +553,11 @@ service cloud.firestore {
            !exists(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)) ||
            get(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status != 'open' ||
            getAfter(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)).data.status == 'accepted');
-        allow update: if adminMayEditEvent(eventId) && validCandidateRecord() &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-            'firstName', 'nationalId', 'emergencyContactPhone',
+        allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
             'doctorClearance', 'medicClearance',
             'profileRevision', 'profileUpdatedAt', 'profileUpdatedBy'
-          ]) &&
+          ]) && adminMayEditEvent(eventId) && validCandidateRecord() &&
           request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
           request.resource.data.profileUpdatedAt == request.time &&
           request.resource.data.profileUpdatedBy == request.auth.uid;

@@ -9,7 +9,7 @@ export const FORMATION_ALERT_SEVERITIES = Object.freeze({
 
 const severityOrder = Object.freeze({ critical: 0, warning: 1, info: 2 });
 const missingProfileFields = candidate => [
-  candidate?.firstName,
+  candidate?.fullName ?? candidate?.firstName,
   candidate?.nationalId,
   candidate?.emergencyContactPhone
 ].some(value => !String(value || '').trim() || String(value) === '0');

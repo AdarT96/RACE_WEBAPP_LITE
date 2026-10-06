@@ -1,5 +1,5 @@
 import {
-  CANDIDATE_PROFILE_DEFAULTS, CLEARANCE_STATUSES, isValidEmergencyContactPhone,
+  CANDIDATE_PROFILE_DEFAULTS, CLEARANCE_STATUSES, TEAM_ROSTER_SCHEMA_VERSION, isValidEmergencyContactPhone,
   isValidIsraeliNationalId, normalizeCandidateProfile
 } from './formation-operations-model.js';
 import { ROLES } from './roles.js';
@@ -22,6 +22,17 @@ export const ARTIFACT_STATUSES = Object.freeze({
 const boundedText = (value, maximum) => String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, maximum);
 export function normalizeEventTeamId(value) {
   return padScheduleTeam(value);
+}
+
+export function newEventTeamData(team, stationMap, uid, timestamp) {
+  const teamNumber = normalizeEventTeamId(team);
+  if (!teamNumber) throw new Error('מספר צוות אינו תקין.');
+  return {
+    teamNumber, participantIds:[], stationMap:stationMap || {},
+    rosterSource:{type:'manual',sourceId:'event-setup',fileName:''},
+    schemaVersion:TEAM_ROSTER_SCHEMA_VERSION, active:true,
+    createdAt:timestamp, createdBy:uid, updatedAt:timestamp, updatedBy:uid
+  };
 }
 const uniqueTeams = values => [...new Set((Array.isArray(values) ? values : [])
   .map(value => normalizeEventTeamId(value?.teamNumber ?? value?.team ?? value?.id ?? value)).filter(Boolean))]
@@ -52,9 +63,8 @@ export function normalizeEventStaff(value = {}) {
   };
 }
 
-export function eventTeamIds({ schedule = null, teams = [] } = {}) {
-  const scheduleTeams = uniqueTeams(schedule?.teamIds || []);
-  return scheduleTeams.length ? scheduleTeams : uniqueTeams(teams);
+export function eventTeamIds({ teams = [] } = {}) {
+  return uniqueTeams(teams.filter(team => team.active !== false));
 }
 
 export function eventSetupReadiness({
@@ -67,7 +77,7 @@ export function eventSetupReadiness({
   const warnings = [];
 
   if (!normalizedEvent.name) blockers.push('יש להזין שם לאירוע.');
-  if (!teamIds.length) blockers.push('יש להגדיר לפחות צוות אחד בלו״ז.');
+  if (!teamIds.length) blockers.push('יש להגדיר לפחות צוות אחד באירוע.');
   if (!Array.isArray(schedule?.rows) || !schedule.rows.length) blockers.push('יש להגדיר לפחות שורה אחת בלו״ז.');
   (Array.isArray(scheduleErrors) ? scheduleErrors : []).forEach(error => blockers.push(String(error)));
 
@@ -82,7 +92,7 @@ export function eventSetupReadiness({
     const label = candidate.participantId !== CANDIDATE_PROFILE_DEFAULTS.participantId
       ? `מועמד ${candidate.participantId}` : `מועמד בשורה ${index + 1}`;
     if (!team || !teamSet.has(team)) {
-      blockers.push(`${label} משויך לצוות שאינו קיים בלו״ז.`);
+      blockers.push(`${label} משויך לצוות שאינו קיים באירוע.`);
       return;
     }
     if (!candidate.participantId || candidate.participantId === CANDIDATE_PROFILE_DEFAULTS.participantId ||
@@ -96,8 +106,8 @@ export function eventSetupReadiness({
       blockers.push(`מספר המועמד ${candidate.participantId} מופיע יותר מפעם אחת בצוות ${Number(team)}.`);
     } else participantOwners.set(participantKey, true);
 
-    if (!candidate.firstName || candidate.firstName === CANDIDATE_PROFILE_DEFAULTS.firstName) {
-      warnings.push(`${label}: חסר שם פרטי.`);
+    if (!candidate.fullName || candidate.fullName === CANDIDATE_PROFILE_DEFAULTS.fullName) {
+      warnings.push(`${label}: חסר שם מלא.`);
     }
     if (candidate.nationalId === CANDIDATE_PROFILE_DEFAULTS.nationalId) {
       warnings.push(`${label}: חסרה תעודת זהות.`);
@@ -116,6 +126,7 @@ export function eventSetupReadiness({
   });
 
   teamIds.forEach(team => {
+    if (!schedule?.teamIds?.includes(team)) warnings.push(`צוות ${Number(team)} עדיין אינו משובץ בלו״ז.`);
     if (!candidateCounts[team]) warnings.push(`לצוות ${Number(team)} עדיין לא הוגדרו מועמדים.`);
   });
 

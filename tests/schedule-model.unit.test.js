@@ -4,7 +4,7 @@ import {
   SCHEDULE_MAX_TEAMS, SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, normalizeSchedule,
   recommendedStationFromProjection, scheduleEntryAt, scheduleIssues
 } from '../frontend/js/schedule-model.js';
-import { analyzeScheduleLoad } from '../frontend/js/schedule-load-policy.js';
+import { stationIntensityFor } from '../frontend/js/station-intensity.js';
 import { evaluationTargetFromSearch, resolveInitialStation } from '../frontend/js/app-navigation-model.js';
 
 function masterSchedule() {
@@ -76,8 +76,8 @@ test('current and recommended entries respect the Israel-local schedule', () => 
   assert.equal(recommendedStationFromProjection(projection, duringBreak)?.source, 'next');
 });
 
-test('load analysis uses station intensity without storing it in schedule cells', () => {
-  const warnings = analyzeScheduleLoad(masterSchedule(), {
+test('station intensity remains descriptive metadata without a load policy', () => {
+  const intensity = stationIntensityFor('01', '04', {
     teamStationMaps: {
       '01': { '04': 'sprints', '02': 'crawls' },
       '02': { '02': 'discussion', '04': 'magen' }
@@ -87,8 +87,7 @@ test('load analysis uses station intensity without storing it in schedule cells'
       discussion: { intensity: 0 }, magen: { intensity: 3 }
     }
   });
-  assert.ok(warnings.some(warning => warning.team === '01' && warning.code === 'consecutive_high'));
-  assert.equal(warnings.some(warning => warning.team === '02'), false);
+  assert.equal(intensity, 3);
 });
 
 test('explicit navigation wins, then a running station, schedule, saved choice and fallback', () => {

@@ -1,11 +1,10 @@
-import { candidateKey, candidateRosterIssues, normalizeCandidateProfile } from './formation-operations-model.js';
+import { candidateKey, candidateRosterIssues, normalizeCandidateProfile, CANDIDATE_PROFILE_FIELDS } from './formation-operations-model.js';
 import { normalizeEventTeamId } from './event-setup-model.js';
 import { normalizeRosterSource } from './candidate-roster-import.js';
+import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 
 export const ROSTER_WRITE_LIMIT = 450;
-export const PROFILE_FIELDS = Object.freeze([
-  'firstName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance'
-]);
+export const PROFILE_FIELDS = CANDIDATE_PROFILE_FIELDS;
 
 // Pure planning shared by Excel import and manual team editing. No writes until
 // every team and the resulting event roster have been validated.
@@ -19,11 +18,17 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
   const plans = groups.map(group => {
     const team = normalizeEventTeamId(group.team);
     const previousTeam = teamById.get(team);
-    if (!team || !previousTeam || previousTeam.active === false) throw new Error(`צוות ${group.team} אינו זמין באירוע. יש להגדיר אותו תחילה.`);
+    if (!team || previousTeam?.active === false) throw new Error(`צוות ${group.team} אינו זמין באירוע.`);
     if (seen.has(team)) throw new Error('אותו צוות מופיע יותר מפעם אחת בייבוא.');
     seen.add(team);
     if (!Array.isArray(group.candidates)) throw new Error('רשימת המועמדים אינה תקינה.');
-    const candidates = group.candidates.map(normalizeCandidateProfile);
+    const candidates = group.candidates.map(raw => {
+      const old = next.get(candidateKey(team, raw.participantId));
+      if (!Array.isArray(raw.providedFields)) return normalizeCandidateProfile(raw);
+      const patch = Object.fromEntries(raw.providedFields.filter(field => PROFILE_FIELDS.includes(field))
+        .map(field => [field, raw[field]]));
+      return normalizeCandidateProfile({ ...normalizeCandidateProfile(old), ...patch, participantId:raw.participantId });
+    });
     const issues = candidateRosterIssues(candidates, { requireIdentity:false });
     if (issues.length) throw new Error(`צוות ${Number(team)}: ${issues[0]}`);
     // Missing profiles are allowed, but malformed nonzero values must fail
@@ -58,7 +63,7 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
       ...candidates.map(candidate => candidate.participantId)
     ])].sort((a, b) => Number(a) - Number(b));
     if (participantIds.length > 20) throw new Error(`צוות ${Number(team)}: ניתן לשייך עד 20 מועמדים לצוות.`);
-    const teamChanged = JSON.stringify(participantIds) !== JSON.stringify(previousTeam.participantIds || []) ||
+    const teamChanged = !previousTeam || JSON.stringify(participantIds) !== JSON.stringify(previousTeam.participantIds || []) ||
       JSON.stringify(rosterSource) !== JSON.stringify(normalizeRosterSource(previousTeam.rosterSource));
     return {
       team, previousTeam, participantIds, rosterSource, teamChanged, changes,
@@ -67,6 +72,8 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
       writeCount:changes.length + (teamChanged ? 1 : 0)
     };
   });
+  const teamCount = new Set([...teamById.keys(), ...seen]).size;
+  if (teamCount > SCHEDULE_MAX_TEAMS) throw new Error(`ניתן להגדיר עד ${SCHEDULE_MAX_TEAMS} צוותים.`);
   const nationalIds = new Map();
   for (const candidate of next.values()) {
     const nationalId = candidate.nationalId;
@@ -76,14 +83,14 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
   }
   // A team is never split: its candidate documents and roster commit together.
   const chunks = [];
-  let chunk = [], writes = 1; // event count and roster revision
+  let chunk = [], writes = 2; // event count/revision and optional import audit
   for (const plan of plans.filter(plan => plan.writeCount > 0)) {
-    if (plan.writeCount + 1 > ROSTER_WRITE_LIMIT) throw new Error('הצוות גדול מדי לשמירה אחת.');
+    if (plan.writeCount + 2 > ROSTER_WRITE_LIMIT) throw new Error('הצוות גדול מדי לשמירה אחת.');
     if (writes + plan.writeCount > ROSTER_WRITE_LIMIT) {
-      chunks.push(chunk); chunk = []; writes = 1;
+      chunks.push(chunk); chunk = []; writes = 2;
     }
     chunk.push(plan); writes += plan.writeCount;
   }
   if (chunk.length) chunks.push(chunk);
-  return { plans, chunks, candidateCount:next.size, importedCount:plans.reduce((n, plan) => n + plan.importedCount, 0) };
+  return { plans, chunks, teamCount, candidateCount:next.size, importedCount:plans.reduce((n, plan) => n + plan.importedCount, 0) };
 }

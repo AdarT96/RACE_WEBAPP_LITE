@@ -3999,7 +3999,7 @@
   }
 
   function renderCandidateProfile(profile) {
-    setText('candidate-first-name', profile.firstName || 'שם לא הוזן');
+    setText('candidate-first-name', profile.fullName || 'שם לא הוזן');
     setText('candidate-national-id', profile.nationalId
       ? `ת״ז ${profile.nationalId}` : 'תעודת זהות לא הוזנה');
     const phone = document.getElementById('candidate-emergency-phone');
@@ -4167,7 +4167,7 @@
       return `<button type="button" class="candidate-picker-btn ${candidateState.participantId === participantId ? 'selected' : ''} ${withdrawn ? 'withdrawn' : ''}"
               onclick="selectCandidate('${escHtml(participantId)}')">
               <span class="candidate-picker-number">${escHtml(participantId)}</span>
-              <span class="candidate-picker-name">${escHtml(candidate.firstName || 'שם לא הוזן')}</span>
+              <span class="candidate-picker-name">${escHtml(candidate.fullName || 'שם לא הוזן')}</span>
               ${withdrawn ? `<span class="candidate-picker-status">נשר · ${escHtml(candidate.reasonLabel)}</span>` : ''}</button>`;
     }).join('');
   }

@@ -15,13 +15,49 @@ const validRows = [
   }
 ];
 
+test('actual source headers map every field and concatenate first and last name', () => {
+  const result = candidateRowsFromMatrix([
+    ['מספר זהות','שם משפחה','שם פרטי','מספר מועמד','מספר צוות','כשיר רופא','כשיר חובש ','איש קשר','טלפון איש קשר'],
+    ['000000018','ישראלי','ישראל',100,1,'כן','לא','איש קשר','0501234567']
+  ]);
+  assert.deepEqual(result.errors, []);
+  assert.deepEqual(result.warnings, []);
+  assert.equal(result.rows[0].fullName, 'ישראל ישראלי');
+  assert.equal(result.rows[0].nationalId, '000000018');
+  assert.equal(result.rows[0].doctorClearance, 1);
+  assert.equal(result.rows[0].medicClearance, 2);
+  assert.equal(result.rows[0].emergencyContactPhone, '0501234567');
+});
+
+test('ambiguous headers and invalid values are rejected before writes', () => {
+  const result = candidateRowsFromMatrix([
+    ['צוות','מספר מועמד','תז','מספר זהות','כשיר רופא','טלפון איש קשר'],
+    [1,100,'123456789','000000018','אולי','abc']
+  ]);
+  assert.ok(result.errors.some(s => s.includes('יותר מעמודה')));
+  assert.ok(result.errors.some(s => s.includes('שורה 2')));
+  assert.ok(result.errors.some(s => s.includes('כשירות רופא')));
+});
+
+test('blank cells are omitted, explicit zero remains an intentional value, full name wins', () => {
+  const result = candidateRowsFromMatrix([
+    ['צוות','מספר מועמד','שם מלא','שם פרטי','שם משפחה','מספר זהות','טלפון איש קשר'],
+    [1,100,'שם מלא','לא','לחבר',0,'']
+  ]);
+  assert.equal(result.rows[0].fullName, 'שם מלא');
+  assert.equal(result.rows[0].nationalId, '0');
+  assert.ok(result.rows[0].providedFields.includes('nationalId'));
+  assert.ok(!result.rows[0].providedFields.includes('emergencyContactPhone'));
+  assert.ok(result.warnings.length);
+});
+
 test('the import contract stays source-neutral and groups canonical candidates by team', () => {
   const result = buildCandidateRosterImport({
     rows: validRows,
     source: { type: 'excel', sourceId: 'workbook-2026-08', fileName: 'מועמדים.xlsx' }
   });
   assert.deepEqual(CANDIDATE_IMPORT_FIELDS, [
-    'team', 'participantId', 'firstName', 'nationalId', 'emergencyContactPhone',
+    'team', 'participantId', 'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
     'doctorClearance', 'medicClearance'
   ]);
   assert.deepEqual(result.errors, []);

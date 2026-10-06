@@ -28,11 +28,16 @@ export const CLEARANCE_LABELS = Object.freeze({
 export const CANDIDATE_PROFILE_DEFAULTS = Object.freeze({
   participantId: '0',
   firstName: '0',
+  fullName: '0',
   nationalId: '0',
   emergencyContactPhone: '0',
   doctorClearance: CLEARANCE_STATUSES.PENDING,
   medicClearance: CLEARANCE_STATUSES.PENDING
 });
+
+export const CANDIDATE_PROFILE_FIELDS = Object.freeze([
+  'firstName', 'fullName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance'
+]);
 
 export const DROPOUT_REASONS = Object.freeze({
   voluntary: 'פרישה',
@@ -56,7 +61,7 @@ export function normalizeParticipantId(value) {
   return String(value ?? '').trim();
 }
 
-export function normalizeFirstName(value) {
+export function normalizeCandidateName(value) {
   return String(value ?? '').trim().replace(/\s+/g, ' ').slice(0, 80);
 }
 
@@ -114,9 +119,12 @@ export function normalizeParticipantIds(values) {
 
 export function normalizeCandidateProfile(value, fallback = {}) {
   const profile = value && typeof value === 'object' ? value : {};
+  const fullName = normalizeCandidateName(profile.fullName ?? profile.firstName ?? fallback.fullName ?? fallback.firstName) || '0';
   return {
     participantId: normalizeParticipantId(profile.participantId ?? fallback.participantId) || CANDIDATE_PROFILE_DEFAULTS.participantId,
-    firstName: normalizeFirstName(profile.firstName ?? fallback.firstName) || CANDIDATE_PROFILE_DEFAULTS.firstName,
+    // firstName is a compatibility projection for older clients, never a second name source.
+    firstName: fullName,
+    fullName,
     nationalId: normalizeNationalId(profile.nationalId ?? fallback.nationalId) || CANDIDATE_PROFILE_DEFAULTS.nationalId,
     emergencyContactPhone: normalizeEmergencyContactPhone(
       profile.emergencyContactPhone ?? fallback.emergencyContactPhone
@@ -162,7 +170,7 @@ export function candidateRosterIssues(values, { requireIdentity = true, maxCandi
     else participantIds.add(candidate.participantId);
 
     if (!requireIdentity) return;
-    if (!candidate.firstName || candidate.firstName === CANDIDATE_PROFILE_DEFAULTS.firstName) issues.push(`למועמד ${candidate.participantId || `בשורה ${row}`} חסר שם פרטי`);
+    if (!candidate.fullName || candidate.fullName === CANDIDATE_PROFILE_DEFAULTS.fullName) issues.push(`למועמד ${candidate.participantId || `בשורה ${row}`} חסר שם מלא`);
     if (!isValidIsraeliNationalId(candidate.nationalId)) {
       issues.push(`תעודת הזהות של מועמד ${candidate.participantId || `בשורה ${row}`} אינה תקינה`);
     } else if (nationalIds.has(candidate.nationalId)) {
@@ -318,7 +326,7 @@ export function buildFormationDashboardSnapshot({
 function candidateSearchScore(candidate, query, digits) {
   const participant = String(candidate.participantId || '');
   const rawNationalId = String(candidate.nationalId || '');
-  const rawName = String(candidate.firstName || '').trim().toLocaleLowerCase('he');
+  const rawName = String(candidate.fullName ?? candidate.firstName ?? '').trim().toLocaleLowerCase('he');
   const nationalId = rawNationalId === CANDIDATE_PROFILE_DEFAULTS.nationalId ? '' : rawNationalId;
   const name = rawName === CANDIDATE_PROFILE_DEFAULTS.firstName ? '' : rawName;
   if (participant === query) return 0;

@@ -8,8 +8,8 @@ import {
   localScheduleClock, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
 } from './schedule-model.js';
 import {
-  INTENSITY_LABELS, analyzeScheduleLoad, stationIntensityFor
-} from './schedule-load-policy.js';
+  INTENSITY_LABELS, stationIntensityFor
+} from './station-intensity.js';
 import { ScheduleConflictError, createScheduleRepository } from './schedule-repository.js';
 import {
   normalizeScheduleDraft, schedulePublicationLabel
@@ -39,7 +39,6 @@ let draftSchedule = null;
 let dirty = false;
 let saving = false;
 let conflict = false;
-let currentWarnings = [];
 let teamProjection = null;
 let operationalRaces = [];
 let unsubscribeOperationalRaces = null;
@@ -181,9 +180,10 @@ window.markScheduleDirty = () => {
   setSaveStatus('יש שינויים שלא נשמרו');
 };
 
-function setDraft(next, { preserveReason = false } = {}) {
-  draftSchedule = normalizeScheduleDraft(next, teamIds(), Number(publishedSchedule?.revision || 0));
-  if (!preserveReason) document.getElementById('load-override-reason').value = String(next?.overrideReason || '');
+function setDraft(next) {
+  const ids = [...new Set([...(next?.teamIds || []), ...teamIds()])];
+  draftSchedule = normalizeScheduleDraft({ ...next, teamIds:ids }, ids, Number(publishedSchedule?.revision || 0));
+  if (teamIds().some(team => !next?.teamIds?.includes(team))) dirty = true;
   renderManagerSchedule();
 }
 
@@ -193,9 +193,7 @@ function scheduleContentSignature(value) {
   return JSON.stringify({
     teamIds:normalized.teamIds,
     commanderNames:normalized.commanderNames,
-    rows:normalized.rows,
-    loadWarnings:normalized.loadWarnings,
-    overrideReason:normalized.overrideReason
+    rows:normalized.rows
   });
 }
 
@@ -214,16 +212,6 @@ function applyCurrentRowHighlight() {
     row.classList.toggle('current-row', row.dataset.scheduleRow === id);
     row.classList.toggle('current', row.dataset.scheduleRow === id);
   });
-}
-
-function renderLoadWarnings() {
-  currentWarnings = analyzeScheduleLoad(draftSchedule, {
-    teamStationMaps: teamStationMaps(), stationTypes
-  });
-  const card = document.getElementById('load-warning-card');
-  card.hidden = currentWarnings.length === 0;
-  document.getElementById('load-warning-list').innerHTML = currentWarnings
-    .map(warning => `<li>${escapeHtml(warning.message)}</li>`).join('');
 }
 
 function stationOptions(team, selected) {
@@ -281,7 +269,6 @@ function renderManagerSchedule() {
         </div></td>`;
     }).join('')}</tr>`;
   }).join('');
-  renderLoadWarnings();
   applyCurrentRowHighlight();
   const publishedRevision = Number(publishedSchedule?.revision || 0);
   const draftRevision = Number(remoteDraft?.draftRevision || draftSchedule.draftRevision || 0);
@@ -338,7 +325,6 @@ window.updateAssignment = (rowId, team, field, value) => {
   row.assignments[team][field] = String(value || '').slice(0, field === 'stationId' ? 2 : 20);
   window.markScheduleDirty();
   if (field === 'stationId') renderManagerSchedule();
-  else renderLoadWarnings();
 };
 
 window.removeScheduleRow = rowId => {
@@ -402,17 +388,13 @@ window.saveScheduleDraft = async () => {
   const allowedStations = stationIdsByTeam();
   const issues = scheduleIssues(draftSchedule, { stationIdsByTeam:allowedStations });
   if (issues.length) { showToast(issues[0], 'error'); return; }
-  const overrideReason = document.getElementById('load-override-reason').value;
-  if (currentWarnings.length && !overrideReason.trim()) {
-    showToast('יש לתעד סיבה לשמירת לו״ז עם אזהרות עומס', 'error'); return;
-  }
   saving = true; setSaveStatus('שומר טיוטה…');
   try {
     const result = await repository.saveDraft({
       eventId: activeEvent.id, schedule: draftSchedule,
       expectedPublishedRevision:Number(publishedSchedule?.revision || 0),
       expectedDraftRevision:Number(remoteDraft?.draftRevision || 0),
-      warnings:currentWarnings, overrideReason, stationIdsByTeam:allowedStations
+      stationIdsByTeam:allowedStations
     });
     dirty = false;
     conflict = false;

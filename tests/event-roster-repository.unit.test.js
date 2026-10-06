@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { planEventRoster, PROFILE_FIELDS } from '../frontend/js/event-roster-plan.js';
-import { normalizeEventTeamId, EVENT_STATUSES } from '../frontend/js/event-setup-model.js';
+import { normalizeEventTeamId, EVENT_STATUSES, newEventTeamData } from '../frontend/js/event-setup-model.js';
 import { normalizeCandidateProfile } from '../frontend/js/formation-operations-model.js';
 
 const source = readFileSync(new URL('../frontend/js/event-setup-repository.js',import.meta.url),'utf8')
@@ -20,7 +20,7 @@ function fixture({ size=10, replacement=false, beforeTransaction=()=>{} }={}) {
   }
   const counts={collections:0,transactions:0,commits:0,writes:0};
   const snapshot=path=>({id:path.split('/').at(-1),exists:()=>store.has(path),data:()=>structuredClone(store.get(path))});
-  const context={planEventRoster,PROFILE_FIELDS,normalizeEventTeamId,EVENT_STATUSES,
+  const context={planEventRoster,PROFILE_FIELDS,normalizeEventTeamId,EVENT_STATUSES,newEventTeamData,
     CANDIDATE_SCHEMA_VERSION:3,MAX_EVENT_TEAMS:20,
     doc:(_, ...parts)=>parts.join('/'),collection:(_, ...parts)=>parts.join('/'),serverTimestamp:()=>123,
     getDoc:async path=>snapshot(path),
