@@ -61,7 +61,7 @@
       </details>
 
       <details id="schedule-card" class="card setup-card collapsible-card">
-        <summary class="setup-card-head collapsible-summary"><span class="setup-step-number">2</span><div><h2>לו״ז וצוותים</h2><p>עמודות הצוותים בלו״ז הן המקור לרשימת הצוותים באירוע.</p></div><span class="collapsible-chevron" aria-hidden="true">▾</span></summary>
+        <summary class="setup-card-head collapsible-summary"><span class="setup-step-number">2</span><div><h2>לו״ז וצוותים</h2><p>אפשר להגדיר צוותים ומועמדים לפני הלו״ז או אחריו. להפעלת הגיבוש נדרש לו״ז מפורסם.</p></div><span class="collapsible-chevron" aria-hidden="true">▾</span></summary>
         <div class="setup-grid-two">
           <div class="setup-subsection">
             <h3>הגדרה ידנית</h3>
@@ -77,9 +77,6 @@
             <h3>ייבוא Excel</h3>
             <p>עמודות חובה: תאריך, שעה, ועמודה לכל צוות. תא תחנה נכתב למשל: <b>ספרינטים | 2</b>.</p>
             <input id="schedule-file" class="form-input" type="file" accept=".xlsx,.xls,.csv">
-            <label>סיבת חריגת עומס (נדרש רק אם הייבוא יוצר אזהרה)
-              <input id="schedule-import-reason" class="form-input" maxlength="500">
-            </label>
             <div class="setup-actions">
               <button id="import-schedule-button" class="btn btn-primary" type="button">ייבא ושמור טיוטה</button>
               <button id="download-schedule-template" class="btn btn-ghost" type="button">הורד תבנית CSV</button>
@@ -99,9 +96,11 @@
         <div id="candidate-table" class="candidate-setup-table"></div>
         <details class="setup-import-panel">
           <summary>ייבוא מועמדים מ־Excel</summary>
-          <p>כותרות נתמכות: צוות, מספר מועמד, שם פרטי, תעודת זהות, טלפון איש קשר חירום, כשירות רופא, כשירות חובש.</p>
+          <p>כותרות נתמכות: צוות, מספר מועמד, שם מלא או שם פרטי ושם משפחה, תעודת זהות, טלפון איש קשר חירום, כשירות רופא, כשירות חובש.</p>
           <input id="candidate-file" class="form-input" type="file" accept=".xlsx,.xls,.csv">
-          <button id="import-candidates-button" class="btn btn-primary" type="button">ייבא לכל הצוותים</button>
+          <button id="import-candidates-button" class="btn btn-primary" type="button">בדוק קובץ והצג תצוגה מקדימה</button>
+          <div id="candidate-import-preview" hidden></div>
+          <button id="confirm-candidate-import" class="btn btn-primary" type="button" hidden>אשר ייבוא</button>
           <div id="candidate-import-progress" class="setup-summary" role="status" aria-live="polite"></div>
         </details>
       </details>

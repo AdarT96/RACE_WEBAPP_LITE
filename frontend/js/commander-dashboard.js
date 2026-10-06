@@ -160,7 +160,7 @@ function renderTeams(snapshot) {
         <button type="button" class="team-candidate-primary team-candidate-open"
                 onclick="openCandidateDetails('${escapeHtml(candidate.team)}','${escapeHtml(candidate.participantId)}')">
           <strong>מועמד ${escapeHtml(candidate.participantId)}</strong>
-          <span>${escapeHtml(candidate.firstName || 'שם לא הוזן')}</span>
+          <span>${escapeHtml(candidate.fullName || 'שם לא הוזן')}</span>
           <small>פתח פרטי מועמד</small>
         </button>
         <div><span class="formation-status ${withdrawn ? 'withdrawn' : 'active'}">${withdrawn ? 'נשר' : 'פעיל'}</span></div>
@@ -223,7 +223,7 @@ function renderCandidateDetails() {
   );
   if (!candidate) { closeCandidateDetails(); return; }
   const withdrawn = candidate.status === CANDIDATE_STATUSES.WITHDRAWN;
-  text('candidate-details-title', `מועמד ${candidate.participantId} · ${candidate.firstName || 'שם לא הוזן'}`);
+  text('candidate-details-title', `מועמד ${candidate.participantId} · ${candidate.fullName || 'שם לא הוזן'}`);
   text('candidate-details-subtitle', `צוות ${Number(candidate.team)}`);
   document.getElementById('candidate-details-content').innerHTML = `
     <div><span>תעודת זהות</span><strong dir="ltr">${escapeHtml(candidate.nationalId || 'לא הוזנה')}</strong></div>
@@ -274,7 +274,7 @@ function renderCandidateSearch(snapshot) {
   container.innerHTML = results.map(candidate => `<button type="button" class="candidate-search-result"
     onclick="openCandidateDetails('${escapeHtml(candidate.team)}','${escapeHtml(candidate.participantId)}')">
     <strong>מועמד ${escapeHtml(candidate.participantId)}</strong>
-    <span>${escapeHtml(candidate.firstName || 'שם לא הוזן')} · צוות ${Number(candidate.team)}</span>
+    <span>${escapeHtml(candidate.fullName || 'שם לא הוזן')} · צוות ${Number(candidate.team)}</span>
   </button>`).join('');
 }
 
@@ -303,7 +303,7 @@ function renderRecommendations(snapshot) {
   }
   container.innerHTML = snapshot.openRecommendations.map(item => `
     <article class="recommendation-item">
-      <div class="recommendation-title"><span>מועמד ${escapeHtml(item.participantId)} · ${escapeHtml(item.candidate.firstName || 'שם לא הוזן')}</span><span>צוות ${Number(item.team)}</span></div>
+      <div class="recommendation-title"><span>מועמד ${escapeHtml(item.participantId)} · ${escapeHtml(item.candidate.fullName || 'שם לא הוזן')}</span><span>צוות ${Number(item.team)}</span></div>
       <div class="recommendation-details"><strong>${escapeHtml(dropoutReasonLabel(item.reasonCode))}</strong> · ${escapeHtml(item.recommendedByName || 'מפק״צ')}${item.details ? `\n${escapeHtml(item.details)}` : ''}</div>
       <div class="recommendation-actions">
         <button class="btn btn-danger" onclick="resolveRecommendation('${escapeHtml(item.team)}','${escapeHtml(item.participantId)}','accept')">אשר נשירה</button>
@@ -361,7 +361,7 @@ window.openWithdrawModal = (team, participantId) => {
   closeCandidateDetails();
   pendingStatusTarget = { team, participantId };
   const candidate = findDashboardCandidate(team, participantId);
-  const identity = candidate?.firstName ? ` · ${candidate.firstName}` : '';
+  const identity = candidate?.fullName ? ` · ${candidate.fullName}` : '';
   text('status-modal-summary', `מועמד ${participantId}${identity} · צוות ${Number(team)}`);
   document.getElementById('status-reason').value = '';
   document.getElementById('status-details').value = '';
@@ -381,7 +381,7 @@ window.openIdentityModal = (team, participantId) => {
   if (!candidate) return;
   pendingIdentityTarget = { team, participantId };
   text('identity-modal-summary', `מועמד ${participantId} · צוות ${Number(team)}`);
-  document.getElementById('identity-first-name').value = candidate.firstName || '';
+  document.getElementById('identity-first-name').value = candidate.fullName || '';
   document.getElementById('identity-national-id').value = candidate.nationalId || '';
   document.getElementById('identity-emergency-phone').value = candidate.emergencyContactPhone || '';
   document.getElementById('identity-doctor-clearance').value = candidate.doctorClearance;
@@ -404,7 +404,7 @@ window.confirmCandidateIdentity = async event => {
     await repository.updateCandidateProfile(
       eventId, pendingIdentityTarget.team, pendingIdentityTarget.participantId,
       {
-        firstName: document.getElementById('identity-first-name').value,
+        fullName: document.getElementById('identity-first-name').value,
         nationalId: document.getElementById('identity-national-id').value,
         emergencyContactPhone: document.getElementById('identity-emergency-phone').value,
         doctorClearance: Number(document.getElementById('identity-doctor-clearance').value),
@@ -440,7 +440,7 @@ window.confirmCandidateStatus = async event => {
 
 window.reactivateCandidate = async (team, participantId) => {
   const candidate = findDashboardCandidate(team, participantId);
-  const identity = candidate?.firstName ? ` (${candidate.firstName})` : '';
+  const identity = candidate?.fullName ? ` (${candidate.fullName})` : '';
   if (!confirm(`להחזיר את מועמד ${participantId}${identity} מצוות ${Number(team)} לפעילות?`)) return;
   try {
     await repository.setCandidateStatus(eventId, team, participantId, CANDIDATE_STATUSES.ACTIVE);

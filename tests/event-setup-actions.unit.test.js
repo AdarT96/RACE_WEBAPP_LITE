@@ -2,10 +2,53 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
+import { candidateRowsFromMatrix, buildCandidateRosterImport, IMPORT_FIELD_LABELS } from '../frontend/js/candidate-roster-import.js';
 
 const source = readFileSync(new URL('../frontend/js/event-setup-page.js', import.meta.url), 'utf8');
 const busyFunction = source.slice(source.indexOf('function setBusy('), source.indexOf('\nfunction defaultStationMap'));
 const actions = ['save-details', 'save-teams', 'import-schedule', 'save-candidates', 'import-candidates', 'save-staff'];
+
+for (const invalidate of [false, true]) {
+  test(`candidate preview writes nothing until confirmation; changed file=${invalidate}`, async () => {
+    const elements = new Map();
+    const getElementById = id => {
+      if (!elements.has(id)) elements.set(id, {
+        textContent:'ייבוא', dataset:{}, disabled:false, hidden:true, files:[{name:'test.xlsx'}],
+        listeners:{}, addEventListener(type, callback) { this.listeners[type] = callback; }
+      });
+      return elements.get(id);
+    };
+    let writes = 0;
+    const messages = [];
+    const start = source.indexOf('function clearCandidateImportPreview()');
+    const end = source.indexOf("document.getElementById('staff-list').addEventListener", start);
+    runInNewContext(`${busyFunction}\n${source.slice(start, end)}`, {
+      document:{getElementById}, rosterBusy:false, candidateImportPreview:null,
+      currentEventId:'event1', lockRosterWorkspace:() => () => {},
+      candidateRowsFromMatrix, buildCandidateRosterImport, IMPORT_FIELD_LABELS,
+      workbookMatrix:async () => [['צוות','מספר מועמד','שם פרטי','שם משפחה'],[1,100,'ישראל','ישראלי']],
+      teamIds:() => [], escapeHtml:value => String(value), refreshBundle:async () => {},
+      showToast:(message,type) => messages.push({message,type}),
+      repository:{importCandidates:async (id,teams) => {
+        writes += 1;
+        assert.equal(id,'event1');
+        assert.equal(teams[0].candidates[0].fullName,'ישראל ישראלי');
+        return {importedCount:1,teams:1};
+      }}
+    });
+    const preview = getElementById('import-candidates-button');
+    await preview.listeners.click({currentTarget:preview});
+    assert.equal(writes,0);
+    assert.equal(getElementById('candidate-import-preview').hidden,false);
+    assert.match(getElementById('candidate-import-preview').innerHTML,/ישראל ישראלי/);
+    if (invalidate) getElementById('candidate-file').listeners.change();
+    const confirm = getElementById('confirm-candidate-import');
+    await confirm.listeners.click({currentTarget:confirm});
+    assert.equal(writes,invalidate ? 0 : 1);
+    assert.equal(getElementById('candidate-import-preview').hidden,true);
+    assert.equal(messages.at(-1).type,invalidate ? 'error' : 'success');
+  });
+}
 
 // Run the production handlers with isolated storage, never with a live Firebase project.
 function setup(action, fail) {
@@ -20,6 +63,7 @@ function setup(action, fail) {
   const element = { value:'01', files:[{ name:'test.xlsx' }], addEventListener:(_, callback) => { handler = callback; } };
   const context = {
     rosterBusy:false, lockRosterWorkspace:() => () => {},
+    clearCandidateImportPreview:() => {},
     document:{ getElementById:() => element, querySelectorAll:() => [] },
     repository:{ saveDetails:operation, replaceTeamCandidates:operation, replaceStaff:operation },
     currentEventId:'test-event',

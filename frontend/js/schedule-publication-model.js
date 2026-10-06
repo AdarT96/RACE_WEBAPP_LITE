@@ -9,24 +9,12 @@ export const SCHEDULE_PUBLICATION_TYPES = Object.freeze({
 
 const REVISION_KEY_PATTERN = /^r-[0-9]{6,12}$/;
 
-const boundedText = (value, maxLength) => String(value ?? '').trim().slice(0, maxLength);
 const nonNegativeInteger = value => Math.max(0, Math.floor(Number(value) || 0));
-
-export function normalizeScheduleWarnings(values) {
-  return (Array.isArray(values) ? values : []).slice(0, 100).map(warning => ({
-    code: boundedText(warning?.code, 50),
-    team: boundedText(warning?.team, 2),
-    rowId: boundedText(warning?.rowId, 80),
-    message: boundedText(warning?.message, 300)
-  }));
-}
 
 export function normalizeScheduleDraft(source, fallbackTeamIds = [], publishedRevision = 0) {
   const value = source && typeof source === 'object' ? source : {};
   return {
     ...normalizeSchedule(value, fallbackTeamIds),
-    loadWarnings: normalizeScheduleWarnings(value.loadWarnings),
-    overrideReason: boundedText(value.overrideReason, 500),
     baseRevision: nonNegativeInteger(value.baseRevision ?? publishedRevision),
     draftRevision: nonNegativeInteger(value.draftRevision),
     schemaVersion: SCHEDULE_DRAFT_SCHEMA_VERSION
@@ -55,8 +43,6 @@ export function buildScheduleRelease(source, {
   }
   return {
     ...schedule,
-    loadWarnings: normalizeScheduleWarnings(source?.loadWarnings),
-    overrideReason: boundedText(source?.overrideReason, 500),
     revision,
     revisionKey,
     publicationType: type,

@@ -2,16 +2,17 @@ import {
   collection, doc, getDoc, getDocs, runTransaction, serverTimestamp, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
-  CANDIDATE_SCHEMA_VERSION, FORMATION_EVENT_SCHEMA_VERSION, TEAM_ROSTER_SCHEMA_VERSION
+  CANDIDATE_SCHEMA_VERSION, FORMATION_EVENT_SCHEMA_VERSION
 } from './formation-operations-model.js';
 import {
-  EVENT_SETUP_SCHEMA_VERSION, EVENT_STATUSES, normalizeEventStaff, normalizeEventTeamId
+  EVENT_SETUP_SCHEMA_VERSION, EVENT_STATUSES, normalizeEventStaff, normalizeEventTeamId, newEventTeamData
 } from './event-setup-model.js';
 import { EVENT_STAFFING_SCHEMA_VERSION, ROLES } from './roles.js';
 import { planEventRoster, PROFILE_FIELDS } from './event-roster-plan.js';
 // מקור אמת יחיד למספר הצוותים. המספר היה כתוב כאן בנפרד, וזה בדיוק סוג
 // הכפילות שמשאירה מגבלה ישנה אחרי שהעלו אותה במקום אחר.
 import { SCHEDULE_MAX_TEAMS as MAX_EVENT_TEAMS } from './schedule-model.js';
+import { scheduleIssues } from './schedule-model.js';
 
 const BATCH_LIMIT = 450;
 
@@ -36,7 +37,7 @@ export class RosterImportError extends Error {
   }
 }
 
-export function createEventSetupRepository(db, adminUser) {
+export function createEventSetupRepository(db, adminUser, { stationMapFactory = () => ({}) } = {}) {
   if (!db || !adminUser?.uid || adminUser.role !== 'admin') {
     throw new Error('הגדרת אירוע זמינה למנהל בלבד.');
   }
@@ -59,7 +60,16 @@ export function createEventSetupRepository(db, adminUser) {
       existing:snapshotRows(candidateSnapshot), groups, source });
     let revision = Number(event.rosterRevision || 0);
     let candidateCount = candidateSnapshot.size;
+    let teamCount = teamSnapshot.size;
+    let expectedTeamCount = Number(event.teamCount || 0);
     const completedTeams = plan.plans.filter(team => !team.writeCount).map(team => team.team);
+    // No names, identity numbers, phones, filenames or free-form exception text.
+    const auditRef = source.type === 'excel' ? doc(collection(db, 'events', String(eventId), 'rosterImports')) : null;
+    const auditPayload = (status, errorCode = '') => ({
+      status, errorCode, totalTeams:plan.plans.length, completedTeams:completedTeams.length,
+      importedCount:plan.importedCount, updatedAt:serverTimestamp(), updatedBy:uid, schemaVersion:1
+    });
+    if (auditRef) await writeBatch(db).set(auditRef, auditPayload('started')).commit();
     // Reporting must never turn a committed write into an apparent failure.
     const report = () => { try { onProgress({ completedTeams:completedTeams.length, totalTeams:plan.plans.length }); } catch (_) {} };
     report();
@@ -72,10 +82,15 @@ export function createEventSetupRepository(db, adminUser) {
             ...chunk.map(team => transaction.get(teamRef(eventId, team.team)))
           ]);
           if (!currentEvent.exists() || currentEvent.data().status !== event.status ||
+              Number(currentEvent.data().teamCount || 0) !== expectedTeamCount ||
               Number(currentEvent.data().rosterRevision || 0) !== revision) {
             throw new Error('האירוע או רשימת המועמדים השתנו במכשיר אחר.');
           }
           chunk.forEach((team, index) => {
+            if (!team.previousTeam) {
+              if (currentTeams[index].exists()) throw new Error('רשימת הצוותים השתנתה. רענן ונסה שוב.');
+              return;
+            }
             const { id, ...expected } = team.previousTeam;
             if (!currentTeams[index].exists() || JSON.stringify(currentTeams[index].data()) !== JSON.stringify(expected)) {
               throw new Error(`נתוני צוות ${Number(team.team)} השתנו במכשיר אחר.`);
@@ -108,25 +123,44 @@ export function createEventSetupRepository(db, adminUser) {
                 schemaVersion:CANDIDATE_SCHEMA_VERSION
               });
             }
-            if (team.teamChanged) transaction.update(teamRef(eventId, team.team), {
+            if (!team.previousTeam) transaction.set(teamRef(eventId, team.team), {
+              ...newEventTeamData(team.team, stationMapFactory(team.team), uid, serverTimestamp()),
+              participantIds:team.participantIds, rosterSource:team.rosterSource
+            });
+            else if (team.teamChanged) transaction.update(teamRef(eventId, team.team), {
               participantIds:team.participantIds, rosterSource:team.rosterSource,
               updatedAt:serverTimestamp(), updatedBy:uid
             });
           }
           transaction.update(eventRef(eventId), {
             candidateCount:nextCount, rosterRevision:revision + 1,
+            teamCount:teamCount + chunk.filter(team => !team.previousTeam).length,
             updatedAt:serverTimestamp(), updatedBy:uid
+          });
+          if (auditRef) transaction.set(auditRef, {
+            ...auditPayload(completedTeams.length + chunk.length === plan.plans.length ? 'complete' : 'partial'),
+            completedTeams:completedTeams.length + chunk.length
           });
         });
       } catch (error) {
+        if (auditRef) {
+          const codes = ['permission-denied', 'unavailable', 'deadline-exceeded', 'aborted', 'resource-exhausted'];
+          const code = codes.includes(error.code) ? error.code : 'validation-or-conflict';
+          try { await writeBatch(db).set(auditRef, auditPayload('failed', code)).commit(); } catch (_) {
+            // A connection failure can also prevent diagnostic persistence.
+          }
+        }
         throw new RosterImportError(error, completedTeams,
           plan.plans.filter(team => !completedTeams.includes(team.team)).map(team => team.team));
       }
       candidateCount = nextCount;
+      teamCount += chunk.filter(team => !team.previousTeam).length;
+      expectedTeamCount = teamCount;
       revision += 1;
       completedTeams.push(...chunk.map(team => team.team));
       report();
     }
+    if (auditRef && !plan.chunks.length) await writeBatch(db).set(auditRef, auditPayload('complete')).commit();
     return { teams:plan.plans.length, importedCount:plan.importedCount, candidateCount:plan.candidateCount };
   }
 
@@ -214,22 +248,26 @@ export function createEventSetupRepository(db, adminUser) {
       const completeTeamIds = [...new Set([...existingIds, ...teamIds])]
         .filter(normalizeEventTeamId).sort((left, right) => Number(left) - Number(right));
       if (completeTeamIds.length > MAX_EVENT_TEAMS) throw new Error(`ניתן להגדיר עד ${MAX_EVENT_TEAMS} צוותים.`);
-      const operations = completeTeamIds.filter(team => !existingIds.has(team)).map(team => batch => batch.set(teamRef(eventId, team), {
-        teamNumber:team,
-        participantIds:[],
-        stationMap:typeof stationMapFactory === 'function' ? stationMapFactory(team) : {},
-        rosterSource:{ type:'manual', sourceId:'event-setup', fileName:'' },
-        schemaVersion:TEAM_ROSTER_SCHEMA_VERSION,
-        active:true,
-        createdAt:serverTimestamp(),
-        createdBy:uid,
-        updatedAt:serverTimestamp(),
-        updatedBy:uid
-      }));
-      operations.push(batch => batch.update(eventRef(eventId), {
-        teamCount:completeTeamIds.length, updatedAt:serverTimestamp(), updatedBy:uid
-      }));
-      await commitOperations(db, operations);
+      await runTransaction(db, async transaction => {
+        const current = await transaction.get(eventRef(eventId));
+        const before = eventSnapshot.data();
+        if (!current.exists() || current.data().status !== before.status ||
+            Number(current.data().teamCount || 0) !== Number(before.teamCount || 0) ||
+            Number(current.data().rosterRevision || 0) !== Number(before.rosterRevision || 0)) {
+          throw new Error('רשימת הצוותים השתנתה בזמן העריכה. יש לרענן ולנסות שוב.');
+        }
+        const missingIds = completeTeamIds.filter(team => !existingIds.has(team));
+        const missingSnapshots = await Promise.all(missingIds.map(team => transaction.get(teamRef(eventId, team))));
+        if (missingSnapshots.some(snapshot => snapshot.exists())) {
+          throw new Error('צוות נוסף במקביל. יש לרענן ולנסות שוב.');
+        }
+        missingIds.forEach(team => transaction.set(teamRef(eventId, team),
+          newEventTeamData(team, typeof stationMapFactory === 'function' ? stationMapFactory(team) : {}, uid, serverTimestamp())
+        ));
+        transaction.update(eventRef(eventId), {
+          teamCount:completeTeamIds.length, updatedAt:serverTimestamp(), updatedBy:uid
+        });
+      });
       return completeTeamIds;
     },
 
@@ -310,7 +348,9 @@ export function createEventSetupRepository(db, adminUser) {
         if (!eventSnapshot.exists() || eventSnapshot.data().status !== EVENT_STATUSES.DRAFT) {
           throw new Error('רק אירוע טיוטה ניתן להפעלה.');
         }
-        if (!masterSnapshot.exists()) throw new Error('יש לפרסם את גרסת הלו״ז הראשונה לפני הפעלת האירוע.');
+        if (!masterSnapshot.exists() || !masterSnapshot.data().rows?.length || scheduleIssues(masterSnapshot.data()).length) {
+          throw new Error('יש לפרסם לו״ז תקין ולא ריק לפני הפעלת האירוע.');
+        }
         if (pointerSnapshot.exists() && pointerSnapshot.data().status === EVENT_STATUSES.ACTIVE &&
             pointerSnapshot.data().eventId && pointerSnapshot.data().eventId !== String(eventId)) {
           const current = await transaction.get(eventRef(pointerSnapshot.data().eventId));

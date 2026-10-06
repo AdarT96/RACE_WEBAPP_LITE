@@ -282,8 +282,8 @@
             <input id="participant-input" class="form-input" type="text" inputmode="numeric"
                    maxlength="100" style="direction:ltr" placeholder="למשל 1234">
           </label>
-          <label class="candidate-admin-field"><span>שם פרטי</span>
-            <input id="participant-name-input" class="form-input" type="text" maxlength="80" placeholder="שם פרטי">
+          <label class="candidate-admin-field"><span>שם מלא</span>
+            <input id="participant-name-input" class="form-input" type="text" maxlength="80" placeholder="שם מלא">
           </label>
           <label class="candidate-admin-field"><span>תעודת זהות</span>
             <input id="participant-national-id-input" class="form-input" type="text" inputmode="numeric"
@@ -724,11 +724,10 @@
               <option value="formation_commander" ${u.role==='formation_commander' ? 'selected':''}>מפקד הגיבוש</option>
               <option value="admin"     ${u.role==='admin'     ? 'selected':''}>מנהל</option>
             </select>
-            <select class="role-sel" onchange="changeTeam('${u.uid}', this.value)" title="צוות"
-                    ${roleNeedsTeam(u.role) ? '' : 'disabled'}>
+            ${roleNeedsTeam(u.role) ? `<select class="role-sel" onchange="changeTeam('${u.uid}', this.value)" title="צוות">
               <option value="">—</option>
               ${teamOptions}
-            </select>
+            </select>` : '<span class="badge badge-info">כל הגיבוש</span>'}
             ${u.uid !== currentAdmin?.uid ? `
             <button class="btn btn-ghost" onclick="deleteUserRecord('${u.uid}')"
               style="font-size:12px; padding:5px 10px; color:var(--danger); border-color:var(--danger)">🗑</button>` : ''}
@@ -1702,10 +1701,10 @@
     container.innerHTML = sorted.map(candidate => `
       <div class="candidate-admin-row">
         <div><span style="color:var(--text-muted); font-size:11px">מספר מועמד</span><br><strong>${escHtml(candidate.participantId)}</strong></div>
-        <label class="candidate-admin-field"><span>שם פרטי</span>
-          <input class="form-input" maxlength="80" value="${escHtml(candidate.firstName)}"
+        <label class="candidate-admin-field"><span>שם מלא</span>
+          <input class="form-input" maxlength="80" value="${escHtml(candidate.fullName)}"
                  data-participant-id="${escHtml(candidate.participantId)}"
-                 oninput="updateCandidateDraft(this.dataset.participantId,'firstName',this.value)">
+                 oninput="updateCandidateDraft(this.dataset.participantId,'fullName',this.value)">
         </label>
         <label class="candidate-admin-field identity-number"><span>תעודת זהות</span>
           <input class="form-input" inputmode="numeric" maxlength="11" style="direction:ltr"
@@ -1769,7 +1768,7 @@
     const emergencyPhoneInput = document.getElementById('participant-emergency-phone-input');
     const candidate = {
       participantId: (participantInput.value || '').trim(),
-      firstName: (nameInput.value || '').trim(),
+      fullName: (nameInput.value || '').trim(),
       nationalId: normalizeNationalId(nationalIdInput.value),
       emergencyContactPhone: normalizeEmergencyContactPhone(emergencyPhoneInput.value),
       doctorClearance: Number(document.getElementById('participant-doctor-clearance-input').value),
@@ -1802,7 +1801,7 @@
   window.updateCandidateDraft = (participantId, field, value) => {
     const candidate = currentTeamData.candidates
       .find(item => String(item.participantId) === String(participantId));
-    const allowedFields = ['firstName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance'];
+    const allowedFields = ['fullName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance'];
     if (!candidate || !allowedFields.includes(field)) return;
     if (field === 'nationalId') candidate[field] = normalizeNationalId(value);
     else if (field === 'emergencyContactPhone') candidate[field] = normalizeEmergencyContactPhone(value);
@@ -1839,7 +1838,7 @@
       teamNumber:   currentTeamNumber,
       candidates:   currentTeamData.candidates.map(candidate => ({
         participantId: String(candidate.participantId),
-        firstName: String(candidate.firstName),
+        fullName: String(candidate.fullName),
         nationalId: String(candidate.nationalId),
         emergencyContactPhone: String(candidate.emergencyContactPhone),
         doctorClearance: Number(candidate.doctorClearance),
@@ -1894,7 +1893,7 @@
   // גיבוש תשאיר אותו מאחור בשקט.
   const PURGE_EVENT_SUBCOLLECTIONS = [
     'candidates', 'candidateStatusEvents', 'dropoutRecommendations',
-    'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts'
+    'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts', 'rosterImports'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 

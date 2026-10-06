@@ -12,9 +12,82 @@ import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
 } from '../frontend/js/issue-report.js';
 import { createEventSetupRepository } from './helpers/event-setup-repository.js';
+import { createScheduleRepository } from './helpers/schedule-repository.js';
+import { candidateRowsFromMatrix, buildCandidateRosterImport } from '../frontend/js/candidate-roster-import.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
 let testEnv;
+
+test('source workbook headers import all ten teams without a schedule, with a private diagnostic record', async () => {
+  const db=userDb('admin1');
+  const repo=createEventSetupRepository(db,{uid:'admin1',role:'admin'},{stationMapFactory:()=>({'01':'sprints'})});
+  const id=await repo.createDraft('ייבוא לפני לוז');
+  const rows=Array.from({length:140},(_,i)=>[Math.floor(i/14)+1,i+1,'ישראל','ישראלי']);
+  const adapted=candidateRowsFromMatrix([['צוות','מספר מועמד','שם פרטי','שם משפחה'],...rows]);
+  const imported=buildCandidateRosterImport({rows:adapted.rows,allowIncompleteProfiles:true,source:{type:'excel'}});
+  await repo.importCandidates(id,imported.teams,imported.source);
+  assert.equal((await getDocs(collection(db,'events',id,'candidates'))).size,140);
+  assert.equal((await getDocs(collection(db,'events',id,'teams'))).size,10);
+  assert.equal((await getDoc(doc(db,'events',id))).data().candidateCount,140);
+  assert.equal((await getDoc(doc(db,'events',id,'candidates','01_1'))).data().fullName,'ישראל ישראלי');
+  assert.deepEqual((await getDoc(doc(db,'events',id,'teams','01'))).data().stationMap,{'01':'sprints'});
+  const attempts=await getDocs(collection(db,'events',id,'rosterImports'));
+  assert.equal(attempts.size,1);
+  assert.equal(attempts.docs[0].data().status,'complete');
+  assert.equal(attempts.docs[0].data().completedTeams,10);
+  assert.ok(!('fullName' in attempts.docs[0].data()));
+  await assertFails(getDocs(collection(userDb('evaluator1'),'events',id,'rosterImports')));
+  await assertFails(updateDoc(doc(db,'events',id),{status:'active'}));
+  await assert.rejects(repo.activate(id,{canActivate:true,counts:{teams:10,candidates:140}},[]),/לו״ז/);
+  await repo.importCandidates(id,imported.teams,imported.source);
+  assert.equal((await getDocs(collection(db,'events',id,'candidates'))).size,140);
+  assert.equal((await getDoc(doc(db,'events',id))).data().rosterRevision,1);
+});
+
+test('schedule can publish and restore legacy load metadata without load checks; activation needs publication', async () => {
+  const db=userDb('admin1'), user={uid:'admin1',role:'admin'};
+  const setup=createEventSetupRepository(db,user), schedules=createScheduleRepository(db,user);
+  const id=await setup.createDraft('לו״ז בלי עומס');
+  const schedule={teamIds:['01'],commanderNames:{},rows:[{id:'r1',date:'2026-10-06',startMinute:60,kind:'global',label:'פתיחה',assignments:{}}],loadWarnings:[{code:'rolling_load'}],overrideReason:''};
+  await schedules.saveDraft({eventId:id,schedule,expectedPublishedRevision:0,expectedDraftRevision:0,ensureTeamStationMaps:{'01':{'01':'sprints'}}});
+  assert.equal((await getDoc(doc(db,'events',id,'teams','01'))).exists(),true);
+  await assert.rejects(schedules.saveDraft({eventId:id,schedule:{...schedule,teamIds:['01','02']},expectedPublishedRevision:0,expectedDraftRevision:0,ensureTeamStationMaps:{'01':{},'02':{}}}),/הלו״ז השתנה/);
+  assert.equal((await getDoc(doc(db,'events',id,'teams','02'))).exists(),false);
+  await assertFails(updateDoc(doc(db,'events',id),{status:'active'}));
+  await schedules.publishDraft({eventId:id,expectedPublishedRevision:0,expectedDraftRevision:1});
+  let master=(await getDoc(doc(db,'events',id,'schedule','master'))).data();
+  assert.ok(!('loadWarnings' in master));
+  assert.ok(!('loadPolicy' in master));
+  assert.ok(!('overrideReason' in master));
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    await updateDoc(doc(context.firestore(),'events',id,'scheduleRevisions','r-000001'),{loadWarnings:[{code:'rolling_load'}],overrideReason:'ישן'});
+  });
+  await schedules.restoreRevision({eventId:id,revisionKey:'r-000001',expectedPublishedRevision:1,expectedDraftRevision:2});
+  master=(await getDoc(doc(db,'events',id,'schedule','master'))).data();
+  assert.equal(master.revision,2);
+  assert.ok(!('loadWarnings' in master));
+  await assertSucceeds(updateDoc(doc(db,'events',id),{status:'active'}));
+});
+
+test('full names are editable by admin only and protected by profile revision', async () => {
+  const patch={firstName:'ישראל ישראלי',fullName:'ישראל ישראלי',profileRevision:1,profileUpdatedAt:serverTimestamp(),profileUpdatedBy:'admin1'};
+  await assertFails(updateDoc(doc(userDb('operator1'),'events','event-1','candidates','01_100'),{...patch,profileUpdatedBy:'operator1'}));
+  await assertFails(updateDoc(doc(userDb('formation1'),'events','event-1','candidates','01_100'),{...patch,profileUpdatedBy:'formation1'}));
+  await assertSucceeds(updateDoc(doc(userDb('admin1'),'events','event-1','candidates','01_100'),patch));
+  await assertFails(updateDoc(doc(userDb('admin1'),'events','event-1','candidates','01_100'),{...patch,fullName:'x'.repeat(81),profileRevision:2}));
+  await assertFails(updateDoc(doc(userDb('admin1'),'events','event-1','candidates','01_100'),{...patch,fullName:'שם אחר',profileRevision:2}));
+});
+
+test('manual team creation is atomic and keeps existing candidate lists intact', async () => {
+  const db=userDb('admin1');
+  const repo=createEventSetupRepository(db,{uid:'admin1',role:'admin'});
+  await repo.ensureTeams('event-1',['01','02','03'],()=>({'01':'sprints'}));
+  assert.deepEqual((await getDoc(doc(db,'events','event-1','teams','01'))).data().participantIds,['100']);
+  assert.deepEqual((await getDoc(doc(db,'events','event-1','teams','03'))).data().stationMap,{'01':'sprints'});
+  assert.equal((await getDoc(doc(db,'events','event-1'))).data().teamCount,3);
+  await repo.ensureTeams('event-1',['03'],()=>({}));
+  assert.equal((await getDoc(doc(db,'events','event-1'))).data().teamCount,3);
+});
 
 function userDb(uid) {
   return testEnv.authenticatedContext(uid).firestore();
@@ -775,6 +848,10 @@ test('an administrator moves a staffed evaluator to another team mid-event', asy
 });
 
 test('direct formation status changes append an atomic immutable audit event', async () => {
+  await updateDoc(doc(userDb('admin1'),'events','event-1','candidates','02_200'), {
+    firstName:'יובל ישראלי', fullName:'יובל ישראלי', profileRevision:1,
+    profileUpdatedAt:serverTimestamp(), profileUpdatedBy:'admin1'
+  });
   const commander = userDb('formation1');
   const stateRef = doc(commander, 'events', 'event-1', 'candidates', '02_200');
   const recommendationRef = doc(commander, 'events', 'event-1', 'dropoutRecommendations', '02_200');
@@ -880,7 +957,7 @@ test('an administrator can read and triage issue reports', async () => {
 // שמאמין שמחק גיבוש ובפועל השאיר את רובו.
 const PURGEABLE_SUBCOLLECTIONS = [
   ['teams', '01'], ['schedule', 'master'], ['teamSchedules', '01'],
-  ['scheduleRevisions', 'rev-1'], ['candidates', '01_100'],
+  ['scheduleRevisions', 'rev-1'], ['rosterImports', 'attempt-1'], ['candidates', '01_100'],
   ['dropoutRecommendations', '01_100'], ['candidateStatusEvents', 'transition-1'],
   ['staff', 'evaluator1'], ['artifacts', 'artifact-1']
 ];
