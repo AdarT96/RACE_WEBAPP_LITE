@@ -393,7 +393,7 @@ const TRAIT_IDS_BY_NAME = Object.freeze({
 // Administrators can override each value in settings/stationTypes.
 const DEFAULT_STATION_INTENSITY = Object.freeze({
   jerrycans: 3, stretcher: 3, crawls: 3, sprints: 3, ironNerves: 0,
-  magen: 3, dynamicFitness: 2, tent: 1, checkers: 0, spiderWeb: 1,
+  magen: 2, dynamicFitness: 3, tent: 1, checkers: 0, spiderWeb: 1,
   pullup: 2, minefield: 1, sackFill: 2, ladder: 1, puzzleA: 1,
   debate: 0, discussion: 0
 });
