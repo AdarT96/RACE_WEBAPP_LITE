@@ -2876,6 +2876,8 @@
     const state = arrivalDragState;
     if (!state || event.pointerId !== state.pointerId) return;
     event.preventDefault();
+    if (!state.moved && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 6) return;
+    state.moved = true;
     const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.arrival-row.arrived');
     if (!target || target === state.row || target.parentElement !== state.list) return;
 
@@ -2894,16 +2896,10 @@
     if (!state || event.pointerId !== state.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    state.handle.removeEventListener('pointermove', onArrivalDragMove);
-    state.handle.removeEventListener('pointerup', finishArrivalDrag);
-    state.handle.removeEventListener('pointercancel', cancelArrivalDrag);
-    try { state.handle.releasePointerCapture(event.pointerId); } catch (e) {}
-    state.row.classList.remove('dragging');
-
     const order = arrivalOrderFromList(state.list);
     const sameContext = currentRace?.id === state.raceId && state.list.dataset.raceId === state.raceId;
-    const changed = !cancelled && sameContext && order.join('|') !== state.originalOrder.join('|');
-    arrivalDragState = null;
+    const changed = !cancelled && state.moved && sameContext && order.join('|') !== state.originalOrder.join('|');
+    clearArrivalDrag();
     if (changed) {
       persistArrivalOrder(state.list, order, state.revision, state.raceId);
     } else if (currentRace?.id === state.raceId) {
@@ -2918,15 +2914,43 @@
   function clearArrivalDrag() {
     const state = arrivalDragState;
     if (!state) return;
-    state.handle.removeEventListener('pointermove', onArrivalDragMove);
-    state.handle.removeEventListener('pointerup', finishArrivalDrag);
-    state.handle.removeEventListener('pointercancel', cancelArrivalDrag);
-    try { state.handle.releasePointerCapture(state.pointerId); } catch (error) {}
-    state.row.classList.remove('dragging');
+    // Clear first: releasing capture may itself dispatch lostpointercapture.
     arrivalDragState = null;
+    document.removeEventListener('pointermove', onArrivalDragMove);
+    document.removeEventListener('pointerup', finishArrivalDrag);
+    document.removeEventListener('pointercancel', cancelArrivalDrag);
+    document.removeEventListener('keydown', onArrivalDragKeyDown);
+    document.removeEventListener('visibilitychange', onArrivalDragVisibilityChange);
+    window.removeEventListener('blur', abandonArrivalDrag);
+    state.list.removeEventListener('lostpointercapture', onArrivalDragCaptureLost);
+    try { state.list.releasePointerCapture(state.pointerId); } catch (error) {}
+    state.row.classList.remove('dragging');
+  }
+
+  function abandonArrivalDrag() {
+    if (!arrivalDragState) return;
+    clearArrivalDrag();
+    renderRace(); // Restore the confirmed order; cancellation never writes a partial preview.
+  }
+
+  function onArrivalDragKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      abandonArrivalDrag();
+    }
+  }
+
+  function onArrivalDragVisibilityChange() {
+    if (document.hidden) abandonArrivalDrag();
+  }
+
+  function onArrivalDragCaptureLost(event) {
+    // Ignore a descendant's implicit touch capture transferring to the list.
+    if (event.target === arrivalDragState?.list) cancelArrivalDrag(event);
   }
 
   window.startArrivalDrag = event => {
+    if (event.button !== 0 || event.isPrimary === false) return;
     event.preventDefault();
     event.stopPropagation();
     if (arrivalOrderSaving || arrivalDragState || !canEvaluate() || !currentArrivalState()?.canReorder) return;
@@ -2937,16 +2961,26 @@
 
     arrivalDragState = {
       pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      moved: false,
       raceId: list.dataset.raceId,
       revision: Number(list.dataset.revision || 0),
       originalOrder: arrivalOrderFromList(list),
       list, row, handle
     };
     row.classList.add('dragging');
-    try { handle.setPointerCapture(event.pointerId); } catch (e) {}
-    handle.addEventListener('pointermove', onArrivalDragMove);
-    handle.addEventListener('pointerup', finishArrivalDrag);
-    handle.addEventListener('pointercancel', cancelArrivalDrag);
+    // The list stays in the DOM while its rows move. Capturing on the moving
+    // handle loses pointer capture when insertBefore removes/reinserts that row.
+    document.addEventListener('pointermove', onArrivalDragMove);
+    document.addEventListener('pointerup', finishArrivalDrag);
+    document.addEventListener('pointercancel', cancelArrivalDrag);
+    document.addEventListener('keydown', onArrivalDragKeyDown);
+    document.addEventListener('visibilitychange', onArrivalDragVisibilityChange);
+    window.addEventListener('blur', abandonArrivalDrag);
+    list.addEventListener('lostpointercapture', onArrivalDragCaptureLost);
+    // Document listeners also cover browsers where capture cannot be acquired.
+    try { list.setPointerCapture(event.pointerId); } catch (error) {}
   };
 
   window.moveArrivalParticipant = (event, participantId, delta) => {
