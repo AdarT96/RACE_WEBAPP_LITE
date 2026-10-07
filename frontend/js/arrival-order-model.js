@@ -1,3 +1,5 @@
+export const arrivalRevision = value => Number.isSafeInteger(value?.revision) && value.revision >= 0 ? value.revision : 0;
+
 export function uniqueArrivalParticipantIds(values) {
   const seen = new Set();
   return (Array.isArray(values) ? values : []).reduce((result, value) => {

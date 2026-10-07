@@ -43,7 +43,7 @@
     /* ── Round navigation (sprints + stretcher only) ──────── */
     .round-nav { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
     .round-tabs {
-      display: flex; flex: 1; gap: 8px; overflow-x: auto; direction: rtl;
+      display: flex; flex: 1; min-width: 0; gap: 8px; overflow-x: auto; direction: rtl;
       scroll-snap-type: x proximity; scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 3px 1px 7px;
     }
@@ -74,6 +74,12 @@
       border: 1px solid var(--success); background: rgba(34,197,94,.10); font-size: 13px;
     }
     .live-round-banner strong { color: var(--success); }
+    /* Saving feedback must not move the candidate grid while the evaluator taps. */
+    #arrival-save-status {
+      position: fixed; bottom: 12px; inset-inline: 12px; z-index: 210;
+      width: auto; max-height: 24vh; overflow-y: auto; padding: 0;
+    }
+    #arrival-save-status .alert { background: var(--surface); margin: 4px 0; box-shadow: 0 2px 12px #0003; }
     .evaluator-only[hidden], .session-control-only[hidden], .admin-only[hidden] { display: none !important; }
 
     /* ── Page hierarchy ─────────────────────────────────── */
@@ -705,6 +711,7 @@
   </div>
 </nav>
 
+<div class="container" id="arrival-save-status" role="status" aria-live="polite" hidden></div>
 <div class="container" id="station-view" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
@@ -757,7 +764,7 @@
       <strong id="live-round-label"></strong>
       <span id="live-round-time">00:00.00</span>
       <button class="btn btn-success" onclick="returnToLiveRound()" style="padding:5px 10px; font-size:12px">
-        חזור לסבב הפעיל
+        עבור לסבב החדש
       </button>
     </div>
 
@@ -1120,6 +1127,9 @@
     normalizeNotes, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
+  import { createArrivalRepository } from "./js/arrival-repository.js";
+  import { createArrivalController } from "./js/arrival-controller.js";
+  import { viewedRoundId } from "./js/round-navigation-model.js";
   import { createPrivateNotesRepository } from "./js/private-notes-repository.js";
   import {
     CANDIDATE_STATUSES, DROPOUT_REASONS, RECOMMENDATION_STATUSES,
@@ -1128,7 +1138,7 @@
   import { createFormationOperationsRepository } from "./js/formation-operations-repository.js";
   import { evaluationTargetFromSearch, resolveInitialStation } from "./js/app-navigation-model.js";
   import {
-    arrivalEntriesInOrder, arrivalOrderSignature, arrivalWithOrder, moveParticipantInOrder
+    arrivalEntriesInOrder, moveParticipantInOrder
   } from "./js/arrival-order-model.js";
   import { EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel } from "./js/roles.js";
   import { resolveActiveUserContext } from "./js/active-user-context.js";
@@ -1162,12 +1172,17 @@
   let latestRace = null;           // newest round; lifecycle actions always target this
   let currentRace = null;          // round currently viewed/evaluated
   let currentRaceId = null;
-  let followLatest = true;          // evaluator stays on live round until they browse backwards
+  let raceContextKey = '';
+  let raceQueryGeneration = 0;
+  let roundSelectionRequest = 0;
+  let roundNavigationSignature = '';
+  let roundNavigationSelectedId = null;
   let raceQueryUnsubscribe = null;
   let evaluatorArrival = null;      // current evaluator's order for the viewed round
   let evaluatorArrivalRaceId = null;
   let evaluatorArrivalLoading = false;
-  let evaluatorArrivalUnsubscribe = null;
+  let arrivalRepository = null;
+  const arrivalControllers = new Map();
   let controlActionInProgress = false;
   let timerInterval = null;
   let observedLatestRaceId = null;
@@ -1634,6 +1649,11 @@
 
   // ═════════ Auth ═════════
   onAuthStateChanged(auth, async (user) => {
+    if (!user || (currentUser && currentUser.uid !== user.uid)) {
+      arrivalControllers.forEach(({ controller }) => controller.dispose());
+      arrivalControllers.clear();
+      detachRaceSubscription();
+    }
     if (!user) { window.location.href = 'index.html'; return; }
     markLoad('auth ready');
     // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
@@ -1705,7 +1725,10 @@
     banner.textContent = '🔄 ' + change.message;
     banner.style.display = 'block';
   }
-  window.logout = async () => { await signOut(auth); window.location.href = 'index.html'; };
+  window.logout = async () => {
+    if (hasPendingArrivals()) { showToast('יש להמתין לשמירת סדר ההגעה לפני יציאה.', 'error'); return; }
+    await signOut(auth); window.location.href = 'index.html';
+  };
 
   // ═════════ Init ═════════
   async function initApp() {
@@ -1718,6 +1741,7 @@
     // תיוגים משותפים + real-time refresh — משמשים רק את ההערות הכלליות
     foreground.background(subscribeToQuickTags);
     evaluationRepository = createEvaluationRepository(db, currentUser);
+    arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace);
     privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
     formationRepository = createFormationOperationsRepository(db, currentUser);
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים.
@@ -2083,37 +2107,90 @@
     return doc(db, 'races', String(raceId), 'evaluatorArrivals', String(uid));
   }
 
+  function arrivalControllerFor(race) {
+    let entry = arrivalControllers.get(race.id);
+    if (!entry) {
+      const controller = createArrivalController({
+        raceId:race.id, repository:arrivalRepository, initial:evaluatorArrivalStateForRace(race, null),
+        onChange:state => {
+          if (evaluatorArrivalRaceId === race.id && currentRaceId === race.id) {
+            evaluatorArrival = state.arrival;
+            evaluatorArrivalLoading = !state.ready;
+            renderRace();
+          }
+          if (candidateState.arrivalsByRace.has(race.id)) {
+            const previous = candidateState.arrivalsByRace.get(race.id);
+            candidateState.arrivalsByRace.set(race.id, state.confirmed);
+            // Candidate charts show places, not research timestamps or queue metadata.
+            if (candidateRoute() && candidateState.summary &&
+                JSON.stringify(previous?.order) !== JSON.stringify(state.confirmed.order)) rebuildCandidateSummary();
+          }
+          renderArrivalSaveStatus();
+        }
+      });
+      entry = { race, controller };
+      arrivalControllers.set(race.id, entry);
+    }
+    return entry.controller;
+  }
+
+  function currentArrivalState() {
+    return arrivalControllers.get(currentRaceId)?.controller.state();
+  }
+
+  function hasPendingArrivals() {
+    return [...arrivalControllers.values()].some(({controller}) => controller.state().pendingCount > 0);
+  }
+
+  function renderArrivalSaveStatus() {
+    const panel = document.getElementById('arrival-save-status');
+    const entries = [...arrivalControllers.values()].filter(({controller, race}) => {
+      const state = controller.state();
+      return state.pendingCount || (state.error && (race.id === currentRaceId ||
+        (candidateRoute() && candidateState.arrivalsByRace.has(race.id))));
+    });
+    panel.hidden = !entries.length;
+    panel.innerHTML = entries.map(({controller, race}) => {
+      const state = controller.state();
+      const label = 'צוות ' + Number(race.team) + ' · תחנה ' + Number(race.station) + ' · סבב ' + Number(race.round);
+      return '<div class="alert ' + (state.error ? 'alert-danger' : 'alert-info') + '">' + escHtml(label) + ' — ' +
+        (state.error ? 'השמירה או העדכון לא הושלמו: ' + escHtml(state.error.message) : 'שומר ' + state.pendingCount + ' פעולות… אין לסגור את הדף.') +
+        (state.error ? ' <button class="btn btn-ghost" data-arrival-retry="' + escHtml(race.id) + '">נסה שוב</button>' : '') + '</div>';
+    }).join('');
+  }
+  document.getElementById('arrival-save-status').addEventListener('click', event => {
+    const button = event.target.closest('[data-arrival-retry]');
+    if (button) arrivalControllers.get(button.dataset.arrivalRetry)?.controller.retry();
+  });
+  window.addEventListener('beforeunload', event => {
+    if (!hasPendingArrivals()) return;
+    event.preventDefault(); event.returnValue = '';
+  });
+  document.addEventListener('click', event => {
+    const link = event.target.closest('a[href]');
+    if (!link || !hasPendingArrivals()) return;
+    const target = new URL(link.href, location.href);
+    if (target.origin === location.origin && target.pathname === location.pathname && target.search === location.search) return;
+    event.preventDefault();
+    showToast('יש להמתין לשמירת סדר ההגעה לפני מעבר לעמוד אחר.', 'error');
+  });
+
   function detachEvaluatorArrivalSubscription() {
-    if (evaluatorArrivalUnsubscribe) evaluatorArrivalUnsubscribe();
-    evaluatorArrivalUnsubscribe = null;
+    arrivalControllers.get(evaluatorArrivalRaceId)?.controller.deactivate();
     evaluatorArrival = null;
     evaluatorArrivalRaceId = null;
     evaluatorArrivalLoading = false;
   }
 
   function subscribeToEvaluatorArrival(race) {
-    const shouldSubscribe = canEvaluate() && race?.id && supportsRoundTabs() &&
-      currentStationType()?.measure === 'place' && currentUser?.uid;
-    if (!shouldSubscribe) {
-      detachEvaluatorArrivalSubscription();
-      return;
+    if (!canEvaluate() || !race?.id || !supportsRoundTabs() || currentStationType()?.measure !== 'place') {
+      detachEvaluatorArrivalSubscription(); return;
     }
-    if (evaluatorArrivalRaceId === race.id && evaluatorArrivalUnsubscribe) return;
-
+    if (evaluatorArrivalRaceId === race.id) return;
     detachEvaluatorArrivalSubscription();
     evaluatorArrivalRaceId = race.id;
     evaluatorArrivalLoading = true;
-    evaluatorArrivalUnsubscribe = onSnapshot(evaluatorArrivalRef(race.id), (snap) => {
-      if (currentRaceId !== race.id) return;
-      evaluatorArrival = snap.exists() ? { id: snap.id, ...snap.data() } : null;
-      evaluatorArrivalLoading = false;
-      renderRace();
-    }, (err) => {
-      if (currentRaceId !== race.id) return;
-      evaluatorArrivalLoading = false;
-      showToast('שגיאה בטעינת סדר ההגעה האישי: ' + err.message, 'error');
-      renderRace();
-    });
+    arrivalControllerFor(race).activate();
   }
 
   function detachCurrentAssessmentSubscription() {
@@ -2156,9 +2233,13 @@
   function loadCurrentSession() {
     if (!activeFormationEvent || !selectedTeam || !selectedStation) return;
 
+    const contextKey = JSON.stringify([activeFormationEvent.id, selectedTeam, selectedStation]);
+    const preservedId = contextKey === raceContextKey ? currentRaceId : null;
     localReps = {};
-    followLatest = true;
     detachRaceSubscription();
+    raceContextKey = contextKey;
+    currentRaceId = preservedId;
+    const generation = raceQueryGeneration;
 
     const constraints = [
       where('eventId', '==', activeFormationEvent.id),
@@ -2171,6 +2252,7 @@
     const q = query(collection(db, 'races'), ...constraints);
 
     raceQueryUnsubscribe = onSnapshot(q, (snap) => {
+      if (generation !== raceQueryGeneration) return;
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
       const list = [];
@@ -2190,15 +2272,12 @@
         return;
       }
 
-      const previousStillExists = previousViewedId && list.some(r => r.id === previousViewedId);
-      const mustFollowLatest = isOperator() || !supportsRoundTabs() || followLatest || !previousStillExists;
-      const targetId = mustFollowLatest ? latestRace.id : previousViewedId;
+      const targetId = viewedRoundId(list, previousViewedId, isOperator() || !supportsRoundTabs());
       const target = list.find(r => r.id === targetId) || latestRace;
       const roundChanged = target.id !== previousViewedId;
 
       currentRace = target;
       currentRaceId = target.id;
-      followLatest = target.id === latestRace.id;
       if (roundChanged) {
         localReps = {};
         stationNoteSelectedPid = null;
@@ -2207,14 +2286,16 @@
       subscribeToCurrentAssessment(target);
 
       const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
-      if (newRoundArrived && isEvaluator() && !followLatest) {
-        showToast(`סבב ${latestRace.round} התחיל — אפשר לחזור אליו משורת הסטטוס`, 'info');
+      if (newRoundArrived && canEvaluate() && target.id !== latestRace.id) {
+        showToast(`סבב ${latestRace.round} זמין — המעבר אליו לפי בחירתך`, 'info');
       }
       renderRace();
       roundShown();
     }, async err => {
+      if (generation !== raceQueryGeneration) return;
       const before = privacyMigrationComplete;
       await loadPrivacyState();
+      if (generation !== raceQueryGeneration) return;
       if (!before && privacyMigrationComplete) {
         loadCurrentSession();
         return;
@@ -2231,6 +2312,8 @@
   }
 
   function detachRaceSubscription() {
+    clearArrivalDrag();
+    raceQueryGeneration += 1;
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
     detachEvaluatorArrivalSubscription();
     detachCurrentAssessmentSubscription();
@@ -2243,12 +2326,16 @@
 
   window.selectViewedRound = async (raceId) => {
     if (!canEvaluate() || !supportsRoundTabs()) return;
-    const race = racesForContext.find(r => r.id === raceId);
-    if (!race || race.id === currentRaceId) return;
+    if (!racesForContext.some(r => r.id === raceId) || raceId === currentRaceId) return;
+    const request = ++roundSelectionRequest;
+    const generation = raceQueryGeneration;
     await commitPendingReps();
+    if (generation !== raceQueryGeneration || request !== roundSelectionRequest) return;
+    const race = racesForContext.find(r => r.id === raceId);
+    if (!race) return;
+    clearArrivalDrag();
     currentRace = race;
     currentRaceId = race.id;
-    followLatest = race.id === latestRace?.id;
     localReps = {};
     stationNoteSelectedPid = null;
     subscribeToEvaluatorArrival(race);
@@ -2274,12 +2361,14 @@
     nav.style.display = show ? '' : 'none';
     if (!show) {
       tabs.innerHTML = '';
+      roundNavigationSignature = '';
+      roundNavigationSelectedId = null;
       document.getElementById('live-round-banner').style.display = 'none';
       return;
     }
 
     const nowMs = Date.now();
-    tabs.innerHTML = racesForContext.map(race => {
+    const html = racesForContext.map(race => {
       const selected = race.id === currentRaceId;
       const running = isSessionEffectivelyRunning(race, nowMs);
       const elapsedMs = effectiveSessionElapsedMs(race, nowMs);
@@ -2294,15 +2383,23 @@
         סבב ${Number(race.round || 0)}<span class="round-state">${escHtml(state)}</span>
       </button>`;
     }).join('');
+    if (html !== roundNavigationSignature) {
+      tabs.innerHTML = html;
+      roundNavigationSignature = html;
+    }
 
     const index = racesForContext.findIndex(r => r.id === currentRaceId);
     const canBrowse = canEvaluate() && !isOperator();
     document.getElementById('round-older-btn').disabled = !canBrowse || index <= 0;
     document.getElementById('round-newer-btn').disabled = !canBrowse || index < 0 || index >= racesForContext.length - 1;
 
-    requestAnimationFrame(() => {
-      tabs.querySelector('.round-tab.selected')?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-    });
+    if (roundNavigationSelectedId !== currentRaceId) {
+      roundNavigationSelectedId = currentRaceId;
+      const selectedId = currentRaceId;
+      requestAnimationFrame(() => {
+        if (currentRaceId === selectedId) tabs.querySelector('.round-tab.selected')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      });
+    }
   }
 
   // ═════════ Rendering ═════════
@@ -2317,7 +2414,9 @@
       .map(String)
       .filter(pid => !placedIds.has(pid))
       .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
-    const canReorder = canEvaluate() && placed.length > 1 && !arrivalOrderSaving && !evaluatorArrivalLoading;
+    const state = currentArrivalState();
+    const savingIds = new Set(state?.pendingIds || []);
+    const canReorder = canEvaluate() && placed.length > 1 && !arrivalOrderSaving && state?.canReorder;
 
     const arrivedHtml = placed.map((entry, index) => {
       const pidRaw = String(entry.participantId);
@@ -2336,7 +2435,7 @@
                 onclick="event.stopPropagation()"
                 onpointerdown="startArrivalDrag(event)">⠿</button>
         <span class="arrival-place">${index + 1}</span>
-        <span class="arrival-pid-wrap"><span class="arrival-pid">${pid}</span>${comments}</span>
+        <span class="arrival-pid-wrap"><span class="arrival-pid">${pid}</span>${comments}${savingIds.has(pidRaw) ? '<span class="arrival-comments-count">ממתין לשמירה</span>' : ''}</span>
         <span class="arrival-actions">
           <button type="button" class="arrival-move-btn"${upDisabled}
                   aria-label="העבר את משתתף ${pid} מקום אחד למעלה"
@@ -2362,10 +2461,10 @@
 
     list.innerHTML = arrivedHtml + pendingHtml;
     list.dataset.raceId = currentRace?.id || '';
-    list.dataset.arrivalSignature = arrivalOrderSignature(arrival);
+    list.dataset.revision = String(state?.confirmed.revision || 0);
     list.setAttribute('role', 'list');
     list.setAttribute('aria-label', 'סדר הגעה ומשתתפים שטרם הגיעו');
-    count.textContent = `${placed.length} / ${participants.length}`;
+    count.textContent = `${state?.confirmed.order.length || 0} / ${participants.length}${savingIds.size ? ` · ${savingIds.size} בשמירה` : ''}`;
     empty.style.display = placed.length === 0 && pending.length === 0 ? '' : 'none';
     list.style.display = placed.length === 0 && pending.length === 0 ? 'none' : '';
     if (!arrivalOrderSaving) {
@@ -2375,6 +2474,25 @@
           ? 'מוצג סדר ישן. השינוי הבא יישמר אצלך בנפרד.'
           : '');
     }
+  }
+
+  function renderArrivalGrid(grid, allSorted, finishedIds, raceId, canMark) {
+    const layout = JSON.stringify([raceId, allSorted.map(item => item.id)]);
+    if (grid.dataset.arrivalLayout !== layout) {
+      grid.innerHTML = allSorted.map(({ id }) => `
+        <button class="participant-btn" data-pid="${escHtml(id)}"
+                onclick="markFinished(this.dataset.pid, this.dataset.raceId)"
+                data-race-id="${escHtml(raceId)}">${escHtml(id)}</button>`).join('');
+      grid.dataset.arrivalLayout = layout;
+    }
+    grid.querySelectorAll('.participant-btn').forEach(button => {
+      const marked = finishedIds.has(button.dataset.pid);
+      button.classList.toggle('is-marked', marked);
+      button.disabled = marked || !canMark;
+      if (marked) button.setAttribute('aria-hidden', 'true');
+      else button.removeAttribute('aria-hidden');
+      button.setAttribute('aria-label', `משתתף ${button.dataset.pid}${marked ? ' כבר סומן' : ' — סמן הגעה'}`);
+    });
   }
 
   function renderRace() {
@@ -2410,7 +2528,7 @@
     renderStickyRound(currentRace.round || 1, statusLabel);
     setText('hdr-progress',
       !canEvaluate() ? '—'
-      : measure === 'place' ? (finished.length + ' / ' + participants.length)
+      : measure === 'place' ? ((currentArrivalState()?.confirmed.order.length || 0) + ' / ' + participants.length)
       : measure === 'reps' ? (Object.keys(repsByPid).length + ' / ' + participants.length)
       : '—');
 
@@ -2438,6 +2556,7 @@
           <span class="reps-pid">${escHtml(id)}</span><span class="reps-count">${c}</span>
         </button>`;
       }).join('');
+      delete grid.dataset.arrivalLayout;
       gridCount.textContent = allSorted.length + ' משתתפים';
       gridEmpty.textContent = 'אין משתתפים להצגה.';
       gridEmpty.style.display = allSorted.length === 0 ? '' : 'none';
@@ -2453,14 +2572,8 @@
       // כל המספרים נשארים בגריד בסדר קבוע. משתתף שסומן מוסתר בתוך התא שלו,
       // כך שלחיצה לעולם אינה מזיזה את שאר הכפתורים.
       const allSorted = stableParticipantGridItems(participants, finishedIds);
-      grid.innerHTML = evaluatorArrivalLoading ? '' : allSorted.map(({ id, marked }) => {
-        const disabled = marked || arrivalOrderSaving;
-        return `
-        <button class="participant-btn${marked ? ' is-marked' : ''}" data-pid="${escHtml(id)}"
-                ${disabled ? 'disabled' : ''} ${marked ? 'aria-hidden="true"' : ''}
-                aria-label="${marked ? 'משתתף ' + escHtml(id) + ' כבר סומן' : 'סמן הגעה של משתתף ' + escHtml(id)}"
-                onclick="markFinished('${escHtml(id)}')">${escHtml(id)}</button>
-      `; }).join('');
+      renderArrivalGrid(grid, allSorted, finishedIds, currentRace.id,
+        currentArrivalState()?.canMark && !arrivalOrderSaving && !arrivalDragState);
       gridCount.textContent = evaluatorArrivalLoading
         ? 'טוען…'
         : (remaining.length === 0 ? '✓ כולם סומנו' : remaining.length + ' נותרו');
@@ -2542,13 +2655,12 @@
 
   function renderLiveRoundBanner(nowMs = Date.now()) {
     const banner = document.getElementById('live-round-banner');
-    const show = canEvaluate() && supportsRoundTabs() && isSessionEffectivelyRunning(latestRace, nowMs) &&
+    const show = canEvaluate() && supportsRoundTabs() && latestRace &&
       currentRaceId && currentRaceId !== latestRace.id;
     banner.style.display = show ? '' : 'none';
     if (!show) return;
-    setText('live-round-label', `סבב ${latestRace.round} פעיל`);
-    const elapsedMs = effectiveSessionElapsedMs(latestRace, nowMs);
-    setText('live-round-time', elapsedMs == null ? '00:00.00' : formatMMSS(elapsedMs));
+    setText('live-round-label', `סבב ${latestRace.round} זמין · ${isSessionEffectivelyRunning(latestRace, nowMs) ? 'פעיל' : 'הסתיים'}`);
+    setText('live-round-time', `בתצוגה: סבב ${currentRace.round}`);
   }
 
   function queueExpiredSessionFinalization(race) {
@@ -2691,74 +2803,14 @@
     }
   };
 
-  async function mutateEvaluatorArrival(raceId, mutate) {
-    const raceRef = doc(db, 'races', raceId);
-    const resultRef = evaluatorArrivalRef(raceId);
-    return runTransaction(db, async (transaction) => {
-      const raceSnap = await transaction.get(raceRef);
-      if (!raceSnap.exists()) throw new Error('הסבב לא נמצא');
-      const resultSnap = await transaction.get(resultRef);
-      const race = { id: raceSnap.id, ...raceSnap.data() };
-      const stored = resultSnap.exists() ? resultSnap.data() : null;
-      const base = evaluatorArrivalStateForRace(race, stored);
-      const next = mutate({
-        ...base,
-        participantIds: base.participantIds.slice(),
-        order: base.order.slice(),
-        slotTimes: { ...base.slotTimes }
-      }, race);
-
-      const payload = {
-        evaluatorUid: currentUser.uid,
-        participantIds: uniqueParticipantIds(next.participantIds),
-        order: uniqueParticipantIds(next.order),
-        slotTimes: next.slotTimes && typeof next.slotTimes === 'object' ? next.slotTimes : {},
-        schemaVersion: 1,
-        createdAt: stored?.createdAt || serverTimestamp(),
-        updatedAt: serverTimestamp()
-      };
-      if (Object.prototype.hasOwnProperty.call(next, 'completedAt')) {
-        payload.completedAt = next.completedAt;
-      }
-      transaction.set(resultRef, payload);
-      return { ...payload, source: 'personal' };
-    });
-  }
-
-  window.markFinished = async (participantId) => {
-    if (!canEvaluate() || !currentRace || !supportsRoundTabs() ||
-        currentStationType()?.measure !== 'place') {
-      showToast('סימון סדר הגעה אינו זמין בתחנה זו', 'error'); return;
-    }
-    if (evaluatorArrivalLoading || arrivalOrderSaving) return;
-    const raceId = currentRace.id;
-    const pid = String(participantId);
-    arrivalOrderSaving = true;
-    renderRace();
+  window.markFinished = (participantId, raceId = currentRaceId) => {
+    if (!canEvaluate() || !currentRace || currentRace.id !== raceId || !supportsRoundTabs() ||
+        currentStationType()?.measure !== 'place' || arrivalDragState || arrivalOrderSaving) return;
     try {
-      await mutateEvaluatorArrival(raceId, (arrival) => {
-        if (!arrival.participantIds.includes(pid)) {
-          throw new Error('המשתתף אינו שייך לסבב הזה');
-        }
-        if (arrival.order.includes(pid)) throw new Error('משתתף כבר סומן');
-        const order = arrival.order.concat(pid);
-        const place = order.length;
-        const next = {
-          ...arrival,
-          order,
-          slotTimes: { ...arrival.slotTimes, [String(place)]: serverTimestamp() }
-        };
-        if (order.length === arrival.participantIds.length) {
-          next.completedAt = arrival.completedAt || serverTimestamp();
-        }
-        return next;
-      });
-    } catch (e) {
-      showToast('שגיאה בסימון: ' + e.message, 'error');
-    } finally {
-      arrivalOrderSaving = false;
-      if (currentRaceId === raceId) renderRace();
-    }
+      if (!arrivalControllerFor(currentRace).append(participantId)) {
+        showToast('הסימון לא התקבל. בדוק את מצב השמירה ונסה שוב.', 'error');
+      }
+    } catch (error) { showToast('שגיאה בסימון: ' + error.message, 'error'); }
   };
 
   function arrivalRows(list) {
@@ -2798,7 +2850,7 @@
     if (status) status.textContent = busy ? 'שומר את סדר ההגעה…' : '';
   }
 
-  async function persistArrivalOrder(list, order, expectedSignature, raceId) {
+  async function persistArrivalOrder(list, order, expectedRevision, raceId) {
     if (arrivalOrderSaving) return;
     if (!canEvaluate() || !raceId || currentStationType()?.measure !== 'place') {
       showToast('אין הרשאה לשנות את סדר ההגעה', 'error');
@@ -2809,19 +2861,14 @@
     arrivalOrderSaving = true;
     setArrivalListBusy(list, true);
     try {
-      await mutateEvaluatorArrival(raceId, arrival => {
-        if (arrivalOrderSignature(arrival) !== expectedSignature) {
-          throw new Error('סדר ההגעה השתנה במסך אחר. הרשימה רועננה — נסה שוב.');
-        }
-        return arrivalWithOrder(arrival, order);
-      });
+      await arrivalControllers.get(raceId).controller.reorder(order, expectedRevision);
       showToast('סדר ההגעה נשמר', 'success');
     } catch (e) {
       showToast(e.message || 'שגיאה בשמירת סדר ההגעה', 'error');
     } finally {
       arrivalOrderSaving = false;
       setArrivalListBusy(list, false);
-      if (currentRace?.id === raceId) renderRace();
+      renderRace();
     }
   }
 
@@ -2858,7 +2905,7 @@
     const changed = !cancelled && sameContext && order.join('|') !== state.originalOrder.join('|');
     arrivalDragState = null;
     if (changed) {
-      persistArrivalOrder(state.list, order, state.signature, state.raceId);
+      persistArrivalOrder(state.list, order, state.revision, state.raceId);
     } else if (currentRace?.id === state.raceId) {
       renderRace();
     }
@@ -2868,10 +2915,21 @@
     finishArrivalDrag(event, true);
   }
 
+  function clearArrivalDrag() {
+    const state = arrivalDragState;
+    if (!state) return;
+    state.handle.removeEventListener('pointermove', onArrivalDragMove);
+    state.handle.removeEventListener('pointerup', finishArrivalDrag);
+    state.handle.removeEventListener('pointercancel', cancelArrivalDrag);
+    try { state.handle.releasePointerCapture(state.pointerId); } catch (error) {}
+    state.row.classList.remove('dragging');
+    arrivalDragState = null;
+  }
+
   window.startArrivalDrag = event => {
     event.preventDefault();
     event.stopPropagation();
-    if (arrivalOrderSaving || arrivalDragState || !canEvaluate()) return;
+    if (arrivalOrderSaving || arrivalDragState || !canEvaluate() || !currentArrivalState()?.canReorder) return;
     const handle = event.currentTarget;
     const row = handle.closest('.arrival-row.arrived');
     const list = row?.parentElement;
@@ -2880,7 +2938,7 @@
     arrivalDragState = {
       pointerId: event.pointerId,
       raceId: list.dataset.raceId,
-      signature: list.dataset.arrivalSignature || '',
+      revision: Number(list.dataset.revision || 0),
       originalOrder: arrivalOrderFromList(list),
       list, row, handle
     };
@@ -2894,7 +2952,7 @@
   window.moveArrivalParticipant = (event, participantId, delta) => {
     event.preventDefault();
     event.stopPropagation();
-    if (arrivalOrderSaving || arrivalDragState || !canEvaluate()) return;
+    if (arrivalOrderSaving || arrivalDragState || !canEvaluate() || !currentArrivalState()?.canReorder) return;
     const list = event.currentTarget.closest('.finished-list');
     if (!list || list.dataset.raceId !== currentRace?.id) return;
     const originalOrder = arrivalOrderFromList(list);
@@ -2904,7 +2962,7 @@
     if (order.join('|') === originalOrder.join('|')) return;
     arrangeArrivalRows(list, order);
     refreshArrivalPreview(list);
-    persistArrivalOrder(list, order, list.dataset.arrivalSignature || '', list.dataset.raceId);
+    persistArrivalOrder(list, order, Number(list.dataset.revision || 0), list.dataset.raceId);
   };
 
   window.endSession = async () => {
@@ -4314,10 +4372,9 @@
       if (token !== candidateState.loadingToken) return;
       const personalArrivalsByRace = new Map();
       for (const race of placeRaces) {
-        personalArrivalsByRace.set(
-          String(race.id),
-          personalArrivalFrom(arrivalsByRace.get(String(race.id)))
-        );
+        const controller = arrivalControllerFor(race);
+        controller.seed(evaluatorArrivalStateForRace(race, personalArrivalFrom(arrivalsByRace.get(String(race.id)))));
+        personalArrivalsByRace.set(String(race.id), controller.state().confirmed);
       }
       candidateState.races = races;
       candidateState.assessmentsByRace = assessmentsByRace;
@@ -4537,32 +4594,20 @@
 
   window.moveCandidatePlace = async (raceId, direction) => {
     const pid = candidateState.participantId;
-    if (!pid) return;
+    const race = candidateState.races.find(item => item.id === raceId);
+    if (!pid || !race || !canEvaluate()) return;
+    const controller = arrivalControllerFor(race);
     try {
-      const updated = await mutateEvaluatorArrival(raceId, arrival => {
-        const order = arrival.order.slice();
-        const index = order.indexOf(pid);
-        if (direction === 'append') {
-          if (index < 0) order.push(pid);
-        } else if (index >= 0) {
-          const target = Math.max(0, Math.min(order.length - 1, index + Number(direction)));
-          if (target !== index) [order[index], order[target]] = [order[target], order[index]];
-        }
-        const appended = direction === 'append' && index < 0;
-        if (appended && !arrival.participantIds.includes(pid)) {
-          throw new Error('המועמד אינו ברשימת הסבב');
-        }
-        const next = appended ? { ...arrival, order } : arrivalWithOrder(arrival, order);
-        if (appended) {
-          next.slotTimes = { ...next.slotTimes, [String(order.length)]: serverTimestamp() };
-          if (order.length === arrival.participantIds.length) {
-            next.completedAt = arrival.completedAt || serverTimestamp();
-          }
-        }
-        return next;
-      });
-      candidateState.arrivalsByRace.set(raceId, updated);
-      rebuildCandidateSummary();
+      if (direction === 'append') {
+        if (!controller.append(pid)) throw new Error('יש להמתין לשמירה או לנסות שוב לאחר שגיאה.');
+      } else {
+        const arrival = controller.state().confirmed;
+        const index = arrival.order.indexOf(pid);
+        if (index < 0) return;
+        const order = moveParticipantInOrder(arrival.order, pid, index + Number(direction));
+        if (order.join('|') === arrival.order.join('|')) return;
+        await controller.reorder(order, arrival.revision);
+      }
     } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + error.message, 'error'); }
   };
 

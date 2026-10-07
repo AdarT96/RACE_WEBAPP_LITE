@@ -13,10 +13,84 @@ import {
 } from '../frontend/js/issue-report.js';
 import { createEventSetupRepository } from './helpers/event-setup-repository.js';
 import { createScheduleRepository } from './helpers/schedule-repository.js';
+import { createArrivalRepository } from './helpers/arrival-repository.js';
 import { candidateRowsFromMatrix, buildCandidateRosterImport } from '../frontend/js/candidate-roster-import.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
 let testEnv;
+
+const arrivalState = (race, value) => value || { participantIds:race.participantIds, order:[], slotTimes:{} };
+const arrivalReference = (db, uid = 'evaluator1') => doc(db, 'races', 'race_01_07_1', 'evaluatorArrivals', uid);
+
+test('arrival repository is idempotent, captures identity, separates evaluators and preserves place times on historical reorder', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'races', 'race_01_07_1'), {
+      participantIds:['100','320','8'], status:'stopped'
+    });
+  });
+  const db = userDb('evaluator1'), identity = {uid:'evaluator1'};
+  const repo = createArrivalRepository(db, identity, arrivalState);
+  identity.uid = 'evaluator2'; // a later auth mutation must not retarget an in-flight writer
+  const append = pid => repo.mutate('race_01_07_1', {type:'append', pid});
+  await append('100');
+  const first = (await getDoc(arrivalReference(db))).data();
+  assert.equal(first.revision, 1);
+  await append('100');
+  assert.equal((await getDoc(arrivalReference(db))).data().revision, 1);
+  await append('320'); await append('8');
+  const complete = (await getDoc(arrivalReference(db))).data();
+  assert.equal(complete.revision, 3);
+  assert.ok(complete.completedAt.toMillis() > 0);
+  await repo.mutate('race_01_07_1', {type:'reorder', order:['8','320','100'], expectedRevision:3});
+  const reordered = (await getDoc(arrivalReference(db))).data();
+  assert.deepEqual(reordered.order, ['8','320','100']);
+  assert.deepEqual(reordered.slotTimes, complete.slotTimes);
+  assert.deepEqual(reordered.completedAt, complete.completedAt);
+  await assert.rejects(repo.mutate('race_01_07_1', {type:'reorder', order:['100','320','8'], expectedRevision:3}), /השתנה/);
+  await assert.rejects(append('999'), /ברשימת הסבב/);
+  const db2 = userDb('evaluator2');
+  await createArrivalRepository(db2, {uid:'evaluator2'}, arrivalState).mutate('race_01_07_1', {type:'append',pid:'8'});
+  assert.deepEqual((await getDoc(arrivalReference(db2,'evaluator2'))).data().order, ['8']);
+  await assertFails(getDoc(arrivalReference(db2)));
+  await assertFails(getDoc(arrivalReference(userDb('operator1'))));
+});
+
+test('concurrent arrival transactions retain both marks and duplicate commands add only one place', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(),'races','race_01_07_1'), {participantIds:['100','320','8']});
+  });
+  const db = userDb('evaluator1');
+  const repo = createArrivalRepository(db,{uid:'evaluator1'},arrivalState);
+  await Promise.all(['100','320','100'].map(pid => repo.mutate('race_01_07_1',{type:'append',pid})));
+  const data = (await getDoc(arrivalReference(db))).data();
+  assert.deepEqual([...data.order].sort(), ['100','320']);
+  assert.equal(data.revision, 2);
+  assert.equal(Object.keys(data.slotTimes).length, 2);
+});
+
+test('arrival revision upgrades legacy documents and rejects stale or unversioned replacements even by admin', async () => {
+  const db = userDb('evaluator1'), ref = arrivalReference(db);
+  const legacy = {
+    evaluatorUid:'evaluator1', participantIds:['100'], order:[], slotTimes:{},
+    schemaVersion:1, createdAt:serverTimestamp(), updatedAt:serverTimestamp()
+  };
+  await assertFails(setDoc(ref,{...legacy,revision:0}));
+  await assertFails(setDoc(ref,{...legacy,revision:2}));
+  await assertSucceeds(setDoc(ref,legacy));
+  await assertSucceeds(updateDoc(ref,{updatedAt:serverTimestamp()}));
+  await createArrivalRepository(db,{uid:'evaluator1'},arrivalState).mutate('race_01_07_1',{type:'append',pid:'100'});
+  const upgraded = (await getDoc(ref)).data();
+  assert.equal(upgraded.revision,1);
+  const {revision, ...withoutRevision} = upgraded;
+  await assertFails(setDoc(ref,{...withoutRevision,updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{revision:1,updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{revision:3,updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{revision:2.5,updatedAt:serverTimestamp()}));
+  const adminRef = arrivalReference(userDb('admin1'));
+  await assertFails(setDoc(adminRef,{...withoutRevision,updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(adminRef,{revision:0,updatedAt:serverTimestamp()}));
+  await assertSucceeds(updateDoc(ref,{revision:2,updatedAt:serverTimestamp()}));
+});
 
 test('source workbook headers import all ten teams without a schedule, with a private diagnostic record', async () => {
   const db=userDb('admin1');
