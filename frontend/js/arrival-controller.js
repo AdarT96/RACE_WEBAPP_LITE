@@ -16,7 +16,7 @@ export function createArrivalController({ raceId, repository, initial, onChange 
       confirmed, arrival:{ ...confirmed, order }, pendingIds,
       pendingCount:queue.length, writing, ready,
       error:queue[0]?.error || listenerError,
-      canMark:!disposed && ready && !listenerError && !queue[0]?.error && !queue.some(command => command.type === 'reorder'),
+      canMark:!disposed && ready && !listenerError && !queue[0]?.error && !queue.some(command => command.type !== 'append'),
       canReorder:!disposed && ready && !listenerError && queue.length === 0
     };
   }
@@ -62,8 +62,8 @@ export function createArrivalController({ raceId, repository, initial, onChange 
       command.resolve?.(confirmed);
     } catch (error) {
       if (disposed) return;
-      // A reorder conflict needs a fresh explicit choice, never replay an old permutation.
-      if (command.type === 'reorder') {
+      // An edit conflict needs a fresh explicit choice, never replay an old position.
+      if (command.type !== 'append') {
         queue.shift(); command.reject(error);
         disconnect(); ready = false; connect();
       } else command.error = error;
@@ -71,6 +71,13 @@ export function createArrivalController({ raceId, repository, initial, onChange 
       writing = false;
       if (!disposed) { notify(); releaseIfIdle(); pump(); }
     }
+  }
+  function edit(command) {
+    if (!state().canReorder) return Promise.reject(new Error('יש להמתין לשמירת הסימונים לפני שינוי סדר.'));
+    return new Promise((resolve, reject) => {
+      queue.push({ ...command, resolve, reject });
+      connect(); notify(); pump();
+    });
   }
   return {
     state, accept,
@@ -86,11 +93,10 @@ export function createArrivalController({ raceId, repository, initial, onChange 
       connect(); notify(); pump(); return true;
     },
     reorder(order, expectedRevision) {
-      if (!state().canReorder) return Promise.reject(new Error('יש להמתין לשמירת הסימונים לפני שינוי סדר.'));
-      return new Promise((resolve, reject) => {
-        queue.push({ type:'reorder', order:[...order], expectedRevision, resolve, reject });
-        connect(); notify(); pump();
-      });
+      return edit({ type:'reorder', order:[...order], expectedRevision });
+    },
+    place(participantId, targetIndex, expectedRevision) {
+      return edit({ type:'place', pid:String(participantId), targetIndex, expectedRevision });
     },
     retry() {
       if (disposed || writing) return;

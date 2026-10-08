@@ -17,11 +17,11 @@ class Surface {
   get listenerCount() { return [...this.handlers.values()].reduce((n, list) => n + list.size, 0); }
 }
 
-function harness({captureFails = false} = {}) {
+function harness({captureFails = false, pending = [], initial = ['8','100','320']} = {}) {
   const document = new Surface(), window = new Surface(), list = new Surface();
   list.dataset = {raceId:'r1', revision:'7'};
-  const writes = [], captures = [], initial = ['8','100','320'];
-  let rows, captured = null, context;
+  const writes = [], placements = [], captures = [], ghosts = [];
+  let rows, elements, captured = null, context;
   const event = (extra = {}) => ({
     pointerId:1, button:0, isPrimary:true, clientX:40, clientY:200,
     preventDefault(){}, stopPropagation(){}, ...extra
@@ -39,26 +39,42 @@ function harness({captureFails = false} = {}) {
     };
     surface.releasePointerCapture = () => { if (captured === surface) loseCapture(); };
   }
-  rows = initial.map(id => {
-    const classes = new Set(), handle = new Surface();
+  rows = [...initial, ...pending].map(id => {
+    const classes = new Set([initial.includes(id) ? 'arrived' : 'pending']), handle = new Surface();
     const row = {
       dataset:{pid:id}, parentElement:list, handle,
-      classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c)},
+      classList:{add:c=>classes.add(c),remove:c=>classes.delete(c),contains:c=>classes.has(c),
+        toggle:(c,on)=>on?classes.add(c):classes.delete(c)},
       closest:()=>row,
-      getBoundingClientRect:()=>({top:150 + rows.indexOf(row)*80,height:80}),
-      get nextSibling(){return rows[rows.indexOf(row)+1] || null;}
+      getBoundingClientRect:()=>({left:10,width:350,top:150 + elements.indexOf(row)*80,height:80}),
+      cloneNode:()=>({style:{},classList:{add(){},remove(){}},setAttribute(){},remove(){this.removed=true;}}),
+      get nextSibling(){return elements[elements.indexOf(row)+1] || null;}
     };
     handle.closest = () => row; captureOn(handle);
     return row;
   });
+  const zone = name => {
+    const node = {parentElement:list,classList:{contains:c=>c===name},
+      getBoundingClientRect:()=>({top:150+elements.indexOf(node)*80,height:40}),
+      get nextSibling(){return elements[elements.indexOf(node)+1] || null;}};
+    node.closest=()=>node;return node;
+  };
+  const start=zone('arrival-drop-start'), boundary=zone('arrival-divider');
+  const restore=()=>{
+    rows.forEach(row=>{row.classList.toggle('arrived',initial.includes(row.dataset.pid));row.classList.toggle('pending',!initial.includes(row.dataset.pid));});
+    elements=[start,...rows.filter(row=>initial.includes(row.dataset.pid)),boundary,...rows.filter(row=>pending.includes(row.dataset.pid))];
+  };
+  restore();
+  list.querySelector=()=>boundary;
+  document.body={appendChild:ghost=>ghosts.push(ghost)};
   captureOn(list);
   list.insertBefore = (row, next) => {
     // Browser DOM movement removes/reinserts descendants and can release their
     // pointer capture. This reproduces the old moving-handle lifecycle bug.
     if (captured === row.handle) loseCapture();
     if (row === next) return;
-    rows.splice(rows.indexOf(row),1);
-    rows.splice(next ? rows.indexOf(next) : rows.length,0,row);
+    elements.splice(elements.indexOf(row),1);
+    elements.splice(next ? elements.indexOf(next) : elements.length,0,row);
   };
   let target = rows[0];
   document.elementFromPoint = () => target;
@@ -66,10 +82,11 @@ function harness({captureFails = false} = {}) {
   context = vm.createContext({
     document,window,currentRace:{id:'r1'},arrivalDragState:null,arrivalOrderSaving:false,
     canEvaluate:()=>true,currentArrivalState:()=>({canReorder:true}),
-    arrivalRows:()=>rows,arrivalOrderFromList:()=>rows.map(row=>row.dataset.pid),
+    arrivalRows:()=>elements.filter(row=>row.classList.contains('arrived')),
+    arrivalOrderFromList:()=>elements.filter(row=>row.classList.contains('arrived')).map(row=>row.dataset.pid),
     refreshArrivalPreview:()=>{},
-    persistArrivalOrder:(list,order,revision,raceId)=>writes.push({order,revision,raceId}),
-    renderRace:()=>rows.sort((a,b)=>initial.indexOf(a.dataset.pid)-initial.indexOf(b.dataset.pid))
+    persistArrivalOrder:(list,order,revision,raceId,placement)=>{writes.push({order,revision,raceId});placements.push(placement);},
+    renderRace:restore
   });
   vm.runInContext(functions,context);
   function send(type, extra = {}) {
@@ -80,9 +97,10 @@ function harness({captureFails = false} = {}) {
     document.emit(type,e);
   }
   return {
-    context,list,document,window,writes,captures,rows:()=>rows,
+    context,list,document,window,writes,placements,captures,ghosts,rows:()=>elements.filter(row=>row.dataset),
     start(id='8',extra={}){context.window.startArrivalDrag(event({currentTarget:rows.find(r=>r.dataset.pid===id).handle,...extra}));},
     moveTo(id,after=true){target=rows.find(r=>r.dataset.pid===id);send('pointermove',{clientY:target.getBoundingClientRect().top+(after?65:10)});},
+    moveToZone(name){target=name==='pending'?boundary:start;send('pointermove',{clientY:target.getBoundingClientRect().top+10});},
     send,loseCapture
   };
 }
@@ -139,4 +157,35 @@ test('other pointers and context changes cannot commit a drag into a different r
   h.start();h.moveTo('320');h.send('pointerup',{pointerId:2});assert.ok(h.context.arrivalDragState);
   h.context.currentRace={id:'r2'};h.context.clearArrivalDrag();h.send('pointerup');
   assert.deepEqual(h.writes,[]);assert.equal(h.context.arrivalDragState,null);
+});
+
+test('unmarked row drags into a chosen rank with a visible ghost and one atomic placement', () => {
+  const h=harness({pending:['7']});h.start('7');h.moveTo('100',false);
+  assert.equal(h.ghosts.length,1);
+  assert.match(h.ghosts[0].style.transform,/translate3d/);
+  assert.equal(h.rows().find(r=>r.dataset.pid==='7').classList.contains('dragging'),true);
+  h.send('pointerup');
+  assert.deepEqual(h.writes[0].order,['8','7','100','320']);
+  assert.equal(h.placements[0].pid,'7');assert.equal(h.placements[0].targetIndex,1);
+  assert.equal(h.ghosts[0].removed,true);
+});
+
+test('ranked row can return to gray even when everybody has arrived', () => {
+  const h=harness();h.start('100');h.moveToZone('pending');h.send('pointerup');
+  assert.deepEqual(h.writes[0].order,['8','320']);
+  assert.equal(h.placements[0].pid,'100');assert.equal(h.placements[0].targetIndex,null);
+});
+
+test('first participant can be dragged from gray into an empty ranking', () => {
+  const h=harness({initial:[],pending:['7']});h.start('7');h.moveToZone('start');h.send('pointerup');
+  assert.deepEqual(h.writes[0].order,['7']);
+  assert.equal(h.placements[0].targetIndex,0);
+});
+
+test('gray-to-gray movement does not mark arrival and cancellation removes its ghost', () => {
+  const h=harness({pending:['7','9']});h.start('7');h.moveTo('9');h.send('pointerup');
+  assert.equal(h.writes.length,0);assert.equal(h.ghosts[0].removed,true);
+  h.start('7');h.moveTo('100');h.send('pointercancel');
+  assert.equal(h.writes.length,0);assert.equal(h.ghosts[1].removed,true);
+  assert.equal(h.rows().find(r=>r.dataset.pid==='7').classList.contains('pending'),true);
 });

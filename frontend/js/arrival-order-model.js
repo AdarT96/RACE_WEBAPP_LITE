@@ -58,3 +58,24 @@ export function arrivalWithOrder(arrival, orderedParticipantIds) {
   }
   return { ...arrival, order };
 }
+
+// Positions own timestamps, not participants. Removing an arrival releases the
+// last occupied time slot; inserting one allocates only the new last slot.
+export function arrivalWithPlacement(arrival, participantId, targetIndex, markedAt) {
+  const pid = String(participantId);
+  if (!arrival.participantIds.includes(pid)) throw new Error('המועמד אינו ברשימת הסבב');
+  const order = arrival.order.filter(id => id !== pid);
+  if (targetIndex !== null) {
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex > order.length) {
+      throw new Error('מקום ההגעה אינו תקין');
+    }
+    order.splice(targetIndex, 0, pid);
+  }
+  const slotTimes = Object.fromEntries(Object.entries(arrival.slotTimes || {})
+    .filter(([place]) => Number(place) >= 1 && Number(place) <= order.length));
+  if (order.length > arrival.order.length) slotTimes[String(order.length)] = markedAt;
+  const next = { ...arrival, order, slotTimes };
+  if (order.length === arrival.participantIds.length) next.completedAt = arrival.completedAt || markedAt;
+  else delete next.completedAt;
+  return next;
+}

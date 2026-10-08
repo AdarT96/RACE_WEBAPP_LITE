@@ -253,3 +253,24 @@ test('inactive candidate controller waits for fresh snapshot after reorder confl
   assert.equal(h.writes.length, 1);
   h.controller.dispose();
 });
+
+test('placement is an exclusive versioned command and refreshes after a conflict without replay', async () => {
+  const h=harness();h.snapshot(value(2,['100','320']));
+  const placement=h.controller.place('8',0,2);
+  const rejected=assert.rejects(placement,/conflict/);
+  assert.equal(h.controller.state().canMark,false);
+  assert.equal(h.controller.append('8'),false);
+  await assert.rejects(h.controller.reorder(['320','100'],2));
+  assert.equal(h.writes[0].command.type,'place');
+  assert.equal(h.writes[0].command.expectedRevision,2);
+  h.writes[0].reject(new Error('conflict'));await rejected;
+  h.snapshot(value(3,['8','100','320']));await tick();
+  assert.equal(h.writes.length,1);
+  const undo=h.controller.place('8',null,3);
+  h.writes[1].resolve(value(4,['100','320']));await undo;
+  assert.deepEqual(h.controller.state().arrival.order,['100','320']);
+  assert.equal(h.controller.state().canMark,true);
+  h.snapshot(value(3,['8','100','320']));
+  assert.deepEqual(h.controller.state().arrival.order,['100','320']);
+  h.controller.dispose();
+});
