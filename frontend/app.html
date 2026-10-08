@@ -268,9 +268,16 @@
     }
     .arrival-row.arrived:hover { background: rgba(52,211,153,0.20); }
     .arrival-row.dragging {
-      opacity: .72; border-color: var(--accent); background: rgba(99,102,241,.20);
-      box-shadow: 0 8px 22px rgba(0,0,0,.28);
+      opacity: .35; border: 2px dashed var(--accent); background: rgba(99,102,241,.20);
     }
+    .arrival-row.arrival-drag-ghost {
+      position: fixed; top: 0; left: 0; z-index: 10000; pointer-events: none;
+      box-sizing: border-box; background: var(--surface); opacity: .95;
+      box-shadow: 0 8px 22px rgba(0,0,0,.28); border: 2px solid var(--accent);
+      will-change: transform; transition: none;
+    }
+    .arrival-drop-start, .arrival-divider { min-height: 36px; }
+    .arrival-drop-start { color: var(--text-muted); font-size: 11px; padding: 8px; }
     .arrival-drag-handle, .arrival-move-btn {
       display: inline-flex; align-items: center; justify-content: center;
       width: 32px; height: 32px; padding: 0; border: 1px solid var(--border);
@@ -295,6 +302,7 @@
     .arrival-pid-wrap { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
     .arrival-comments-count { color: var(--text-muted); font-size: 10px; white-space: nowrap; }
     .arrival-actions { display: inline-flex; gap: 3px; direction: ltr; }
+    .arrival-actions > button { flex-shrink: 0; }
     .arrival-move-btn { cursor: pointer; font-size: 15px; }
     .arrival-divider {
       display: flex; align-items: center; gap: 8px; margin: 8px 0 2px;
@@ -323,10 +331,10 @@
 
     @media (max-width: 430px) {
       .arrival-row, .arrival-row.pending {
-        grid-template-columns: 30px 28px minmax(32px, 1fr) 60px;
+        grid-template-columns: 32px 28px minmax(32px, 1fr) auto;
         gap: 4px; padding: 5px 6px;
       }
-      .arrival-drag-handle, .arrival-move-btn { width: 28px; height: 31px; }
+      .arrival-drag-handle, .arrival-move-btn { width: 32px; height: 36px; }
       .arrival-actions { gap: 2px; }
       .arrival-pid { font-size: 16px; }
     }
@@ -815,7 +823,7 @@
         </span>
       </summary>
       <div class="section-body">
-        <p class="arrival-order-help">גרור באמצעות הידית או השתמש בחצים כדי לתקן את הסדר.</p>
+        <p class="arrival-order-help">גרור באמצעות ⠿ להוספה ולשינוי מקום. החזרה לאפור מבטלת הגעה. אפשר גם להשתמש ב־+ / × ובחצים.</p>
         <div id="arrival-order-status" class="arrival-order-status" aria-live="polite"></div>
         <div id="finished-list" class="finished-list"></div>
         <div id="finished-empty" style="text-align:center; padding:20px; color:var(--text-muted); display:none">
@@ -2416,7 +2424,7 @@
       .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
     const state = currentArrivalState();
     const savingIds = new Set(state?.pendingIds || []);
-    const canReorder = canEvaluate() && placed.length > 1 && !arrivalOrderSaving && state?.canReorder;
+    const canReorder = canEvaluate() && !arrivalOrderSaving && state?.canReorder;
 
     const arrivedHtml = placed.map((entry, index) => {
       const pidRaw = String(entry.participantId);
@@ -2437,6 +2445,9 @@
         <span class="arrival-place">${index + 1}</span>
         <span class="arrival-pid-wrap"><span class="arrival-pid">${pid}</span>${comments}${savingIds.has(pidRaw) ? '<span class="arrival-comments-count">ממתין לשמירה</span>' : ''}</span>
         <span class="arrival-actions">
+          <button type="button" class="arrival-move-btn"${disabled}
+                  aria-label="בטל הגעה של משתתף ${pid}" title="העבר לטרם הגיעו"
+                  onclick="placeArrivalParticipant(event, '${pid}', null)">×</button>
           <button type="button" class="arrival-move-btn"${upDisabled}
                   aria-label="העבר את משתתף ${pid} מקום אחד למעלה"
                   onclick="moveArrivalParticipant(event, '${pid}', -1)">↑</button>
@@ -2447,19 +2458,23 @@
       </div>`;
     }).join('');
 
-    const pendingHtml = pending.length ? `
-      <div class="arrival-divider" role="separator">טרם הגיעו (${pending.length})</div>
+    const pendingHtml = `
+      <div class="arrival-divider" role="separator">טרם הגיעו (${pending.length}) · גרור לכאן לביטול הגעה</div>
       ${pending.map(pidRaw => {
         const pid = escHtml(pidRaw);
         return `<div class="arrival-row pending" role="listitem" data-pid="${pid}">
-          <span class="arrival-placeholder" aria-hidden="true"></span>
+          <button type="button" class="arrival-drag-handle"${canReorder ? '' : ' disabled'}
+                  aria-label="גרור את משתתף ${pid} לסדר ההגעה"
+                  onclick="event.stopPropagation()" onpointerdown="startArrivalDrag(event)">⠿</button>
           <span class="arrival-place" aria-hidden="true">—</span>
           <span class="arrival-pid">${pid}</span>
-          <span class="arrival-placeholder" aria-hidden="true"></span>
+          <button type="button" class="arrival-move-btn"${canReorder ? '' : ' disabled'}
+                  aria-label="הוסף את משתתף ${pid} לסוף סדר ההגעה" title="סמן הגעה"
+                  onclick="placeArrivalParticipant(event, '${pid}', ${placed.length})">+</button>
         </div>`;
-      }).join('')}` : '';
+      }).join('')}`;
 
-    list.innerHTML = arrivedHtml + pendingHtml;
+    list.innerHTML = '<div class="arrival-drop-start">סדר הגעה · גרור לכאן להוספה בראש הרשימה</div>' + arrivedHtml + pendingHtml;
     list.dataset.raceId = currentRace?.id || '';
     list.dataset.revision = String(state?.confirmed.revision || 0);
     list.setAttribute('role', 'list');
@@ -2834,11 +2849,12 @@
     const rows = arrivalRows(list);
     rows.forEach((row, index) => {
       const place = row.querySelector('.arrival-place');
-      const buttons = row.querySelectorAll('.arrival-move-btn');
+      const buttons = row.querySelectorAll('.arrival-actions .arrival-move-btn');
       if (place) place.textContent = String(index + 1);
-      if (buttons[0]) buttons[0].disabled = arrivalOrderSaving || index === 0;
-      if (buttons[1]) buttons[1].disabled = arrivalOrderSaving || index === rows.length - 1;
+      if (buttons[1]) buttons[1].disabled = arrivalOrderSaving || index === 0;
+      if (buttons[2]) buttons[2].disabled = arrivalOrderSaving || index === rows.length - 1;
     });
+    list.querySelectorAll('.arrival-row.pending .arrival-place').forEach(place => { place.textContent = '—'; });
   }
 
   function setArrivalListBusy(list, busy) {
@@ -2850,7 +2866,7 @@
     if (status) status.textContent = busy ? 'שומר את סדר ההגעה…' : '';
   }
 
-  async function persistArrivalOrder(list, order, expectedRevision, raceId) {
+  async function persistArrivalOrder(list, order, expectedRevision, raceId, placement = null) {
     if (arrivalOrderSaving) return;
     if (!canEvaluate() || !raceId || currentStationType()?.measure !== 'place') {
       showToast('אין הרשאה לשנות את סדר ההגעה', 'error');
@@ -2861,7 +2877,9 @@
     arrivalOrderSaving = true;
     setArrivalListBusy(list, true);
     try {
-      await arrivalControllers.get(raceId).controller.reorder(order, expectedRevision);
+      const controller = arrivalControllers.get(raceId).controller;
+      if (placement) await controller.place(placement.pid, placement.targetIndex, expectedRevision);
+      else await controller.reorder(order, expectedRevision);
       showToast('סדר ההגעה נשמר', 'success');
     } catch (e) {
       showToast(e.message || 'שגיאה בשמירת סדר ההגעה', 'error');
@@ -2876,13 +2894,28 @@
     const state = arrivalDragState;
     if (!state || event.pointerId !== state.pointerId) return;
     event.preventDefault();
-    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.arrival-row.arrived');
-    if (!target || target === state.row || target.parentElement !== state.list) return;
-
-    const rect = target.getBoundingClientRect();
-    const after = event.clientY > rect.top + rect.height / 2;
-    state.list.insertBefore(state.row, after ? target.nextSibling : target);
-    refreshArrivalPreview(state.list);
+    if (!state.moved && Math.hypot(event.clientX - state.startX, event.clientY - state.startY) < 6) return;
+    if (!state.moved) {
+      state.moved = true;
+      state.ghost = createArrivalDragGhost(state.row);
+      state.row.classList.add('dragging');
+    }
+    state.ghost.style.transform = `translate3d(${event.clientX - state.offsetX}px, ${event.clientY - state.offsetY}px, 0)`;
+    const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.arrival-row, .arrival-divider, .arrival-drop-start');
+    if (target && target !== state.row && target.parentElement === state.list) {
+      const unmark = target.classList.contains('pending') || target.classList.contains('arrival-divider');
+      state.row.classList.toggle('arrived', !unmark);
+      state.row.classList.toggle('pending', unmark);
+      if (unmark) {
+        const boundary = state.list.querySelector('.arrival-divider');
+        state.list.insertBefore(state.row, boundary.nextSibling);
+      } else {
+        const rect = target.getBoundingClientRect();
+        const after = target.classList.contains('arrival-drop-start') || event.clientY > rect.top + rect.height / 2;
+        state.list.insertBefore(state.row, after ? target.nextSibling : target);
+      }
+      refreshArrivalPreview(state.list);
+    }
 
     const edge = 72;
     if (event.clientY < edge) window.scrollBy(0, -10);
@@ -2894,18 +2927,14 @@
     if (!state || event.pointerId !== state.pointerId) return;
     event.preventDefault();
     event.stopPropagation();
-    state.handle.removeEventListener('pointermove', onArrivalDragMove);
-    state.handle.removeEventListener('pointerup', finishArrivalDrag);
-    state.handle.removeEventListener('pointercancel', cancelArrivalDrag);
-    try { state.handle.releasePointerCapture(event.pointerId); } catch (e) {}
-    state.row.classList.remove('dragging');
-
     const order = arrivalOrderFromList(state.list);
     const sameContext = currentRace?.id === state.raceId && state.list.dataset.raceId === state.raceId;
-    const changed = !cancelled && sameContext && order.join('|') !== state.originalOrder.join('|');
-    arrivalDragState = null;
+    const changed = !cancelled && state.moved && sameContext && order.join('|') !== state.originalOrder.join('|');
+    clearArrivalDrag();
     if (changed) {
-      persistArrivalOrder(state.list, order, state.revision, state.raceId);
+      const pid = String(state.row.dataset.pid);
+      const index = order.indexOf(pid);
+      persistArrivalOrder(state.list, order, state.revision, state.raceId, { pid, targetIndex:index < 0 ? null : index });
     } else if (currentRace?.id === state.raceId) {
       renderRace();
     }
@@ -2918,35 +2947,96 @@
   function clearArrivalDrag() {
     const state = arrivalDragState;
     if (!state) return;
-    state.handle.removeEventListener('pointermove', onArrivalDragMove);
-    state.handle.removeEventListener('pointerup', finishArrivalDrag);
-    state.handle.removeEventListener('pointercancel', cancelArrivalDrag);
-    try { state.handle.releasePointerCapture(state.pointerId); } catch (error) {}
-    state.row.classList.remove('dragging');
+    // Clear first: releasing capture may itself dispatch lostpointercapture.
     arrivalDragState = null;
+    document.removeEventListener('pointermove', onArrivalDragMove);
+    document.removeEventListener('pointerup', finishArrivalDrag);
+    document.removeEventListener('pointercancel', cancelArrivalDrag);
+    document.removeEventListener('keydown', onArrivalDragKeyDown);
+    document.removeEventListener('visibilitychange', onArrivalDragVisibilityChange);
+    window.removeEventListener('blur', abandonArrivalDrag);
+    state.list.removeEventListener('lostpointercapture', onArrivalDragCaptureLost);
+    try { state.list.releasePointerCapture(state.pointerId); } catch (error) {}
+    state.ghost?.remove();
+    state.row.classList.remove('dragging');
+  }
+
+  function abandonArrivalDrag() {
+    if (!arrivalDragState) return;
+    clearArrivalDrag();
+    renderRace(); // Restore the confirmed order; cancellation never writes a partial preview.
+  }
+
+  function onArrivalDragKeyDown(event) {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      abandonArrivalDrag();
+    }
+  }
+
+  function onArrivalDragVisibilityChange() {
+    if (document.hidden) abandonArrivalDrag();
+  }
+
+  function onArrivalDragCaptureLost(event) {
+    // Ignore a descendant's implicit touch capture transferring to the list.
+    if (event.target === arrivalDragState?.list) cancelArrivalDrag(event);
   }
 
   window.startArrivalDrag = event => {
+    if (event.button !== 0 || event.isPrimary === false) return;
     event.preventDefault();
     event.stopPropagation();
     if (arrivalOrderSaving || arrivalDragState || !canEvaluate() || !currentArrivalState()?.canReorder) return;
     const handle = event.currentTarget;
-    const row = handle.closest('.arrival-row.arrived');
+    const row = handle.closest('.arrival-row');
     const list = row?.parentElement;
-    if (!row || !list || list.dataset.raceId !== currentRace?.id || arrivalRows(list).length < 2) return;
+    if (!row || !list || list.dataset.raceId !== currentRace?.id) return;
 
+    const rect = row.getBoundingClientRect();
     arrivalDragState = {
       pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+      moved: false,
       raceId: list.dataset.raceId,
       revision: Number(list.dataset.revision || 0),
       originalOrder: arrivalOrderFromList(list),
       list, row, handle
     };
-    row.classList.add('dragging');
-    try { handle.setPointerCapture(event.pointerId); } catch (e) {}
-    handle.addEventListener('pointermove', onArrivalDragMove);
-    handle.addEventListener('pointerup', finishArrivalDrag);
-    handle.addEventListener('pointercancel', cancelArrivalDrag);
+    // The list stays in the DOM while its rows move. Capturing on the moving
+    // handle loses pointer capture when insertBefore removes/reinserts that row.
+    document.addEventListener('pointermove', onArrivalDragMove);
+    document.addEventListener('pointerup', finishArrivalDrag);
+    document.addEventListener('pointercancel', cancelArrivalDrag);
+    document.addEventListener('keydown', onArrivalDragKeyDown);
+    document.addEventListener('visibilitychange', onArrivalDragVisibilityChange);
+    window.addEventListener('blur', abandonArrivalDrag);
+    list.addEventListener('lostpointercapture', onArrivalDragCaptureLost);
+    // Document listeners also cover browsers where capture cannot be acquired.
+    try { list.setPointerCapture(event.pointerId); } catch (error) {}
+  };
+
+  function createArrivalDragGhost(row) {
+    const ghost = row.cloneNode(true);
+    ghost.classList.remove('dragging');
+    ghost.classList.add('arrival-drag-ghost');
+    ghost.style.width = `${row.getBoundingClientRect().width}px`;
+    ghost.setAttribute('aria-hidden', 'true');
+    ghost.inert = true;
+    document.body.appendChild(ghost);
+    return ghost;
+  }
+
+  window.placeArrivalParticipant = (event, participantId, targetIndex) => {
+    event.preventDefault(); event.stopPropagation();
+    if (arrivalOrderSaving || arrivalDragState || !canEvaluate() || !currentArrivalState()?.canReorder) return;
+    const list = event.currentTarget.closest('.finished-list');
+    if (!list || list.dataset.raceId !== currentRace?.id) return;
+    persistArrivalOrder(list, null, Number(list.dataset.revision || 0), list.dataset.raceId,
+      { pid:String(participantId), targetIndex });
   };
 
   window.moveArrivalParticipant = (event, participantId, delta) => {

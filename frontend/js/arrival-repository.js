@@ -1,5 +1,5 @@
 import { doc, onSnapshot, runTransaction, serverTimestamp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
-import { arrivalWithOrder, arrivalRevision } from './arrival-order-model.js';
+import { arrivalWithOrder, arrivalWithPlacement, arrivalRevision } from './arrival-order-model.js';
 
 // Every arrival writer (including the candidate page) uses this document/version contract.
 export function createArrivalRepository(db, user, stateForRace) {
@@ -21,14 +21,14 @@ export function createArrivalRepository(db, user, stateForRace) {
         if (!base.participantIds.includes(command.pid)) throw new Error('המועמד אינו ברשימת הסבב');
         // Retrying an uncertain write must not create another place or timestamp.
         if (base.order.includes(command.pid)) return base;
-        const order = [...base.order, command.pid];
-        next = { ...base, order, slotTimes:{ ...base.slotTimes, [String(order.length)]:serverTimestamp() } };
-        if (order.length === base.participantIds.length) next.completedAt = base.completedAt || serverTimestamp();
-      } else if (command.type === 'reorder') {
+        next = arrivalWithPlacement(base, command.pid, base.order.length, serverTimestamp());
+      } else if (command.type === 'reorder' || command.type === 'place') {
         if (base.revision !== command.expectedRevision) {
           throw new Error('סדר ההגעה השתנה במסך אחר. טען את העדכון לפני שינוי הסדר.');
         }
-        next = arrivalWithOrder(base, command.order);
+        next = command.type === 'place'
+          ? arrivalWithPlacement(base, command.pid, command.targetIndex, serverTimestamp())
+          : arrivalWithOrder(base, command.order);
       } else throw new Error('פעולת סדר הגעה אינה מוכרת');
       const payload = {
         evaluatorUid:uid, participantIds:base.participantIds, order:next.order,

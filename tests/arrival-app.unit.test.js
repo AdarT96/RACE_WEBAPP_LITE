@@ -2,11 +2,32 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { arrivalEntriesInOrder } from '../frontend/js/arrival-order-model.js';
 
 // Execute the actual view functions, not a second implementation of their logic.
 const app = await readFile(new URL('../frontend/app.html', import.meta.url), 'utf8');
 const extract = (start, end) => app.slice(app.indexOf(start), app.indexOf(end, app.indexOf(start)));
 const escHtml = String;
+
+test('every arrival row has a handle and empty/full lists retain both drop targets', () => {
+  const nodes={};
+  const context=vm.createContext({
+    document:{getElementById:id=>nodes[id] ||= {style:{},dataset:{},setAttribute(){}}},
+    arrivalEntriesInOrder,escHtml,canEvaluate:()=>true,arrivalOrderSaving:false,
+    currentRace:{id:'r1'},evaluatorArrivalLoading:false,
+    currentAssessmentEntry:()=>({comments:[]}),
+    currentArrivalState:()=>({canReorder:true,pendingIds:[],confirmed:{revision:1,order:[]}})
+  });
+  vm.runInContext(extract('  function renderArrivalOrderList(', '  function renderArrivalGrid('),context);
+  for(const order of [[],['8'],['8','100']]) {
+    context.renderArrivalOrderList(['8','100'],{order},{id:'r1'});
+    const html=nodes['finished-list'].innerHTML;
+    assert.equal((html.match(/class="arrival-drag-handle"/g)||[]).length,2);
+    assert.match(html,/class="arrival-drop-start"/);
+    assert.match(html,/class="arrival-divider"/);
+    assert.doesNotMatch(html,/class="arrival-drag-handle" disabled/);
+  }
+});
 
 test('candidate-page-only listener failure exposes a retry action', () => {
   const panel = {};

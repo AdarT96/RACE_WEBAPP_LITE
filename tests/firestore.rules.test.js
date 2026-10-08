@@ -55,6 +55,36 @@ test('arrival repository is idempotent, captures identity, separates evaluators 
   await assertFails(getDoc(arrivalReference(userDb('operator1'))));
 });
 
+test('atomic placement inserts and unmarks arrivals in historical rounds with fixed place timestamps', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(),'races','race_01_07_1'), {participantIds:['100','320','8'],status:'stopped'});
+  });
+  const db=userDb('evaluator1'), repo=createArrivalRepository(db,{uid:'evaluator1'},arrivalState);
+  await repo.mutate('race_01_07_1',{type:'append',pid:'100'});
+  await repo.mutate('race_01_07_1',{type:'append',pid:'320'});
+  const original=(await getDoc(arrivalReference(db))).data();
+  await repo.mutate('race_01_07_1',{type:'place',pid:'8',targetIndex:0,expectedRevision:2});
+  const complete=(await getDoc(arrivalReference(db))).data();
+  assert.deepEqual(complete.order,['8','100','320']);
+  assert.equal(complete.revision,3);
+  assert.deepEqual(complete.slotTimes['1'],original.slotTimes['1']);
+  assert.deepEqual(complete.slotTimes['2'],original.slotTimes['2']);
+  assert.ok(complete.completedAt.toMillis()>0);
+  await assert.rejects(repo.mutate('race_01_07_1',{type:'place',pid:'100',targetIndex:null,expectedRevision:2}),/השתנה/);
+  await repo.mutate('race_01_07_1',{type:'place',pid:'100',targetIndex:null,expectedRevision:3});
+  const undone=(await getDoc(arrivalReference(db))).data();
+  assert.deepEqual(undone.order,['8','320']);
+  assert.deepEqual(undone.slotTimes,original.slotTimes);
+  assert.equal('completedAt' in undone,false);
+  await repo.mutate('race_01_07_1',{type:'place',pid:'100',targetIndex:1,expectedRevision:4});
+  const redone=(await getDoc(arrivalReference(db))).data();
+  assert.deepEqual(redone.order,['8','100','320']);
+  assert.equal(redone.revision,5);
+  assert.ok(redone.completedAt.toMillis()>=complete.completedAt.toMillis());
+  await assertFails(createArrivalRepository(userDb('operator1'),{uid:'operator1'},arrivalState)
+    .mutate('race_01_07_1',{type:'place',pid:'8',targetIndex:0,expectedRevision:0}));
+});
+
 test('concurrent arrival transactions retain both marks and duplicate commands add only one place', async () => {
   await testEnv.withSecurityRulesDisabled(async context => {
     await updateDoc(doc(context.firestore(),'races','race_01_07_1'), {participantIds:['100','320','8']});
