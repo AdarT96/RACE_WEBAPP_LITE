@@ -160,7 +160,7 @@ function candidateRow(candidate = {}) {
   const removalDisabled = Boolean(candidate.id && bundle?.event?.status === EVENT_STATUSES.ACTIVE);
   candidate = normalizeCandidateProfile(candidate);
   return `<div class="candidate-row" data-candidate-row>
-    <label><span>מספר מועמד</span><input class="form-input" data-field="participantId" inputmode="numeric" value="${escapeHtml(candidate.participantId || '')}" placeholder="מספר"
+    <label><span>מספר מועמד</span><input class="form-input" data-field="participantId" inputmode="numeric" value="${escapeHtml(candidate.participantId === '0' ? '' : candidate.participantId || '')}" placeholder="מספר"
       ${removalDisabled ? 'readonly title="מספר מועמד קיים אינו משתנה לאחר הפעלת האירוע"' : ''}></label>
     <label><span>שם מלא</span><input class="form-input" data-field="fullName" maxlength="80" value="${escapeHtml(candidate.fullName === '0' ? '' : candidate.fullName || '')}" placeholder="0 אם חסר"></label>
     <label><span>תעודת זהות</span><input class="form-input" data-field="nationalId" inputmode="numeric" value="${escapeHtml(candidate.nationalId === '0' ? '' : candidate.nationalId || '')}" placeholder="0 אם חסר"></label>
@@ -278,11 +278,52 @@ async function selectEvent(eventId) {
   await refreshBundle();
 }
 
+// הרשימה בשדה היא רשימת הצוותים הרצויה. צוות שנמחק ממנה מוסר מהאירוע אחרי
+// אישור: המועמדים שלו נשמרים בצד, הסגל שלו יוצא מהשיבוץ, והוא יוצא מטיוטת הלו״ז.
+// הקלדה חוזרת של אותו מספר מחזירה את הצוות עם המועמדים שלו.
 async function saveTeamTopology(ids) {
-  const mergedIds = [...new Set([...teamIds(), ...ids].map(normalizeEventTeamId).filter(Boolean))]
+  const desired = [...new Set(ids.map(normalizeEventTeamId).filter(Boolean))]
     .sort((left, right) => Number(left) - Number(right));
-  await repository.ensureTeams(currentEventId, mergedIds, defaultStationMap);
+  if (!desired.length) throw new Error('יש להגדיר לפחות צוות אחד באירוע.');
+  const removed = teamIds().filter(team => !desired.includes(team));
+  if (removed.length && !confirm(teamRemovalQuestion(removed))) return null;
+  await repository.ensureTeams(currentEventId, desired, defaultStationMap);
+  if (removed.length) {
+    await repository.deactivateTeams(currentEventId, removed);
+    await removeTeamsFromScheduleDraft(removed);
+  }
   await refreshBundle();
+  return { removed };
+}
+
+function teamRemovalQuestion(removed) {
+  const lines = removed.map(team => {
+    const candidates = (bundle?.candidates || []).filter(candidate => normalizeEventTeamId(candidate.team) === team).length;
+    const staff = activeStaff().filter(member => normalizeEventTeamId(member.team) === team).length;
+    const details = [
+      candidates ? `${candidates} מועמדים יישמרו בצד ויחזרו אם הצוות יוחזר` : '',
+      staff ? `${staff} אנשי סגל יוסרו מהשיבוץ` : '',
+      bundle?.schedule?.teamIds?.map(normalizeEventTeamId).includes(team) ? 'השיבוצים שלו יוסרו מטיוטת הלו״ז' : ''
+    ].filter(Boolean);
+    return `• צוות ${Number(team)}${details.length ? ': ' + details.join(' · ') : ''}`;
+  });
+  const active = bundle?.event?.status === EVENT_STATUSES.ACTIVE
+    ? '\n\nהאירוע פעיל: כדי שהשינוי בלו״ז יגיע לשטח יש לפרסם את הלו״ז.' : '';
+  return `להסיר מהאירוע ${removed.length === 1 ? 'את הצוות' : 'את הצוותים'}:\n${lines.join('\n')}${active}`;
+}
+
+async function removeTeamsFromScheduleDraft(removed) {
+  const schedule = bundle?.schedule;
+  const scheduleTeams = (schedule?.teamIds || []).map(normalizeEventTeamId).filter(Boolean);
+  if (!scheduleTeams.some(team => removed.includes(team))) return;
+  const remainingTeams = scheduleTeams.filter(team => !removed.includes(team));
+  await scheduleRepository.saveDraft({
+    eventId:currentEventId,
+    schedule:{ ...schedule, teamIds:remainingTeams },
+    expectedPublishedRevision:Number(bundle.publishedSchedule?.revision || 0),
+    expectedDraftRevision:Number(schedule?.draftRevision || 0),
+    stationIdsByTeam:Object.fromEntries(remainingTeams.map(team => [team, Object.keys(stationMapForTeam(team))]))
+  });
 }
 
 async function postToSheets(body) {
@@ -325,6 +366,15 @@ document.getElementById('create-event-button').addEventListener('click', async e
 const initialCardId = location.hash.slice(1);
 const collapseKey = id => `lite:setupCard:${id}`;
 
+// סרגל השלבים נדבק מתחת לסרגל העליון. גובה הסרגל העליון משתנה (בטלפון שם
+// המשתמש נשבר לכמה שורות), ולכן הוא נמדד ולא קבוע ב-CSS — אחרת סרגל השלבים
+// נכנס מתחתיו ולחיצה על שלב פוגעת ב"פאנל מנהל" או ב"התנתק".
+const setupNavbar = document.querySelector('.navbar');
+const syncNavbarHeight = () => document.documentElement.style
+  .setProperty('--setup-navbar-height', `${setupNavbar?.offsetHeight || 0}px`);
+syncNavbarHeight();
+if (setupNavbar && 'ResizeObserver' in window) new ResizeObserver(syncNavbarHeight).observe(setupNavbar);
+
 function openSetupCard(id, { scroll = false } = {}) {
   const card = id ? document.getElementById(id) : null;
   if (card?.tagName !== 'DETAILS') return;
@@ -366,8 +416,11 @@ document.getElementById('save-teams-button').addEventListener('click', async eve
   setBusy(button, true);
   try {
     const ids = teamIdsFromInput();
-    await saveTeamTopology([...new Set(ids)]);
-    showToast('רשימת הצוותים נשמרה באירוע. ניתן לשבץ אותם בלו״ז בנפרד.', 'success');
+    const result = await saveTeamTopology([...new Set(ids)]);
+    if (result === null) return; // המשתמש ביטל את הסרת הצוותים
+    showToast(result?.removed?.length
+      ? `רשימת הצוותים נשמרה. הוסרו: ${result.removed.map(team => `צוות ${Number(team)}`).join(', ')}.`
+      : 'רשימת הצוותים נשמרה באירוע. ניתן לשבץ אותם בלו״ז בנפרד.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
   finally { setBusy(button, false); }
 });
@@ -576,7 +629,13 @@ document.getElementById('activate-event-button').addEventListener('click', async
     await refreshBundle();
     showToast('האירוע הופעל והלו״ז זמין לצוותים.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
-  finally { setBusy(button, false); }
+  finally {
+    setBusy(button, false);
+    // setBusy מחזיר את הטקסט והמצב שלפני הלחיצה. אחרי הפעלה מוצלחת זה החזיר
+    // כפתור "הפעל" לחיץ באירוע פעיל — לחיצה נוספת הייתה מפרסמת שוב את הלו״ז.
+    // מצב הכפתור נגזר תמיד ממצב האירוע.
+    if (bundle?.event) renderReadiness();
+  }
 });
 
 onAuthStateChanged(auth, async user => {

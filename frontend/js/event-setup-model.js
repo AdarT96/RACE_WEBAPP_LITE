@@ -82,12 +82,18 @@ export function eventSetupReadiness({
   (Array.isArray(scheduleErrors) ? scheduleErrors : []).forEach(error => blockers.push(String(error)));
 
   const teamSet = new Set(teamIds);
+  // צוות שהוסר מסומן active:false ולא נמחק. המועמדים שלו נשמרים בצד (יחזרו
+  // אם הצוות יוחזר), ולכן אינם חוסמים הפעלה ואינם נספרים.
+  const removedTeams = new Set((Array.isArray(teams) ? teams : [])
+    .filter(team => team?.active === false)
+    .map(team => normalizeEventTeamId(team.teamNumber ?? team.id)).filter(Boolean));
   const participantOwners = new Map();
   const nationalIdOwners = new Map();
   const candidateCounts = Object.fromEntries(teamIds.map(team => [team, 0]));
 
   (Array.isArray(candidates) ? candidates : []).forEach((source, index) => {
     const team = normalizeEventTeamId(source?.team);
+    if (removedTeams.has(team) && !teamSet.has(team)) return;
     const candidate = normalizeCandidateProfile(source);
     const label = candidate.participantId !== CANDIDATE_PROFILE_DEFAULTS.participantId
       ? `מועמד ${candidate.participantId}` : `מועמד בשורה ${index + 1}`;

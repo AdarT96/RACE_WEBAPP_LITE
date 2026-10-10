@@ -102,7 +102,9 @@ function attachEvent(nextEventId) {
     renderDashboard();
   }, fail('האירוע')));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'teams'), snapshot => {
-    teams = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+    // צוות שהוסר מהאירוע מסומן active:false ואינו מוצג (גם לא המועמדים שלו)
+    teams = snapshot.docs.filter(item => item.data().active !== false)
+      .map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
   }, fail('הצוותים')));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'candidates'), snapshot => {

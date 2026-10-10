@@ -128,7 +128,9 @@ async function loadEventAndTeams(pointerRead) {
 async function readEventTeams(eventId) {
   if (canManageSchedule(currentUser.role)) {
     const snapshot = await getDocs(collection(db, 'events', eventId, 'teams'));
-    return Object.fromEntries(snapshot.docs.map(item => [item.id, { id: item.id, ...item.data() }]));
+    // צוות שהוסר מהאירוע מסומן active:false ואינו מוצג
+    return Object.fromEntries(snapshot.docs.filter(item => item.data().active !== false)
+      .map(item => [item.id, { id: item.id, ...item.data() }]));
   }
   const team = pad2(currentUser.team);
   const snapshot = await getDoc(doc(db, 'events', eventId, 'teams', team));
