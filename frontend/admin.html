@@ -264,54 +264,17 @@
       <h2>🏁 ניהול צוותים</h2>
       <span class="collapsible-chevron" aria-hidden="true">▾</span>
     </summary>
-    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap; margin-top:12px">
+    <p id="team-management-scope" style="font-size:12px; color:var(--text-muted); margin:12px 0 8px">
+      סדר התחנות של צוותי האירוע הפעיל. הצוותים והמועמדים עצמם מנוהלים
+      ב<a id="team-management-setup-link" href="event-setup.html">הגדרת האירוע</a>.
+    </p>
+    <div class="flex flex-center flex-between mb-12" style="gap:12px; flex-wrap:wrap">
       <select id="team-select" class="role-sel" onchange="onTeamSelected(this.value)">
         <option value="">— בחר צוות —</option>
       </select>
     </div>
 
     <div id="team-editor" style="display:none">
-      <!-- משתתפים -->
-      <div class="section mb-12">
-        <h3 class="mb-8">👥 משתתפים בצוות</h3>
-        <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px">
-          במסכי התחנות מוצגים מספרי המועמדים בלבד. פרטים אישיים וכשירויות מוצגים בדפי המועמד ובדשבורד מפקד הגיבוש.
-        </p>
-        <div class="candidate-admin-inputs">
-          <label class="candidate-admin-field"><span>מספר מועמד</span>
-            <input id="participant-input" class="form-input" type="text" inputmode="numeric"
-                   maxlength="100" style="direction:ltr" placeholder="למשל 1234">
-          </label>
-          <label class="candidate-admin-field"><span>שם מלא</span>
-            <input id="participant-name-input" class="form-input" type="text" maxlength="80" placeholder="שם מלא">
-          </label>
-          <label class="candidate-admin-field"><span>תעודת זהות</span>
-            <input id="participant-national-id-input" class="form-input" type="text" inputmode="numeric"
-                   maxlength="11" style="direction:ltr" placeholder="9 ספרות"
-                   >
-          </label>
-          <label class="candidate-admin-field"><span>טלפון איש קשר חירום</span>
-            <input id="participant-emergency-phone-input" class="form-input" type="tel" inputmode="tel"
-                   maxlength="20" style="direction:ltr" placeholder="למשל 0501234567"
-                   onkeydown="if(event.key==='Enter') addParticipant()">
-          </label>
-          <label class="candidate-admin-field"><span>כשירות רופא</span>
-            <select id="participant-doctor-clearance-input" class="form-input">
-              <option value="0">טרם נבדק</option><option value="1">כשיר</option><option value="2">לא כשיר</option>
-            </select>
-          </label>
-          <label class="candidate-admin-field"><span>כשירות חובש</span>
-            <select id="participant-medic-clearance-input" class="form-input">
-              <option value="0">טרם נבדק</option><option value="1">כשיר</option><option value="2">לא כשיר</option>
-            </select>
-          </label>
-          <button class="btn btn-primary" onclick="addParticipant()">+ הוסף מועמד</button>
-        </div>
-        <div id="participants-list" class="candidate-admin-list">
-          <span style="color:var(--text-muted); font-size:13px">אין משתתפים עדיין.</span>
-        </div>
-      </div>
-
       <!-- מיפוי תחנות -->
       <div class="section mb-12">
         <h3 class="mb-8">📍 סדר התחנות עבור הצוות</h3>
@@ -507,12 +470,7 @@
     EVALUATION_SCHEMA_VERSION, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
     normalizeAssessment, normalizeNotes
   } from "./js/evaluation-model.js";
-  import {
-    CLEARANCE_LABELS, CLEARANCE_STATUSES,
-    FORMATION_EVENT_SCHEMA_VERSION, TEAM_ROSTER_SCHEMA_VERSION,
-    candidateRosterIssues, normalizeCandidateRoster,
-    normalizeEmergencyContactPhone, normalizeNationalId, padTeam
-  } from "./js/formation-operations-model.js";
+  import { FORMATION_EVENT_SCHEMA_VERSION } from "./js/formation-operations-model.js";
   import {
     EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam
   } from "./js/roles.js";
@@ -1461,7 +1419,7 @@
   //  ניהול צוותים: משתתפים + שמות תחנות מותאמים לצוות
   // ═══════════════════════════════════════════════════════════
   let currentTeamNumber = null;
-  let currentTeamData   = { candidates: [], stationMap: {}, rosterSource: null };
+  let currentTeamData   = { stationMap: {} };
 
   // סוגי תחנות — עותק ניתן לעריכה; נטען מ-settings/stationTypes אם קיים, אחרת ברירת מחדל
   const STATION_ORDER = window.DEFAULT_STATION_ORDER || [];
@@ -1640,22 +1598,44 @@
     }
   };
 
-  function initTeamManagement() {
+  // הכרטיס עורך את סדר התחנות של צוותי האירוע הפעיל — events/{id}/teams/{nn},
+  // שממנו קוראים מסכי התחנה, הלו״ז והדשבורד. הגרסה הקודמת ערכה את teams/{nn}
+  // הישן, שאף מסך כבר לא קורא ממנו, והציגה את צוותי האירוע כריקים.
+  let teamManagementEventId = null;
+
+  async function initTeamManagement() {
     const sel = document.getElementById('team-select');
     if (!sel) return;
-    const max = APP_CONFIG.maxTeamNumber || 20;
-    // ה-<option> הראשון ("בחר צוות") כבר קיים
-    for (let i = 1; i <= max; i++) {
-      const o = document.createElement('option');
-      o.value = pad2(i);
-      o.textContent = 'צוות ' + i;
-      sel.appendChild(o);
+    const scope = document.getElementById('team-management-scope');
+    try {
+      const event = await activeFormationEvent();
+      teamManagementEventId = event?.id || null;
+      sel.length = 1; // משאיר רק את "בחר צוות"
+      if (!event) {
+        scope.textContent = 'אין אירוע פעיל. סדר התחנות של אירוע נקבע לצוותיו לאחר הפעלתו.';
+        sel.disabled = true;
+        return;
+      }
+      document.getElementById('team-management-setup-link').href =
+        `event-setup.html?eventId=${encodeURIComponent(event.id)}#candidates-card`;
+      const snapshot = await getDocs(collection(db, 'events', event.id, 'teams'));
+      snapshot.docs.filter(item => item.data().active !== false)
+        .map(item => item.id).sort((a, b) => Number(a) - Number(b))
+        .forEach(team => {
+          const option = document.createElement('option');
+          option.value = team;
+          option.textContent = 'צוות ' + Number(team);
+          sel.appendChild(option);
+        });
+      sel.disabled = false;
+    } catch (e) {
+      showToast('שגיאה בטעינת צוותי האירוע: ' + e.message, 'error');
     }
   }
 
   window.onTeamSelected = async (teamNum) => {
     const editor = document.getElementById('team-editor');
-    if (!teamNum) {
+    if (!teamNum || !teamManagementEventId) {
       currentTeamNumber = null;
       editor.style.display = 'none';
       return;
@@ -1663,79 +1643,19 @@
     currentTeamNumber = teamNum;
     setSaveStatus('טוען…');
     try {
-      const snap = await getDoc(doc(db, 'teams', teamNum));
+      const snap = await getDoc(doc(db, 'events', teamManagementEventId, 'teams', teamNum));
       const data = snap.exists() ? snap.data() : {};
       currentTeamData = {
-        candidates: normalizeCandidateRoster(data),
-        stationMap: (data.stationMap && typeof data.stationMap === 'object') ? { ...data.stationMap } : {},
-        rosterSource: (data.rosterSource && typeof data.rosterSource === 'object') ? { ...data.rosterSource } : null
+        stationMap: (data.stationMap && typeof data.stationMap === 'object') ? { ...data.stationMap } : {}
       };
-      renderParticipants();
       renderStationMap();
       editor.style.display = '';
-      setSaveStatus(snap.exists()
-        ? 'נטען בהצלחה'
-        : 'צוות חדש — יישמר בלחיצה על שמור');
+      setSaveStatus('נטען בהצלחה');
     } catch (e) {
       showToast('שגיאה בטעינת צוות: ' + e.message, 'error');
       setSaveStatus('');
     }
   };
-
-  function clearanceOptions(selected) {
-    return Object.values(CLEARANCE_STATUSES).map(status =>
-      `<option value="${status}" ${status === selected ? 'selected' : ''}>${escHtml(CLEARANCE_LABELS[status])}</option>`
-    ).join('');
-  }
-
-  function renderParticipants() {
-    const container = document.getElementById('participants-list');
-    if (!container) return;
-    const list = currentTeamData.candidates;
-    if (list.length === 0) {
-      container.innerHTML = '<span style="color:var(--text-muted); font-size:13px">אין משתתפים עדיין.</span>';
-      return;
-    }
-    const sorted = list.slice().sort((a, b) =>
-      String(a.participantId).localeCompare(String(b.participantId), 'he', { numeric: true }));
-    container.innerHTML = sorted.map(candidate => `
-      <div class="candidate-admin-row">
-        <div><span style="color:var(--text-muted); font-size:11px">מספר מועמד</span><br><strong>${escHtml(candidate.participantId)}</strong></div>
-        <label class="candidate-admin-field"><span>שם מלא</span>
-          <input class="form-input" maxlength="80" value="${escHtml(candidate.fullName)}"
-                 data-participant-id="${escHtml(candidate.participantId)}"
-                 oninput="updateCandidateDraft(this.dataset.participantId,'fullName',this.value)">
-        </label>
-        <label class="candidate-admin-field identity-number"><span>תעודת זהות</span>
-          <input class="form-input" inputmode="numeric" maxlength="11" style="direction:ltr"
-                 value="${escHtml(candidate.nationalId)}"
-                 data-participant-id="${escHtml(candidate.participantId)}"
-                 oninput="updateCandidateDraft(this.dataset.participantId,'nationalId',this.value)">
-        </label>
-        <label class="candidate-admin-field identity-number"><span>טלפון איש קשר חירום</span>
-          <input class="form-input" type="tel" inputmode="tel" maxlength="20"
-                 value="${escHtml(candidate.emergencyContactPhone)}"
-                 data-participant-id="${escHtml(candidate.participantId)}"
-                 oninput="updateCandidateDraft(this.dataset.participantId,'emergencyContactPhone',this.value)">
-        </label>
-        <label class="candidate-admin-field"><span>כשירות רופא</span>
-          <select class="form-input" data-participant-id="${escHtml(candidate.participantId)}"
-                  onchange="updateCandidateDraft(this.dataset.participantId,'doctorClearance',this.value)">
-            ${clearanceOptions(candidate.doctorClearance)}
-          </select>
-        </label>
-        <label class="candidate-admin-field"><span>כשירות חובש</span>
-          <select class="form-input" data-participant-id="${escHtml(candidate.participantId)}"
-                  onchange="updateCandidateDraft(this.dataset.participantId,'medicClearance',this.value)">
-            ${clearanceOptions(candidate.medicClearance)}
-          </select>
-        </label>
-        <button class="btn btn-ghost" style="color:var(--danger); border-color:var(--danger)"
-                data-participant-id="${escHtml(candidate.participantId)}"
-                onclick="removeParticipant(this.dataset.participantId)">הסר</button>
-      </div>
-    `).join('');
-  }
 
   function renderStationMap() {
     const container = document.getElementById('station-map-list');
@@ -1761,55 +1681,6 @@
 
   window.onStationMapChange = () => setSaveStatus('שינויים לא שמורים');
 
-  window.addParticipant = () => {
-    const participantInput = document.getElementById('participant-input');
-    const nameInput = document.getElementById('participant-name-input');
-    const nationalIdInput = document.getElementById('participant-national-id-input');
-    const emergencyPhoneInput = document.getElementById('participant-emergency-phone-input');
-    const candidate = {
-      participantId: (participantInput.value || '').trim(),
-      fullName: (nameInput.value || '').trim(),
-      nationalId: normalizeNationalId(nationalIdInput.value),
-      emergencyContactPhone: normalizeEmergencyContactPhone(emergencyPhoneInput.value),
-      doctorClearance: Number(document.getElementById('participant-doctor-clearance-input').value),
-      medicClearance: Number(document.getElementById('participant-medic-clearance-input').value)
-    };
-    const issues = candidateRosterIssues([...currentTeamData.candidates, candidate]);
-    if (issues.length) {
-      showToast(issues[0], 'error');
-      return;
-    }
-    currentTeamData.candidates.push(candidate);
-    participantInput.value = '';
-    nameInput.value = '';
-    nationalIdInput.value = '';
-    emergencyPhoneInput.value = '';
-    document.getElementById('participant-doctor-clearance-input').value = CLEARANCE_STATUSES.PENDING;
-    document.getElementById('participant-medic-clearance-input').value = CLEARANCE_STATUSES.PENDING;
-    participantInput.focus();
-    renderParticipants();
-    setSaveStatus('שינויים לא שמורים');
-  };
-
-  window.removeParticipant = (id) => {
-    currentTeamData.candidates = currentTeamData.candidates
-      .filter(candidate => String(candidate.participantId) !== String(id));
-    renderParticipants();
-    setSaveStatus('שינויים לא שמורים');
-  };
-
-  window.updateCandidateDraft = (participantId, field, value) => {
-    const candidate = currentTeamData.candidates
-      .find(item => String(item.participantId) === String(participantId));
-    const allowedFields = ['fullName', 'nationalId', 'emergencyContactPhone', 'doctorClearance', 'medicClearance'];
-    if (!candidate || !allowedFields.includes(field)) return;
-    if (field === 'nationalId') candidate[field] = normalizeNationalId(value);
-    else if (field === 'emergencyContactPhone') candidate[field] = normalizeEmergencyContactPhone(value);
-    else if (field === 'doctorClearance' || field === 'medicClearance') candidate[field] = Number(value);
-    else candidate[field] = String(value || '');
-    setSaveStatus('שינויים לא שמורים');
-  };
-
   function collectStationMapFromUI() {
     const rows = document.querySelectorAll('#station-map-list select[data-slot]');
     const out = {};
@@ -1818,10 +1689,10 @@
   }
 
   window.saveTeam = async () => {
-    if (!currentTeamNumber) { showToast('לא נבחר צוות', 'error'); return; }
-    const rosterIssues = candidateRosterIssues(currentTeamData.candidates);
-    if (rosterIssues.length) { showToast(rosterIssues[0], 'error'); return; }
+    if (!currentTeamNumber || !teamManagementEventId) { showToast('לא נבחר צוות', 'error'); return; }
     const stationMap = collectStationMapFromUI();
+    const previous = currentTeamData.stationMap || {};
+    const changedSlots = Object.keys(stationMap).filter(slot => previous[slot] && previous[slot] !== stationMap[slot]);
 
     // אזהרה רכה אם סוג תחנה חוזר על עצמו (כל 17 אמורות להופיע פעם אחת)
     const used = Object.values(stationMap);
@@ -1833,34 +1704,23 @@
         return;
       }
     }
+    // באירוע פעיל מספר תחנה כבר מופיע בלו״ז ובסבבים שנרשמו — שינוי הסוג שלו
+    // משנה את שם התחנה גם שם.
+    if (changedSlots.length && !confirm(
+      `שינוי סדר התחנות של צוות ${Number(currentTeamNumber)} באירוע הפעיל ישנה את שם התחנה ` +
+      `בלו״ז ובסבבים שכבר נרשמו במספרים: ${changedSlots.join(', ')}.\nלשמור?`)) {
+      setSaveStatus('לא נשמר');
+      return;
+    }
 
-    const payload = {
-      teamNumber:   currentTeamNumber,
-      candidates:   currentTeamData.candidates.map(candidate => ({
-        participantId: String(candidate.participantId),
-        fullName: String(candidate.fullName),
-        nationalId: String(candidate.nationalId),
-        emergencyContactPhone: String(candidate.emergencyContactPhone),
-        doctorClearance: Number(candidate.doctorClearance),
-        medicClearance: Number(candidate.medicClearance)
-      })),
-      participants: deleteField(),
-      stationMap:   stationMap,
-      rosterSchemaVersion: TEAM_ROSTER_SCHEMA_VERSION,
-      rosterSource: currentTeamData.rosterSource || {
-        type: 'manual', sourceId: 'admin-ui', fileName: '',
-        importedAt: serverTimestamp(), importedBy: currentAdmin?.uid || ''
-      },
-      updatedAt:    serverTimestamp(),
-      updatedBy:    currentAdmin?.uid || ''
-    };
     setSaveStatus('שומר…');
     try {
-      await setDoc(doc(db, 'teams', currentTeamNumber), payload, { merge: true });
-      // עדכן state מקומי מהמה שנשמר, כדי שלא תהיה קופצנות ב-UI
-      currentTeamData.stationMap = payload.stationMap;
+      await updateDoc(doc(db, 'events', teamManagementEventId, 'teams', currentTeamNumber), {
+        stationMap, updatedAt: serverTimestamp(), updatedBy: currentAdmin?.uid || ''
+      });
+      currentTeamData.stationMap = stationMap;
       renderStationMap();
-      showToast('צוות ' + currentTeamNumber + ' נשמר ✓', 'success');
+      showToast('סדר התחנות של צוות ' + Number(currentTeamNumber) + ' נשמר ✓', 'success');
       setSaveStatus('נשמר');
     } catch (e) {
       showToast('שגיאה בשמירה: ' + e.message, 'error');
