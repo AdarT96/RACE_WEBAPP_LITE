@@ -722,6 +722,14 @@
     const staff = staffSnapshot?.exists() ? staffSnapshot.data() : null;
     // זורק לפני כל כתיבה, כך שרשומת המשתמש והשיבוץ לא נפרדים
     const staffPatch = staffPatchForUserChange(staff, staffChange, userSnapshot.data()?.team);
+    // משובץ באירוע יכול לעבור רק לצוות שקיים בו: צוות 7 באירוע של 3 צוותים
+    // השאיר אותו בלי משתתפים ועם רשימת תחנות של ברירת מחדל.
+    if (staffPatch?.team) {
+      const team = await getDoc(doc(db, 'events', String(pointer.eventId), 'teams', staffPatch.team));
+      if (!team.exists() || team.data().active === false) {
+        throw new Error(`צוות ${Number(staffPatch.team)} אינו קיים באירוע הפעיל. הוסף אותו בהגדרת האירוע או בחר צוות אחר.`);
+      }
+    }
     const batch = writeBatch(db);
     batch.update(doc(db, 'users', uid), userPatch);
     if (staffPatch) {

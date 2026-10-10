@@ -66,7 +66,7 @@ function setup(action, fail) {
     clearCandidateImportPreview:() => {},
     document:{ getElementById:() => element, querySelectorAll:() => [] },
     repository:{ saveDetails:operation, replaceTeamCandidates:operation, replaceStaff:operation },
-    currentEventId:'test-event',
+    currentEventId:'test-event', bundle:null,
     refreshBundle:async () => {},
     showToast:(...args) => messages.push(args),
     teamIdsFromInput:() => ['01'], saveTeamTopology:operation,

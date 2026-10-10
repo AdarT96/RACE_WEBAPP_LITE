@@ -320,7 +320,12 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
       return result.importedCount;
     },
 
-    async replaceStaff(eventId, staffValues) {
+    // baseline: the staff list as loaded on the page. With it, only rows the user
+    // actually changed are written, and a changed row that another device edited
+    // since the page loaded is refused. Without it, the page saved every row from
+    // its stale snapshot and silently reverted team/role changes made meanwhile
+    // in the admin panel.
+    async replaceStaff(eventId, staffValues, { baseline = null } = {}) {
       const members = (Array.isArray(staffValues) ? staffValues : []).map(normalizeEventStaff)
         .filter(member => member.uid && member.role);
       const duplicate = members.find((member, index) => members.findIndex(item => item.uid === member.uid) !== index);
@@ -333,8 +338,25 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
         throw new Error('לא ניתן לערוך סגל באירוע במצב הנוכחי.');
       }
       const existingById = new Map(existing.docs.map(item => [item.id, item.data()]));
+      const assignment = value => {
+        const member = value ? normalizeEventStaff(value) : null;
+        return member && member.active !== false ? `${member.role}|${member.team}` : 'none';
+      };
+      let toWrite = members;
+      let toRemove = existing.docs.filter(item => !members.some(member => member.uid === item.id) && item.data().active !== false);
+      if (Array.isArray(baseline)) {
+        const baselineById = new Map(baseline.map(item => [String(item.uid || item.id), item]));
+        toWrite = members.filter(member => assignment(baselineById.get(member.uid)) !== assignment(member));
+        toRemove = toRemove.filter(item => assignment(baselineById.get(item.id)) !== 'none');
+        const touched = [...toWrite.map(member => member.uid), ...toRemove.map(item => item.id)];
+        const conflict = touched.find(id => assignment(existingById.get(id)) !== assignment(baselineById.get(id)));
+        if (conflict) {
+          const name = normalizeEventStaff(existingById.get(conflict) || baselineById.get(conflict) || {}).displayName || conflict;
+          throw new Error(`השיבוץ של ${name} שונה במכשיר אחר מאז שנטען הדף. רענן את הדף ונסה שוב.`);
+        }
+      }
       const nextIds = new Set(members.map(member => member.uid));
-      const operations = members.map(member => batch => {
+      const operations = toWrite.map(member => batch => {
         const previous = existingById.get(member.uid);
         batch.set(staffRef(eventId, member.uid), {
           ...member,
@@ -343,13 +365,14 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
           ...(previous ? {} : { createdAt:serverTimestamp(), createdBy:uid })
         }, { merge:true });
       });
-      existing.docs.filter(item => !nextIds.has(item.id) && item.data().active !== false).forEach(item => {
+      toRemove.filter(item => !nextIds.has(item.id)).forEach(item => {
         operations.push(batch => batch.update(item.ref, {
           active:false, updatedAt:serverTimestamp(), updatedBy:uid
         }));
       });
+      if (!operations.length) return members;
       if (eventSnapshot.data().status === EVENT_STATUSES.ACTIVE) {
-        members.forEach(member => operations.push(batch => batch.update(doc(db, 'users', member.uid), {
+        toWrite.forEach(member => operations.push(batch => batch.update(doc(db, 'users', member.uid), {
           role:member.role,
           team:member.role === ROLES.FORMATION_COMMANDER ? null : Number(member.team),
           updatedAt:serverTimestamp()

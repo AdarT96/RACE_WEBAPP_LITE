@@ -585,7 +585,7 @@ document.getElementById('save-staff-button').addEventListener('click', async eve
   const button = event.currentTarget;
   setBusy(button, true);
   try {
-    await repository.replaceStaff(currentEventId, selectedStaffFromDom());
+    await repository.replaceStaff(currentEventId, selectedStaffFromDom(), { baseline:bundle?.staff || [] });
     await refreshBundle(); showToast('שיבוץ אנשי הצוות נשמר.', 'success');
   } catch (error) { showToast(error.message, 'error'); }
   finally { setBusy(button, false); }
