@@ -69,3 +69,29 @@ test('staff normalization keeps only operational event assignments', () => {
   assert.equal(normalizeEventTeamId(20), '20');
   assert.equal(normalizeEventTeamId(21), '');
 });
+
+test('candidates of a removed team are parked: they neither block activation nor count', () => {
+  const schedule = { teamIds:['01'], rows:[{ id:'r1', date:'2026-10-10', startMinute:600, kind:'rotation', assignments:{ '01':{ stationId:'01' } } }] };
+  const state = eventSetupReadiness({
+    event:{ name:'אירוע' }, schedule,
+    teams:[{ id:'01' }, { id:'20', active:false }],
+    candidates:[{ team:'01', participantId:'101' }, { team:'20', participantId:'2001' }]
+  });
+  assert.equal(state.blockers.some(item => item.includes('2001')), false);
+  assert.equal(state.counts.teams, 1);
+  assert.equal(state.counts.candidates, 1);
+});
+
+test('a candidate whose team was never in the event still blocks activation', () => {
+  const state = eventSetupReadiness({
+    event:{ name:'אירוע' }, teams:[{ id:'01' }], candidates:[{ team:'07', participantId:'701' }]
+  });
+  assert.equal(state.blockers.some(item => item.includes('701')), true);
+});
+
+test('a candidate number may start with zero', () => {
+  const state = eventSetupReadiness({
+    event:{ name:'אירוע' }, teams:[{ id:'01' }], candidates:[{ team:'01', participantId:'001' }]
+  });
+  assert.equal(state.blockers.some(item => item.includes('ללא מספר מועמד תקין')), false);
+});

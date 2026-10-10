@@ -1206,3 +1206,97 @@ test('event staff membership is readable before it is deleted', async () => {
   assert.equal(snapshot.docs.some(d => d.id === 'evaluator2'), true);
   await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', 'staff', 'evaluator2')));
 });
+
+// Production runs with event staffing switched on. Each rule check then resolves
+// role and team through settings/activeEvent and events/{id}/staff, which is far
+// more expensive than the user-record path the older tests exercise. These tests
+// cover the field flows under that real configuration (QA, Oct 2026: both hit
+// the 1000-expression limit or a null resource and were denied).
+async function enableEventStaffing() {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await updateDoc(doc(db, 'settings', 'activeEvent'), { eventStaffingSchemaVersion: 1 });
+    await updateDoc(doc(db, 'events', 'event-1'), { setupSchemaVersion: 1 });
+    const staff = [
+      ['operator1', 'operator', '01'], ['operator2', 'operator', '02'],
+      ['evaluator1', 'evaluator', '01'], ['formation1', 'formation_commander', '']
+    ];
+    for (const [uid, role, team] of staff) {
+      await setDoc(doc(db, 'events', 'event-1', 'staff', uid), {
+        eventId: 'event-1', uid, displayName: uid, role, team, active: true,
+        createdAt: serverTimestamp(), createdBy: 'admin1', updatedAt: serverTimestamp(), updatedBy: 'admin1'
+      });
+    }
+  });
+}
+
+test('with event staffing, a team commander sends, cancels and re-opens a dropout recommendation', async () => {
+  await enableEventStaffing();
+  const operator = userDb('operator2');
+  const reference = doc(operator, 'events', 'event-1', 'dropoutRecommendations', '02_200');
+  const payload = { ...recommendationPayload(), participantId: '200', team: '02',
+    recommendedBy: 'operator2', recommendedByName: 'מפקצ 2' };
+  // The app subscribes to the document before any recommendation exists.
+  await assertSucceeds(getDoc(reference));
+  await assertFails(getDoc(doc(userDb('operator1'), 'events', 'event-1', 'dropoutRecommendations', '02_200')));
+  // recommendDropout reads the document inside the transaction before writing.
+  await assertSucceeds(runTransaction(operator, async transaction => {
+    await transaction.get(reference);
+    transaction.set(reference, payload);
+  }));
+  await assertSucceeds(runTransaction(operator, async transaction => {
+    await transaction.get(reference);
+    transaction.update(reference, {
+      status: 'cancelled', revision: 2, updatedAt: serverTimestamp(),
+      resolvedAt: serverTimestamp(), resolvedBy: 'operator2'
+    });
+  }));
+  await assertSucceeds(runTransaction(operator, async transaction => {
+    await transaction.get(reference);
+    transaction.set(reference, { ...payload, revision: 3 });
+  }));
+  const commander = userDb('formation1');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const recommendationRef = doc(commander, 'events', 'event-1', 'dropoutRecommendations', '02_200');
+    await transaction.get(recommendationRef);
+    transaction.update(recommendationRef, {
+      status: 'rejected', revision: 4, updatedAt: serverTimestamp(),
+      resolvedAt: serverTimestamp(), resolvedBy: 'formation1'
+    });
+  }));
+});
+
+test('with event staffing, the formation commander accepts a dropout recommendation', async () => {
+  await enableEventStaffing();
+  await assertSucceeds(setDoc(doc(userDb('operator1'), 'events', 'event-1', 'dropoutRecommendations', '01_100'),
+    recommendationPayload()));
+  const commander = userDb('formation1');
+  await assertSucceeds(runTransaction(commander, async transaction => {
+    const recommendationRef = doc(commander, 'events', 'event-1', 'dropoutRecommendations', '01_100');
+    const stateRef = doc(commander, 'events', 'event-1', 'candidates', '01_100');
+    await transaction.get(recommendationRef);
+    await transaction.get(stateRef);
+    transaction.update(stateRef, {
+      status: 'withdrawn', reasonCode: 'medical', reasonLabel: 'רפואי', statusRevision: 1,
+      lastTransitionId: 'transition-staffed',
+      statusChangedAt: serverTimestamp(), statusChangedBy: 'formation1'
+    });
+    transaction.set(doc(commander, 'events', 'event-1', 'candidateStatusEvents', 'transition-staffed'), {
+      candidateKey: '01_100', participantId: '100', team: '01',
+      fromStatus: 'active', toStatus: 'withdrawn', reasonCode: 'medical', reasonLabel: 'רפואי',
+      details: 'נבדק על ידי החובש', source: 'recommendation', recommendationId: '01_100',
+      changedAt: serverTimestamp(), changedBy: 'formation1', changedByName: 'מפקד הגיבוש', schemaVersion: 1
+    });
+    transaction.update(recommendationRef, {
+      status: 'accepted', revision: 2, updatedAt: serverTimestamp(),
+      resolvedAt: serverTimestamp(), resolvedBy: 'formation1'
+    });
+  }));
+});
+
+test('with event staffing, a field user can submit an own-team issue report', async () => {
+  await enableEventStaffing();
+  const evaluator = userDb('evaluator1');
+  await assertSucceeds(setDoc(doc(evaluator, 'issue_reports', 'report-staffed'), issuePayload()));
+  await assertFails(setDoc(doc(evaluator, 'issue_reports', 'report-staffed-spoof'), issuePayload({ reporterTeam: 2 })));
+});

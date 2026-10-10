@@ -7,10 +7,11 @@
 .setup-start-card { display:grid; gap:15px; }
 .setup-inline-form, .setup-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
 .setup-inline-form .form-input { flex:1; min-width:220px; }
-.setup-steps { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; position:sticky; top:8px; z-index:5; margin-bottom:18px; }
+/* נדבק מתחת לסרגל העליון ולא מאחוריו. הגובה נמדד ב-JS, כי בטלפון הסרגל העליון גבוה יותר */
+.setup-steps { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; position:sticky; top:calc(var(--setup-navbar-height, 68px) + 8px); z-index:5; margin-bottom:18px; }
 .setup-steps a { display:flex; align-items:center; justify-content:center; gap:7px; min-height:48px; color:var(--text); text-decoration:none; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:var(--shadow-sm); }
 .setup-steps span, .setup-step-number { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:50%; color:white; background:var(--accent); font-weight:800; }
-.setup-card { scroll-margin-top:76px; }
+.setup-card { scroll-margin-top:calc(var(--setup-navbar-height, 68px) + 76px); }
 .setup-card-head { display:flex; gap:12px; align-items:flex-start; border-bottom:1px solid var(--border); padding-bottom:14px; margin-bottom:16px; }
 .setup-card-head h2 { margin:0 0 4px; }
 .setup-step-number { flex:0 0 32px; width:32px; height:32px; }

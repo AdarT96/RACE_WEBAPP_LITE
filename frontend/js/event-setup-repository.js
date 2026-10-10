@@ -245,7 +245,12 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
       }
       const existing = await getDocs(collection(db, 'events', String(eventId), 'teams'));
       const existingIds = new Set(existing.docs.map(item => item.id));
-      const completeTeamIds = [...new Set([...existingIds, ...teamIds])]
+      // צוות שהוסר (active:false) ומבוקש שוב — מוחזר עם המועמדים שלו
+      const reactivatedIds = existing.docs
+        .filter(item => item.data().active === false && teamIds.includes(item.id)).map(item => item.id);
+      const activeExistingIds = existing.docs
+        .filter(item => item.data().active !== false || reactivatedIds.includes(item.id)).map(item => item.id);
+      const completeTeamIds = [...new Set([...activeExistingIds, ...teamIds])]
         .filter(normalizeEventTeamId).sort((left, right) => Number(left) - Number(right));
       if (completeTeamIds.length > MAX_EVENT_TEAMS) throw new Error(`ניתן להגדיר עד ${MAX_EVENT_TEAMS} צוותים.`);
       await runTransaction(db, async transaction => {
@@ -264,11 +269,48 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
         missingIds.forEach(team => transaction.set(teamRef(eventId, team),
           newEventTeamData(team, typeof stationMapFactory === 'function' ? stationMapFactory(team) : {}, uid, serverTimestamp())
         ));
+        reactivatedIds.forEach(team => transaction.update(teamRef(eventId, team), {
+          active:true, updatedAt:serverTimestamp(), updatedBy:uid
+        }));
         transaction.update(eventRef(eventId), {
           teamCount:completeTeamIds.length, updatedAt:serverTimestamp(), updatedBy:uid
         });
       });
       return completeTeamIds;
+    },
+
+    // הסרת צוות מהאירוע. הצוות מסומן active:false ולא נמחק: המועמדים שלו
+    // נשמרים בצד ויחזרו אם הצוות יוחזר, וסבבים שכבר נרשמו נשארים שלמים.
+    // אנשי הסגל של הצוות יוצאים מהשיבוץ, כי אין להם עוד צוות לעבוד בו.
+    async deactivateTeams(eventId, teamValues) {
+      const removed = [...new Set((Array.isArray(teamValues) ? teamValues : []).map(normalizeEventTeamId).filter(Boolean))];
+      if (!removed.length) return { removedTeams:[], removedStaff:0 };
+      const eventSnapshot = await getDoc(eventRef(eventId));
+      if (!eventSnapshot.exists() || ![EVENT_STATUSES.DRAFT, EVENT_STATUSES.ACTIVE].includes(eventSnapshot.data().status)) {
+        throw new Error('לא ניתן לערוך צוותים באירוע במצב הנוכחי.');
+      }
+      const [teamsSnapshot, staffSnapshot] = await Promise.all([
+        getDocs(collection(db, 'events', String(eventId), 'teams')),
+        getDocs(collection(db, 'events', String(eventId), 'staff'))
+      ]);
+      const remaining = teamsSnapshot.docs.filter(item => item.data().active !== false && !removed.includes(item.id));
+      if (!remaining.length) throw new Error('לא ניתן להסיר את כל הצוותים מהאירוע.');
+      const removedDocs = teamsSnapshot.docs.filter(item => removed.includes(item.id) && item.data().active !== false);
+      const staffDocs = staffSnapshot.docs.filter(item => item.data().active !== false &&
+        removed.includes(normalizeEventTeamId(item.data().team)));
+      const operations = [
+        ...removedDocs.map(item => batch => batch.update(item.ref, {
+          active:false, updatedAt:serverTimestamp(), updatedBy:uid
+        })),
+        ...staffDocs.map(item => batch => batch.update(item.ref, {
+          active:false, updatedAt:serverTimestamp(), updatedBy:uid
+        })),
+        batch => batch.update(eventRef(eventId), {
+          teamCount:remaining.length, updatedAt:serverTimestamp(), updatedBy:uid
+        })
+      ];
+      await commitOperations(db, operations);
+      return { removedTeams:removedDocs.map(item => item.id), removedStaff:staffDocs.length };
     },
 
     importCandidates,
@@ -278,7 +320,12 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
       return result.importedCount;
     },
 
-    async replaceStaff(eventId, staffValues) {
+    // baseline: the staff list as loaded on the page. With it, only rows the user
+    // actually changed are written, and a changed row that another device edited
+    // since the page loaded is refused. Without it, the page saved every row from
+    // its stale snapshot and silently reverted team/role changes made meanwhile
+    // in the admin panel.
+    async replaceStaff(eventId, staffValues, { baseline = null } = {}) {
       const members = (Array.isArray(staffValues) ? staffValues : []).map(normalizeEventStaff)
         .filter(member => member.uid && member.role);
       const duplicate = members.find((member, index) => members.findIndex(item => item.uid === member.uid) !== index);
@@ -291,8 +338,25 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
         throw new Error('לא ניתן לערוך סגל באירוע במצב הנוכחי.');
       }
       const existingById = new Map(existing.docs.map(item => [item.id, item.data()]));
+      const assignment = value => {
+        const member = value ? normalizeEventStaff(value) : null;
+        return member && member.active !== false ? `${member.role}|${member.team}` : 'none';
+      };
+      let toWrite = members;
+      let toRemove = existing.docs.filter(item => !members.some(member => member.uid === item.id) && item.data().active !== false);
+      if (Array.isArray(baseline)) {
+        const baselineById = new Map(baseline.map(item => [String(item.uid || item.id), item]));
+        toWrite = members.filter(member => assignment(baselineById.get(member.uid)) !== assignment(member));
+        toRemove = toRemove.filter(item => assignment(baselineById.get(item.id)) !== 'none');
+        const touched = [...toWrite.map(member => member.uid), ...toRemove.map(item => item.id)];
+        const conflict = touched.find(id => assignment(existingById.get(id)) !== assignment(baselineById.get(id)));
+        if (conflict) {
+          const name = normalizeEventStaff(existingById.get(conflict) || baselineById.get(conflict) || {}).displayName || conflict;
+          throw new Error(`השיבוץ של ${name} שונה במכשיר אחר מאז שנטען הדף. רענן את הדף ונסה שוב.`);
+        }
+      }
       const nextIds = new Set(members.map(member => member.uid));
-      const operations = members.map(member => batch => {
+      const operations = toWrite.map(member => batch => {
         const previous = existingById.get(member.uid);
         batch.set(staffRef(eventId, member.uid), {
           ...member,
@@ -301,13 +365,14 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
           ...(previous ? {} : { createdAt:serverTimestamp(), createdBy:uid })
         }, { merge:true });
       });
-      existing.docs.filter(item => !nextIds.has(item.id) && item.data().active !== false).forEach(item => {
+      toRemove.filter(item => !nextIds.has(item.id)).forEach(item => {
         operations.push(batch => batch.update(item.ref, {
           active:false, updatedAt:serverTimestamp(), updatedBy:uid
         }));
       });
+      if (!operations.length) return members;
       if (eventSnapshot.data().status === EVENT_STATUSES.ACTIVE) {
-        members.forEach(member => operations.push(batch => batch.update(doc(db, 'users', member.uid), {
+        toWrite.forEach(member => operations.push(batch => batch.update(doc(db, 'users', member.uid), {
           role:member.role,
           team:member.role === ROLES.FORMATION_COMMANDER ? null : Number(member.team),
           updatedAt:serverTimestamp()

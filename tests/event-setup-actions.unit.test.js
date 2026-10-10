@@ -66,7 +66,7 @@ function setup(action, fail) {
     clearCandidateImportPreview:() => {},
     document:{ getElementById:() => element, querySelectorAll:() => [] },
     repository:{ saveDetails:operation, replaceTeamCandidates:operation, replaceStaff:operation },
-    currentEventId:'test-event',
+    currentEventId:'test-event', bundle:null,
     refreshBundle:async () => {},
     showToast:(...args) => messages.push(args),
     teamIdsFromInput:() => ['01'], saveTeamTopology:operation,
@@ -130,7 +130,8 @@ for (const conflict of [false, true]) {
         if (conflict) throw new Error('schedule changed');
       } },
       repository:{ activate:async () => { calls.push('activate'); } },
-      refreshBundle:async () => {}, showToast:() => {}
+      refreshBundle:async () => {}, showToast:() => {},
+      otherActiveEvent:async () => null, renderReadiness:() => {}
     });
     const event = { currentTarget:button };
     const pending = handler(event);
@@ -140,3 +141,31 @@ for (const conflict of [false, true]) {
     assert.equal(button.disabled, false);
   });
 }
+
+test('activation writes nothing while another event is active', async () => {
+  let handler;
+  const calls = [];
+  const messages = [];
+  const button = { textContent:'הפעל', dataset:{}, disabled:false };
+  const bundle = { event:{ status:'draft' }, publishedSchedule:null, schedule:{ draftRevision:2 } };
+  const start = source.indexOf("document.getElementById('activate-event-button').addEventListener");
+  const end = source.indexOf('\n});', start) + '\n});'.length;
+  const readinessStart = source.indexOf('function readiness()');
+  const readinessEnd = source.indexOf('\nfunction renderReadiness', readinessStart);
+  runInNewContext(`${busyFunction}\n${source.slice(readinessStart, readinessEnd)}\n${source.slice(start, end)}`, {
+    document:{ getElementById:() => ({ addEventListener:(_, callback) => { handler = callback; } }) },
+    currentEventId:'draft-event', bundle, EVENT_STATUSES:{ DRAFT:'draft', ACTIVE:'active' },
+    eventSetupReadiness:() => ({ canActivate:true, blockers:[], warnings:[] }), scheduleErrors:() => [],
+    teamIds:() => ['01'], stationMapForTeam:() => ({}), activeStaff:() => [],
+    otherActiveEvent:async () => ({ id:'live', name:'גיבוש פעיל' }),
+    scheduleRepository:{ publishDraft:async () => { calls.push('publish'); } },
+    repository:{ activate:async () => { calls.push('activate'); } },
+    refreshBundle:async () => {}, renderReadiness:() => {},
+    showToast:(message, type) => messages.push({ message, type })
+  });
+  const pending = handler({ currentTarget:button });
+  await pending;
+  assert.deepEqual(calls, []);
+  assert.equal(messages.at(-1).type, 'error');
+  assert.match(messages.at(-1).message, /גיבוש פעיל/);
+});

@@ -16,26 +16,46 @@ service cloud.firestore {
       return signedIn() && caller().role == 'admin';
     }
 
-    function isApprovedRole(role) {
-      let eventScoped = usesEventStaffing();
-      return signedIn() && caller().approved == true &&
-        ((!eventScoped && caller().role == role) ||
-         (eventScoped &&
-          exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.active == true &&
-          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.role == role));
+    // Role and team resolution. Every check below reads settings/activeEvent,
+    // the caller's user record and their staff record ONCE and passes the
+    // values down. Firestore caps a request at 1000 evaluated expressions; the
+    // previous helpers re-read the same documents inside every call, and with
+    // event staffing on, dropout recommendations and issue reports exceeded
+    // the cap and were denied in production configuration.
+    function activePointer() {
+      return exists(/databases/$(database)/documents/settings/activeEvent)
+        ? get(/databases/$(database)/documents/settings/activeEvent).data : {};
+    }
+
+    function pointerUsesStaffing(pointer) {
+      return pointer.get('eventId', '') != '' && pointer.get('eventStaffingSchemaVersion', 0) == 1;
+    }
+
+    // The caller's staff record in the given event, or {} when not staffed.
+    function staffRecord(eventId) {
+      let path = /databases/$(database)/documents/events/$(eventId)/staff/$(request.auth.uid);
+      return exists(path) ? get(path).data : {};
     }
 
     function activeEventId() {
-      return exists(/databases/$(database)/documents/settings/activeEvent)
-        ? get(/databases/$(database)/documents/settings/activeEvent).data.eventId : '';
+      return activePointer().get('eventId', '');
     }
 
     function usesEventStaffing() {
-      return activeEventId() != '' &&
-        get(/databases/$(database)/documents/settings/activeEvent).data.keys()
-          .hasAny(['eventStaffingSchemaVersion']) &&
-        get(/databases/$(database)/documents/settings/activeEvent).data.eventStaffingSchemaVersion == 1;
+      return pointerUsesStaffing(activePointer());
+    }
+
+    function isApprovedRole(role) {
+      return signedIn() && approvedRoleIn(role, activePointer());
+    }
+
+    function approvedRoleIn(role, pointer) {
+      let user = caller();
+      let scoped = pointerUsesStaffing(pointer);
+      let staff = scoped ? staffRecord(pointer.eventId) : {};
+      return user.approved == true &&
+        ((!scoped && user.role == role) ||
+         (scoped && staff.get('active', false) == true && staff.get('role', '') == role));
     }
 
     function isFormationCommander() {
@@ -43,13 +63,15 @@ service cloud.firestore {
     }
 
     function isOwnTeam(team) {
-      let eventScoped = usesEventStaffing();
-      return signedIn() &&
-        ((!eventScoped && int(team) == int(caller().team)) ||
-         (eventScoped &&
-          exists(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)) &&
-          get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.active == true &&
-          int(team) == int(get(/databases/$(database)/documents/events/$(activeEventId())/staff/$(request.auth.uid)).data.team)));
+      return signedIn() && ownTeamIn(team, activePointer());
+    }
+
+    function ownTeamIn(team, pointer) {
+      let scoped = pointerUsesStaffing(pointer);
+      let staff = scoped ? staffRecord(pointer.eventId) : {};
+      return (!scoped && int(team) == int(caller().team)) ||
+        (scoped && staff.get('active', false) == true &&
+         staff.get('team', '') != '' && int(team) == int(staff.get('team', '0')));
     }
 
     function isActiveEvent(eventId) {
@@ -586,12 +608,11 @@ service cloud.firestore {
             (reasonCode == 'dismissal' && reasonLabel == 'הדחה');
         }
 
+        // Exactly these 14 keys: hasOnly plus the count is the same check as
+        // hasAll plus hasOnly, at half the expression cost (this function runs
+        // in every update rule below).
         function validRecommendationShape() {
-          return request.resource.data.keys().hasAll([
-              'participantId', 'team', 'reasonCode', 'reasonLabel', 'details', 'status',
-              'recommendedBy', 'recommendedByName', 'revision', 'createdAt', 'updatedAt',
-              'resolvedAt', 'resolvedBy', 'schemaVersion'
-            ]) &&
+          return request.resource.data.keys().size() == 14 &&
             request.resource.data.keys().hasOnly([
               'participantId', 'team', 'reasonCode', 'reasonLabel', 'details', 'status',
               'recommendedBy', 'recommendedByName', 'revision', 'createdAt', 'updatedAt',
@@ -617,8 +638,13 @@ service cloud.firestore {
             request.resource.data.recommendedBy == request.auth.uid;
         }
 
+        // The app subscribes to a candidate's recommendation before one exists.
+        // A missing document has no resource, so its team comes from the id
+        // ({team}_{participantId}); otherwise the first recommendation for any
+        // candidate was denied.
         allow read: if isAdmin() || isFormationCommander() ||
-          (isApprovedRole('operator') && isOwnTeam(resource.data.team));
+          (isApprovedRole('operator') &&
+           isOwnTeam(resource == null ? recommendationId.split('_')[0] : resource.data.team));
         allow create: if validRecommendationShape() && isOwnOpenRecommendation() &&
           isActiveEvent(eventId) && request.resource.data.status == 'open' &&
           request.resource.data.revision == 1 &&
