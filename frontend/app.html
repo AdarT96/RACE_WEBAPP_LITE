@@ -3999,6 +3999,14 @@
     }
     empty.style.display = 'none';
 
+    // שחזור בחירה אחרונה אם עדיין תקפה — לפני בניית הכפתורים. אחרי טעינה
+    // מחדש הכפתורים נבנו קודם בלי סימון, בזמן שההערה נשמרה על המועמד המשוחזר.
+    const ids = participants.map(String);
+    const savedPid = localStorage.getItem('lite:gnPid');
+    const restored = Boolean(savedPid && ids.includes(savedPid));
+    if (restored) gnState.participantId = savedPid;
+    else if (!ids.includes(String(gnState.participantId))) gnState.participantId = null;
+
     grid.innerHTML = participants.map(pid => {
       const pidStr = String(pid);
       const selected = gnState.participantId === pidStr;
@@ -4006,15 +4014,8 @@
                      onclick="selectGnParticipant('${escHtml(pidStr)}')">${escHtml(pidStr)}</button>`;
     }).join('');
 
-    // שחזור בחירה אחרונה אם עדיין תקפה
-    const savedPid = localStorage.getItem('lite:gnPid');
-    if (savedPid && participants.map(String).includes(savedPid)) {
-      gnState.participantId = savedPid;
-      subscribeToGnNotes();
-    } else if (!participants.map(String).includes(String(gnState.participantId))) {
-      gnState.participantId = null;
-      renderGeneralNotesList(null);
-    }
+    if (restored) subscribeToGnNotes();
+    else if (!gnState.participantId) renderGeneralNotesList(null);
   }
 
   window.onGnTeamChange = async (v) => {
@@ -4108,13 +4109,13 @@
     const input = document.getElementById('gn-input');
     const text  = (input.value || '').trim();
     if (!text) { showToast('כתוב הערה או בחר תיוג', 'error'); return; }
-    await appendGeneralNote(text);
-    input.value = '';
+    // הטקסט נמחק רק אחרי שמירה מוצלחת — בכשל (הרשאה, חיבור) הוא נשאר לניסיון חוזר
+    if (await appendGeneralNote(text)) input.value = '';
   };
 
   async function appendGeneralNote(text) {
     if (!gnState.team || !gnState.participantId) {
-      showToast('בחר צוות ומשתתף', 'error'); return;
+      showToast('בחר צוות ומשתתף', 'error'); return false;
     }
     const newNote = createNote({
       text, authorName: currentUser?.name || '', authorUid: currentUser?.uid || ''
@@ -4123,9 +4124,22 @@
       await privateNotesRepository.mutate(gnState.team, gnState.participantId,
         notes => [...notes, newNote]);
       showToast('הערה נוספה', 'success');
+      return true;
     } catch (e) {
-      showToast('שגיאה בשמירה: ' + e.message, 'error');
+      showToast('ההערה לא נשמרה: ' + noteSaveErrorText(e), 'error');
+      return false;
     }
+  }
+
+  // טקסט הכשל של Firestore טכני ובאנגלית; למשתמש בשטח צריך לדעת מה לעשות
+  function noteSaveErrorText(error) {
+    if (error?.code === 'permission-denied') {
+      return 'אין הרשאה לשמור למשתתף הזה. ייתכן שהשיבוץ שלך השתנה — רענן את הדף.';
+    }
+    if (['unavailable', 'deadline-exceeded'].includes(error?.code)) {
+      return 'אין חיבור לשרת. הטקסט נשמר בתיבה — נסה שוב.';
+    }
+    return error?.message || 'שגיאה לא ידועה';
   }
 
   window.deleteGeneralNote = async noteId => {
@@ -4714,7 +4728,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בשמירת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('ההערה לא נשמרה: ' + noteSaveErrorText(error), 'error'); }
   };
 
   window.deleteCandidateStationNote = async (raceId, noteId) => {
@@ -4785,7 +4799,7 @@
       const note = createNote({ text, authorUid: currentUser.uid, authorName: currentUser.name });
       await privateNotesRepository.mutate(team, pid, notes => [...notes, note]);
       input.value = '';
-    } catch (error) { showToast('שגיאה בשמירת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('ההערה לא נשמרה: ' + noteSaveErrorText(error), 'error'); }
   };
 
   window.deleteCandidateGeneralNote = async noteId => {
