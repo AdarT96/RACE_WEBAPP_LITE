@@ -129,8 +129,23 @@ async function loadUsers() {
 
 async function refreshBundle({ render = true } = {}) {
   if (!currentEventId) return;
-  bundle = await repository.load(currentEventId);
+  const [loaded, otherActive] = await Promise.all([repository.load(currentEventId), otherActiveEvent()]);
+  bundle = { ...loaded, otherActiveEvent:otherActive };
   if (render) renderWorkspace();
+}
+
+// אירוע אחר שכבר פעיל חוסם הפעלה. נבדק לפני כל כתיבה: הניסיון הקודם פרסם
+// קודם את לו״ז הטיוטה ורק אז נכשל על "כבר קיים אירוע פעיל".
+async function otherActiveEvent() {
+  try {
+    const pointer = await getDoc(doc(db, 'settings', 'activeEvent'));
+    const data = pointer.exists() ? pointer.data() : null;
+    if (data?.status !== 'active' || !data.eventId || data.eventId === currentEventId) return null;
+    const event = await getDoc(doc(db, 'events', String(data.eventId)));
+    return { id:String(data.eventId), name:event.exists() ? String(event.data().name || data.eventId) : String(data.eventId) };
+  } catch (error) {
+    return null; // הבדיקה בשרת ב-activate() נשארת קו ההגנה
+  }
 }
 
 function renderEventPicker(events) {
@@ -218,7 +233,12 @@ function scheduleErrors() {
 }
 
 function readiness() {
-  return eventSetupReadiness({ ...bundle, scheduleErrors:scheduleErrors() });
+  const state = eventSetupReadiness({ ...bundle, scheduleErrors:scheduleErrors() });
+  if (bundle?.otherActiveEvent && bundle.event?.status === EVENT_STATUSES.DRAFT) {
+    state.blockers.unshift(`האירוע "${bundle.otherActiveEvent.name}" פעיל כעת. יש לסגור אותו בפאנל המנהל לפני הפעלת אירוע זה.`);
+    state.canActivate = false;
+  }
+  return state;
 }
 
 function renderReadiness() {
@@ -612,6 +632,8 @@ document.getElementById('activate-event-button').addEventListener('click', async
   const button = event.currentTarget;
   setBusy(button, true, 'מפעיל…');
   try {
+    // מצב עדכני מהשרת לפני כל כתיבה — אירוע אחר אולי הופעל מאז טעינת הדף
+    if (bundle) bundle.otherActiveEvent = await otherActiveEvent();
     let state = readiness();
     if (!state.canActivate) throw new Error(state.blockers[0]);
     if (state.warnings.length && !confirm(`קיימות ${state.warnings.length} אזהרות שאינן חוסמות. להפעיל את האירוע בכל זאת?`)) return;
