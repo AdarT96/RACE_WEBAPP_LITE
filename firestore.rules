@@ -141,10 +141,13 @@ service cloud.firestore {
 
     // Race documents contain lifecycle and roster data only in schema 2. Subjective
     // results live in an owner-scoped evaluatorAssessments child document.
+    // Schema checks come before privacyMigrationComplete(): a schema-2 race
+    // settles the condition itself, so settings/evaluationPrivacy is read
+    // (and billed) only for legacy races.
     match /races/{raceId} {
       allow read: if isAdmin() ||
         ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team) &&
-         (!privacyMigrationComplete() || resource.data.evaluationSchemaVersion == 2)) ||
+         (resource.data.evaluationSchemaVersion == 2 || !privacyMigrationComplete())) ||
         (isFormationCommander() && resource.data.evaluationSchemaVersion == 2 &&
          resource.data.eventId is string && isActiveEvent(resource.data.eventId));
 
@@ -159,7 +162,7 @@ service cloud.firestore {
          request.resource.data.startedBy == request.auth.uid &&
          request.resource.data.startedAt == request.time &&
          request.resource.data.round is int && request.resource.data.round > 0 &&
-         (!privacyMigrationComplete() || request.resource.data.evaluationSchemaVersion == 2) &&
+         (request.resource.data.get('evaluationSchemaVersion', 0) == 2 || !privacyMigrationComplete()) &&
          (!request.resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
            request.resource.data.evaluationSchemaVersion == 2) &&
          (!request.resource.data.keys().hasAny(['participantIds']) ||
@@ -186,11 +189,11 @@ service cloud.firestore {
 
       // Compatibility is automatically disabled when the migration marker is set.
       // New clients never write evaluator data into the shared race document.
-      allow update: if isApprovedRole('evaluator') && isOwnTeam(resource.data.team) &&
-        !privacyMigrationComplete() &&
-        (!resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
+      allow update: if (!resource.data.keys().hasAny(['evaluationSchemaVersion']) ||
           resource.data.evaluationSchemaVersion != 2) &&
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags']);
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['tags']) &&
+        !privacyMigrationComplete() &&
+        isApprovedRole('evaluator') && isOwnTeam(resource.data.team);
 
       allow delete: if isAdmin();
 

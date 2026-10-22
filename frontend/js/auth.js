@@ -7,15 +7,16 @@ import { initializeApp }              from "https://www.gstatic.com/firebasejs/1
 import { getAuth, createUserWithEmailAndPassword,
          signInWithEmailAndPassword, signOut,
          onAuthStateChanged }          from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
-import { getFirestore, doc, setDoc,
+import { doc, setDoc,
          getDoc, serverTimestamp }     from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 import { ROLES, destinationForRole, isKnownRole, roleNeedsTeam } from './roles.js';
 import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { resolveActiveUserContext } from './active-user-context.js';
+import { openFirestore } from './firestore-cache.js';
 
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
-const db     = getFirestore(fbApp);
+const db     = openFirestore(fbApp);
 
 // ── Helpers ──────────────────────────────────────────
 const $  = id => document.getElementById(id);

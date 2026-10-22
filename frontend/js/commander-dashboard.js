@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getFirestore, onSnapshot, query, where
+  collection, doc, getDoc, onSnapshot, query, where
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import { isSessionEffectivelyRunning } from './session-policy.js';
 import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
@@ -17,10 +17,11 @@ import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { markLoad } from './load-priority.js';
+import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let repository = null;
@@ -452,7 +453,7 @@ window.reactivateCandidate = async (team, participantId) => {
 };
 
 window.logout = async () => {
-  await signOut(auth);
+  await signOutAndClearCache(auth, db);
   location.href = 'index.html';
 };
 

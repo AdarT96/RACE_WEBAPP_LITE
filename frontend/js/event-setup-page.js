@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore
+  collection, doc, getDoc, getDocs
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   buildCandidateRosterImport, candidateRowsFromMatrix, IMPORT_FIELD_LABELS
@@ -15,10 +15,11 @@ import { ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
 import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
+import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let repository = null;
@@ -418,7 +419,7 @@ document.querySelectorAll('.setup-steps a[href^="#"]').forEach(link => {
 
 document.getElementById('existing-events').addEventListener('change', event => selectEvent(event.target.value));
 document.getElementById('logout-button').addEventListener('click', async () => {
-  await signOut(auth); location.href = 'index.html';
+  await signOutAndClearCache(auth, db); location.href = 'index.html';
 });
 
 document.getElementById('save-details-button').addEventListener('click', async event => {

@@ -1152,18 +1152,19 @@
   import { resolveActiveUserContext } from "./js/active-user-context.js";
   import { staffAssignmentChange } from "./js/staff-assignment.js";
   import { createForegroundGate, markLoad } from "./js/load-priority.js";
+  import { openFirestore, signOutAndClearCache } from "./js/firestore-cache.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, updateDoc, collection,
+    doc, getDoc, setDoc, updateDoc, collection,
     onSnapshot, query, where, getDocs, serverTimestamp, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
   const auth  = getAuth(fbApp);
-  const db    = getFirestore(fbApp);
+  const db    = openFirestore(fbApp);
   markLoad('script loaded');
 
   // התחנה שהמשתמש פתח נטענת ראשונה. מנויים משלימים (תיוגים, מצב פרטיות,
@@ -1186,6 +1187,10 @@
   let roundNavigationSignature = '';
   let roundNavigationSelectedId = null;
   let raceQueryUnsubscribe = null;
+  // הרשימה עלולה להגיע קודם מהמטמון המקומי ולהיות חלקית; "התחל סבב" מחשב
+  // את מספר הסבב הבא ממנה, ולכן ממתין עד שהשרת אישר אותה.
+  let raceListSnapshotSeen = false;
+  let raceListConfirmedByServer = false;
   let evaluatorArrival = null;      // current evaluator's order for the viewed round
   let evaluatorArrivalRaceId = null;
   let evaluatorArrivalLoading = false;
@@ -1735,7 +1740,7 @@
   }
   window.logout = async () => {
     if (hasPendingArrivals()) { showToast('יש להמתין לשמירת סדר ההגעה לפני יציאה.', 'error'); return; }
-    await signOut(auth); window.location.href = 'index.html';
+    await signOutAndClearCache(auth, db); window.location.href = 'index.html';
   };
 
   // ═════════ Init ═════════
@@ -2259,8 +2264,13 @@
     }
     const q = query(collection(db, 'races'), ...constraints);
 
-    raceQueryUnsubscribe = onSnapshot(q, (snap) => {
+    raceQueryUnsubscribe = onSnapshot(q, { includeMetadataChanges:true }, (snap) => {
       if (generation !== raceQueryGeneration) return;
+      // אישור מהשרת בלי שינוי בנתונים מעדכן רק את הדגל — אין מה לרנדר מחדש.
+      const metadataOnly = raceListSnapshotSeen && snap.docChanges().length === 0;
+      raceListSnapshotSeen = true;
+      raceListConfirmedByServer = !snap.metadata.fromCache;
+      if (metadataOnly) return;
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
       const list = [];
@@ -2323,6 +2333,8 @@
     clearArrivalDrag();
     raceQueryGeneration += 1;
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
+    raceListSnapshotSeen = false;
+    raceListConfirmedByServer = false;
     detachEvaluatorArrivalSubscription();
     detachCurrentAssessmentSubscription();
     racesForContext = [];
@@ -2639,8 +2651,8 @@
     observedLatestWasRunning = isSessionEffectivelyRunning(latestRace);
     updateSessionTimerDisplay();
     if (isSessionEffectivelyRunning(currentRace) || isSessionEffectivelyRunning(latestRace)) {
-      // ~50ms כדי שיהיה חלק ומאיות מתעדכנות בעין
-      timerInterval = setInterval(updateSessionTimerDisplay, 50);
+      // 100ms: המאיות עדיין זזות בעין, בחצי מהעבודה — חשוב בטלפונים חלשים
+      timerInterval = setInterval(updateSessionTimerDisplay, 100);
     }
   }
   function stopSessionTimer() {
@@ -2745,6 +2757,7 @@
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
+    if (!raceListConfirmedByServer) { showToast('ממתין לעדכון מהשרת — נסה שוב בעוד רגע', 'info'); return; }
     const teamData = teamsCache[selectedTeam];
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
@@ -3703,7 +3716,7 @@
     // שורות הסנכרון לוקחות את נתוני הצוות ממטמון הצוותים, שנטען ברקע
     await Promise.all([loadEvaluatorDirectory(), ensureAdminTeamsPreloaded()]);
     const [arrivalsByRace, assessmentsByRace] = await Promise.all([
-      gatherEvaluatorArrivalsForRaces(races),
+      gatherEvaluatorArrivalsForRaces(races, { allEvaluators:true }),
       gatherEvaluatorAssessmentsByUidForRaces(races)
     ]);
 
@@ -3738,13 +3751,14 @@
   }
 
   // מחזירה Map<raceId, Map<evaluatorUid, arrival>>.
-  // מנהל קורא את כל מסמכי סדר ההגעה של הסבב (החוקים מתירים לו),
-  // מעריך קורא את שלו בלבד.
-  async function gatherEvaluatorArrivalsForRaces(races) {
+  // כברירת מחדל נקרא רק המסמך של המשתמש עצמו — גם אצל מנהל, כי דף המועמד
+  // וגרף ההשוואה מציגים את המבט האישי בלבד. allEvaluators (סנכרון של מנהל)
+  // קורא את מסמכי כל המעריכים בכל סבב.
+  async function gatherEvaluatorArrivalsForRaces(races, { allEvaluators = false } = {}) {
     const result = new Map();
     const list = Array.isArray(races) ? races : [];
 
-    if (isAdmin()) {
+    if (allEvaluators && isAdmin()) {
       const snapshots = await Promise.all(list.map(race =>
         getDocs(collection(db, 'races', String(race.id), 'evaluatorArrivals'))));
       snapshots.forEach((snap, index) => {

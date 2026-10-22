@@ -1300,3 +1300,24 @@ test('with event staffing, a field user can submit an own-team issue report', as
   await assertSucceeds(setDoc(doc(evaluator, 'issue_reports', 'report-staffed'), issuePayload()));
   await assertFails(setDoc(doc(evaluator, 'issue_reports', 'report-staffed-spoof'), issuePayload({ reporterTeam: 2 })));
 });
+
+test('station staff list their station rounds with the app queries, before and after the privacy marker', async () => {
+  const stationRounds = (db, team, withSchema) => getDocs(query(collection(db, 'races'),
+    where('eventId', '==', 'event-1'), where('team', '==', team), where('station', '==', '07'),
+    ...(withSchema ? [where('evaluationSchemaVersion', '==', 2)] : [])));
+
+  const evaluator = userDb('evaluator1');
+  const operator = userDb('operator1');
+  await assertSucceeds(stationRounds(evaluator, '01', false));
+  await assertSucceeds(stationRounds(evaluator, '01', true));
+  await assertSucceeds(stationRounds(operator, '01', true));
+  await assertFails(stationRounds(evaluator, '02', true));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'settings', 'evaluationPrivacy'), { schemaVersion: 2, status: 'complete' });
+  });
+  await assertSucceeds(stationRounds(evaluator, '01', true));
+  await assertSucceeds(stationRounds(operator, '01', true));
+  await assertFails(stationRounds(evaluator, '01', false));
+  await assertFails(stationRounds(evaluator, '02', true));
+});

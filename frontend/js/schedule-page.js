@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore
+  collection, doc, getDoc, getDocs
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
@@ -19,12 +19,13 @@ import {
 } from './roles.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
+import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
 
 markLoad('script loaded');
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let activeEvent = null;
@@ -632,7 +633,7 @@ async function initializePage(pointerRead) {
   subscribeToSchedule();
 }
 
-window.logout = async () => { await signOut(auth); location.href = 'index.html'; };
+window.logout = async () => { await signOutAndClearCache(auth, db); location.href = 'index.html'; };
 window.addEventListener('beforeunload', event => {
   if (!dirty) return;
   event.preventDefault(); event.returnValue = '';

@@ -50,6 +50,7 @@ frontend/
     station-operational-status.js חישוב משותף של מצב תחנה וסבבים
     station-operational-dialog.js חלון תפעולי משותף ללא נתוני הערכה
     roles.js             מקור אמת לתפקידים וליכולות בצד הלקוח
+    firestore-cache.js   אתחול Firestore עם מטמון מקומי במכשיר, וניקויו ביציאה
     auth.js
 tests/
   *.unit.test.js        בדיקות לוגיקה ללא תלות בדפדפן
