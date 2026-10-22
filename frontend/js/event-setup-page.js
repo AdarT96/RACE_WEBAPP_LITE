@@ -252,7 +252,8 @@ function renderReadiness() {
   list('readiness-blockers', state.blockers, 'אין בעיות חוסמות.');
   list('readiness-warnings', state.warnings, 'אין אזהרות.');
   document.getElementById('activation-summary').textContent =
-    `${state.counts.teams} צוותים · ${state.counts.candidates} מועמדים · ${state.counts.staff} אנשי צוות`;
+    `${state.counts.teams} צוותים · ${state.counts.candidates} מועמדים` +
+    `${state.counts.unassigned ? ` · ${state.counts.unassigned} כלליים (ללא צוות)` : ''} · ${state.counts.staff} אנשי צוות`;
   const button = document.getElementById('activate-event-button');
   button.disabled = !state.canActivate || bundle.event.status !== EVENT_STATUSES.DRAFT;
   button.textContent = bundle.event.status === EVENT_STATUSES.ACTIVE ? 'האירוע פעיל' : 'פרסם לו״ז והפעל אירוע';

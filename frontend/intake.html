@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>קליטת מועמדים</title>
+  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
+  <script>
+    // מצב חוץ (ניגודיות גבוהה בשמש) — ברירת מחדל כמו במסך הכניסה
+    document.addEventListener('DOMContentLoaded', () => {
+      try { if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode'); } catch (_) {}
+    });
+  </script>
+  <style>
+    body { padding-bottom: 40px; }
+    .intake-shell { max-width: 680px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 14px; }
+    .intake-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+    .intake-card h2 { font-size: 1.15rem; margin-bottom: 4px; }
+    .intake-help { font-size: 13px; margin-bottom: 12px; }
+    .intake-event { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .intake-event strong { font-size: 1.05rem; }
+    .intake-event select { max-width: 100%; }
+    .intake-form { display: grid; gap: 12px; }
+    .intake-field { display: grid; gap: 6px; font-size: 14px; font-weight: 700; color: var(--text-muted); }
+    .intake-field .form-input, .intake-field .form-select { min-height: 48px; font-size: 17px; }
+    .intake-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .segmented label { position: relative; display: block; cursor: pointer; }
+    .segmented input { position: absolute; opacity: 0; pointer-events: none; }
+    .segmented span { display: flex; align-items: center; justify-content: center; min-height: 46px; padding: 6px;
+      border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface);
+      color: var(--text); font-size: 14px; font-weight: 700; text-align: center; }
+    .segmented input:checked + span { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .segmented input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .intake-save { min-height: 56px; font-size: 18px; width: 100%; }
+    .intake-error { white-space: pre-line; }
+    .intake-result { text-align: center; padding: 14px 10px; border: 2px solid var(--success); border-radius: var(--radius);
+      background: rgba(34,197,94,.08); }
+    .intake-result .number { display: block; font-size: clamp(72px, 26vw, 140px); font-weight: 900; line-height: 1;
+      letter-spacing: 2px; color: var(--text); direction: ltr; }
+    .intake-result .caption { display: block; margin-top: 6px; font-size: 17px; font-weight: 700; color: var(--text); }
+    .intake-result small { display: block; margin-top: 4px; color: var(--text-muted); }
+    .intake-tools { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-bottom: 10px; }
+    .intake-tools .form-input, .intake-tools .form-select { min-height: 46px; }
+    .intake-count { font-size: 13px; color: var(--text-muted); margin-bottom: 8px; }
+    .intake-list { display: grid; gap: 8px; }
+    .intake-item { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+    .intake-item-head { width: 100%; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px;
+      min-height: 56px; padding: 8px 12px; background: none; border: 0; color: var(--text); font: inherit; text-align: right; cursor: pointer; }
+    .intake-item-head .num { font-size: 22px; font-weight: 900; min-width: 52px; text-align: center; direction: ltr; }
+    .intake-item-head .name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .intake-item-head .name small { display: block; font-weight: 400; color: var(--text-muted); font-size: 12px; }
+    .intake-item-body { border-top: 1px solid var(--border); padding: 12px; display: grid; gap: 12px; }
+    .intake-move { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; }
+    .intake-move .form-select { min-height: 46px; }
+    .intake-note { font-size: 13px; color: var(--text-muted); }
+    .intake-more { width: 100%; margin-top: 10px; }
+    @media (max-width: 420px) {
+      .intake-row { grid-template-columns: 1fr; }
+      .intake-tools { grid-template-columns: 1fr; }
+      .navbar-actions .user-name { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand"><span class="logo">🗂️</span><span>קליטת מועמדים</span></div>
+    <div class="navbar-actions">
+      <span id="intake-user" class="user-name"></span>
+      <a id="back-link" class="btn btn-ghost" href="index.html" style="padding:6px 10px" hidden>חזרה</a>
+      <button id="logout-button" class="btn btn-ghost" type="button" style="padding:6px 10px">התנתק</button>
+    </div>
+  </nav>
+
+  <main class="intake-shell">
+    <div id="page-alert" class="alert" hidden></div>
+
+    <section class="intake-card" aria-label="האירוע">
+      <div class="intake-event">
+        <div>
+          <strong id="event-name">טוען אירוע…</strong>
+          <div id="event-status" class="intake-note"></div>
+        </div>
+        <select id="event-select" class="form-select" hidden aria-label="בחירת אירוע"></select>
+      </div>
+    </section>
+
+    <section class="intake-card" id="intake-card" aria-labelledby="intake-title">
+      <h2 id="intake-title">מועמד חדש</h2>
+      <p class="intake-help">המספר נקבע אוטומטית בשמירה. שדה ריק בתעודת זהות או בטלפון נשמר כחסר.</p>
+      <div id="result" class="intake-result" hidden aria-live="polite">
+        <span class="number" id="result-number"></span>
+        <span class="caption" id="result-caption"></span>
+        <small>כתבו את המספר על המועמד. הטופס מוכן למועמד הבא.</small>
+      </div>
+      <form id="intake-form" class="intake-form" autocomplete="off" novalidate>
+        <label class="intake-field">שם מלא
+          <input id="field-fullName" class="form-input" maxlength="80" enterkeyhint="next" required>
+        </label>
+        <div class="intake-row">
+          <label class="intake-field">תעודת זהות
+            <input id="field-nationalId" class="form-input" inputmode="numeric" maxlength="12" enterkeyhint="next" dir="ltr">
+          </label>
+          <label class="intake-field">טלפון איש קשר לחירום
+            <input id="field-emergencyContactPhone" class="form-input" inputmode="tel" maxlength="20" enterkeyhint="next" dir="ltr">
+          </label>
+        </div>
+        <div class="intake-field">כשירות רופא
+          <div class="segmented" id="field-doctorClearance" role="radiogroup" aria-label="כשירות רופא"></div>
+        </div>
+        <div class="intake-field">כשירות חובש
+          <div class="segmented" id="field-medicClearance" role="radiogroup" aria-label="כשירות חובש"></div>
+        </div>
+        <label class="intake-field">צוות
+          <select id="field-team" class="form-select"></select>
+        </label>
+        <div id="form-error" class="alert alert-danger intake-error" hidden></div>
+        <button id="save-button" class="btn btn-success intake-save" type="submit" disabled>שמור וקבל מספר</button>
+      </form>
+    </section>
+
+    <section class="intake-card" aria-labelledby="list-title">
+      <h2 id="list-title">כל המועמדים באירוע</h2>
+      <p class="intake-help">לחצו על מועמד כדי לתקן פרטים או לשבץ לצוות. העברה אפשרית רק כל עוד אין למועמד נתונים.</p>
+      <div class="intake-tools">
+        <input id="search" class="form-input" type="search" inputmode="search" placeholder="חיפוש: מספר, שם או תעודת זהות" aria-label="חיפוש מועמד">
+        <select id="filter" class="form-select" aria-label="סינון לפי צוות"></select>
+      </div>
+      <div id="list-count" class="intake-count"></div>
+      <div id="candidate-list" class="intake-list"></div>
+      <button id="show-more" class="btn btn-ghost intake-more" type="button" hidden>הצג עוד</button>
+    </section>
+  </main>
+
+  <div id="toast-container"></div>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/intake-page.js"></script>
+</body>
+</html>
