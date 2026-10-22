@@ -39,10 +39,11 @@ function fixture({ size=10, replacement=false, beforeTransaction=()=>{} }={}) {
   return{repository,counts,store,groups};
 }
 
+// Four scans: teams, candidates, and intake's general candidates and number registry.
 test('ten-team import scans each collection once and commits once; retry does not write',async()=>{
   const f=fixture();
   await f.repository.importCandidates('demo',f.groups);
-  assert.equal(f.counts.collections,2);
+  assert.equal(f.counts.collections,4);
   assert.equal(f.counts.commits,1);
   assert.equal(f.counts.writes,211);
   assert.equal(f.store.get('events/demo').candidateCount,200);
@@ -79,4 +80,13 @@ test('invalid final team prevents writes to earlier teams',async()=>{
   const f=fixture();f.groups.at(-1).candidates.push({participantId:'21'});
   await assert.rejects(f.repository.importCandidates('demo',f.groups));
   assert.equal(f.counts.transactions,0);
+});
+
+test('a number taken by intake while the import was planned stops the import before any write',async()=>{
+  const f=fixture({beforeTransaction:(_,store)=>{store.set('events/demo/unassignedCandidates/5',{participantId:'5'});}});
+  await assert.rejects(f.repository.importCandidates('demo',f.groups),/שלישות/);
+  assert.equal(f.counts.commits,0);
+  const g=fixture({beforeTransaction:(_,store)=>{store.set('events/demo/candidateNumbers/7',{participantId:'7',team:'02'});}});
+  await assert.rejects(g.repository.importCandidates('demo',[g.groups[0]]),/שלישות/);
+  assert.equal(g.counts.commits,0);
 });

@@ -95,3 +95,23 @@ test('a candidate number may start with zero', () => {
   });
   assert.equal(state.blockers.some(item => item.includes('ללא מספר מועמד תקין')), false);
 });
+
+test('general candidates from intake warn at activation but do not block it', () => {
+  const state = eventSetupReadiness({ event:{ name:'אירוע' }, schedule, teams:[{id:'01'}],
+    candidates:[{ team:'01', participantId:'1' }],
+    unassignedCandidates:[{ id:'7', participantId:'7', fullName:'כללי', nationalId:'0' }] });
+  assert.equal(state.canActivate, true);
+  assert.equal(state.counts.unassigned, 1);
+  assert.equal(state.counts.candidates, 1);
+  assert.ok(state.warnings.some(warning => warning.includes('כלליים')));
+  const duplicate = eventSetupReadiness({ event:{ name:'אירוע' }, schedule, teams:[{id:'01'}],
+    candidates:[{ team:'01', participantId:'1', nationalId:'039284906' }],
+    unassignedCandidates:[{ id:'7', participantId:'7', nationalId:'039284906' }] });
+  assert.equal(duplicate.canActivate, false);
+  assert.ok(duplicate.blockers.some(blocker => blocker.includes('039284906')));
+});
+
+test('adjutancy staff never inherit a team', () => {
+  assert.deepEqual(normalizeEventStaff({ uid:'a', role:'adjutant', team:'05' }),
+    { uid:'a', displayName:'', role:'adjutant', team:'', active:true });
+});
