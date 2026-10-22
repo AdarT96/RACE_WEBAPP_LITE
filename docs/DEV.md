@@ -51,6 +51,9 @@ frontend/
     station-operational-dialog.js חלון תפעולי משותף ללא נתוני הערכה
     roles.js             מקור אמת לתפקידים וליכולות בצד הלקוח
     firestore-cache.js   אתחול Firestore עם מטמון מקומי במכשיר, וניקויו ביציאה
+    messages-model.js    מודל טהור להודעות פנימיות: נמענים, ולידציה, ספירת לא־נקראו ומכונת מצב להתראות
+    messages-repository.js שליחה, מנוי לפי תפקיד וסימון קריאה (db מוזרק)
+    message-center.js    פעמון, מגירת היסטוריה וכרטיסי התראה לא חוסמים; מוטמע בכל דף מחובר
     auth.js
 tests/
   *.unit.test.js        בדיקות לוגיקה ללא תלות בדפדפן
@@ -86,6 +89,8 @@ docs/
 - `events/{eventId}/teams/{team}` — צוות האירוע, רשימת מספרי המועמדים ומיפוי התחנות. מקור האמת לרשימת הצוותים, ללא תלות בקיום לו״ז.
 - `events/{eventId}/candidates/{team_participant}` — ישות המועמד באירוע: `participantId, team, fullName, nationalId, emergencyContactPhone, doctorClearance, medicClearance`, המצב התפעולי (`active|withdrawn`), סיבת נשירה וגרסאות נפרדות לפרופיל ולמצב. מפק״צ ומעריך קוראים רק את מועמדי הצוות שלהם; מפקד הגיבוש קורא את כולם אך משנה רק מצב; מנהל בלבד רשאי לתקן פרופיל.
 - `events/{eventId}/staff/{uid}` — מקור האמת לשיבוץ באירוע (`role`, `team`, `active`). באירוע סכימה חדש חוקי Firestore דורשים חברות פעילה זו; השדות הגלובליים ב־`users` הם הקרנה של האירוע הפעיל לצורכי ניתוב ותאימות.
+- `events/{eventId}/messages/{messageId}` — הודעה פנימית: `text` (1–1000), `targetRoles` (1–5 מתוך `operator|evaluator|formation_commander|adjutant|admin`), `senderUid`, `senderName`, `senderRole` (`admin|formation_commander`), `createdAt`, `schemaVersion: 1`. אי־שינוי אחרי יצירה; יוצרים רק מנהל ומפקד הגיבוש באירוע הפעיל; מחיקה למנהל בלבד. מנהל ומפקד הגיבוש קוראים הכול; כל תפקיד אחר קורא רק הודעות שהוא ב־`targetRoles` שלהן (התפקיד האפקטיבי: מסמך הסגל כשיש `eventStaffingSchemaVersion: 1`, אחרת `users.role`). הנמען שואל `where('targetRoles','array-contains',role)` בלי `orderBy` (בלי אינדקס מורכב) וממיין בלקוח.
+- `events/{eventId}/messageReads/{uid}` — `lastReadAt`, `schemaVersion: 1`. קריאה וכתיבה לבעלים בלבד. "לא נקרא" = הודעה של אחר שנוצרה אחרי `lastReadAt`; פתיחת המגירה מעדכנת אותו. הודעות שייכות לאירוע הפעיל, ולכן אירוע חדש מתחיל בהיסטוריה ריקה.
 - `events/{eventId}/artifacts/{id}` — manifest לקבצי Drive, המפריד בין מצב Firestore לבין side effect חיצוני ומאפשר retry בטוח.
 - `events/{eventId}/dropoutRecommendations/{team_participant}` — המלצת מפק״צ יחידה למועמד, עם מצב `open|accepted|rejected|cancelled`. מפק״צ כותב רק בצוות שלו; מפקד הגיבוש פותר בלבד.
 - `events/{eventId}/candidateStatusEvents/{id}` — יומן append-only של מעברי מצב. המסמך החדש והמצב החדש נכתבים באותה טרנזקציה.
@@ -93,6 +98,10 @@ docs/
 - `events/{eventId}/schedule/draft` — סביבת העבודה היחידה של מנהל ומפקד הגיבוש. `baseRevision` קושר אותה לגרסה המפורסמת שעליה נבנתה ו־`draftRevision` מונע דריסה בין שני עורכים. שמירת טיוטה אינה משנה דבר אצל הצוותים.
 - `events/{eventId}/teamSchedules/{team}` — הקרנה של טור צוות אחד מהגרסה המפורסמת בלבד. מפק״צ ומעריך קוראים רק את ההקרנה של הצוות שלהם ואינם מקבלים את מטריצת־העל.
 - `events/{eventId}/scheduleRevisions/{revisionKey}` — צילום מלא ובלתי־ניתן לשינוי של כל פרסום, ללא שינוי של גרסאות היסטוריות. פרסום כותב את `master`, כל הקרנות הצוות, צילום היסטורי וטיוטה מסונכרנת באותה טרנזקציה. שחזור אינו מוחק עבר: הוא יוצר פרסום חדש מסוג `restore` שמצביע על גרסת מקור קיימת.
+
+### הודעות פנימיות
+
+`mountMessageCenter({ db, user, role, anchor, gate, eventId | resolveEventId })` נקרא פעם אחת בכל דף מחובר (app, commander, schedule, admin, event-setup). הפעמון נבנה מיד ואינו קורא כלום; מאזיני ההודעות ומצב הקריאה מתחילים דרך `gate.background()` אחרי הצגת התצוגה הראשית. `setEventId()` מחליף אירוע (הדשבורד של מפקד הגיבוש מנוי על המצביע). כרטיס קופץ מוצג רק להודעה שנוספה אחרי שגם ההודעות וגם מצב הקריאה אושרו מהשרת (לא מהמטמון) — כל מה שלפני כן מסוכם בכרטיס אחד "יש לך N הודעות שלא נקראו". ההודעה מופיעה רק כשהאפליקציה פתוחה (אין push). יש לפרסם את `firestore.rules` לפני הפרונטאנד.
 
 ### חוזה ייבוא roster
 

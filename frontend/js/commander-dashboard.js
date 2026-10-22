@@ -16,8 +16,10 @@ import { ROLES, canManageFormation } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
-import { markLoad } from './load-priority.js';
+import { createForegroundGate, markLoad } from './load-priority.js';
 import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { mountMessageCenter } from './message-center.js';
+import { activeEventIdFromPointer } from './messages-model.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -45,6 +47,9 @@ let latestDashboardSnapshot = null;
 let effectiveRaceSignature = '';
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 let candidateSearchQuery = '';
+// הודעות פנימיות הן עבודת רקע: מתחילות אחרי שהדשבורד הוצג (או שנחסם).
+const foreground = createForegroundGate();
+let messageCenter = null;
 
 const text = (id, value) => {
   const element = document.getElementById(id);
@@ -67,6 +72,7 @@ function clearEventSubscriptions() {
 }
 
 function showBlocking(message) {
+  foreground.release();
   const block = document.getElementById('blocking-message');
   block.textContent = message;
   block.hidden = false;
@@ -77,7 +83,8 @@ function subscribeToActiveEvent() {
   activeEventSubscription?.();
   activeEventSubscription = onSnapshot(doc(db, 'settings', 'activeEvent'), snapshot => {
     const pointer = snapshot.exists() ? snapshot.data() : null;
-    const nextEventId = pointer?.status === 'active' ? String(pointer.eventId || '') : '';
+    const nextEventId = activeEventIdFromPointer(pointer);
+    messageCenter?.setEventId(nextEventId);
     if (!nextEventId) {
       clearEventSubscriptions();
       text('event-name', 'דשבורד גיבוש');
@@ -101,6 +108,7 @@ function attachEvent(nextEventId) {
     eventData = { id: snapshot.id, ...snapshot.data() };
     markLoad('event loaded');
     renderDashboard();
+    foreground.release();
   }, fail('האירוע')));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'teams'), snapshot => {
     // צוות שהוסר מהאירוע מסומן active:false ואינו מוצג (גם לא המועמדים שלו)
@@ -474,6 +482,8 @@ document.addEventListener('keydown', event => {
 
 onAuthStateChanged(auth, async user => {
   if (!user) {
+    messageCenter?.dispose();
+    messageCenter = null;
     location.href = 'index.html';
     return;
   }
@@ -517,6 +527,13 @@ onAuthStateChanged(auth, async user => {
     // של מנוי המצביע. אותו מזהה אירוע לא יחובר פעמיים (attachEvent נבדק מולו).
     const pointer = await pointerRead.then(item => (item.exists() ? item.data() : null), () => null);
     if (pointer?.status === 'active' && pointer.eventId) attachEvent(String(pointer.eventId));
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid: user.uid, name: currentUser.name }, role: currentUser.role,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground,
+      eventId: activeEventIdFromPointer(pointer)
+    });
+    setTimeout(() => foreground.release(), 5000);
     subscribeToActiveEvent();
     clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {

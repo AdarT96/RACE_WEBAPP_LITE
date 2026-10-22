@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>פאנל מנהל — מערכת גיבוש עוקץ</title>
-  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
+  <link rel="stylesheet" href="css/main.css?v=1.4-messages">
   <style>
     .stats-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
     /* כרטיס מתקפל — היסטוריית המרוצים ארוכה ודוחפת את שאר הפאנל למטה */
@@ -475,8 +475,9 @@
     EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam
   } from "./js/roles.js";
   import { staffPatchForUserChange } from "./js/staff-assignment.js";
-  import { markLoad } from "./js/load-priority.js";
+  import { createForegroundGate, markLoad } from "./js/load-priority.js";
   import { openFirestore, signOutAndClearCache } from "./js/firestore-cache.js";
+  import { mountMessageCenter } from "./js/message-center.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
@@ -488,9 +489,12 @@
   const auth  = getAuth(fbApp);
   const db    = openFirestore(fbApp);
   let currentAdmin = null;
+  // הודעות פנימיות הן עבודת רקע: מתחילות אחרי שסקירת הפאנל הוצגה
+  const foreground = createForegroundGate();
+  let messageCenter = null;
 
   onAuthStateChanged(auth, async (user) => {
-    if (!user) { window.location.href = 'index.html'; return; }
+    if (!user) { messageCenter?.dispose(); messageCenter = null; window.location.href = 'index.html'; return; }
     const snap = await getDoc(doc(db, 'users', user.uid));
     if (!snap.exists() || snap.data().role !== 'admin') {
       showToast('גישת מנהל בלבד', 'error');
@@ -499,6 +503,12 @@
     }
     currentAdmin = { ...snap.data(), uid: user.uid };
     markLoad('profile resolved');
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid: user.uid, name: currentAdmin.name }, role: ROLES.ADMIN,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground
+    });
+    setTimeout(() => foreground.release(), 8000);
     // מה שגלוי בפתיחה: כרטיס האירוע והמונים שבראש הדף. מונה הסבבים נספר
     // בשרת — רשימת הסבבים המלאה יושבת בכרטיס מקופל ונטענת אחר כך.
     await Promise.allSettled([
@@ -510,6 +520,7 @@
       loadStationTypesData().then(() => { initStTypeEditor(); initTeamManagement(); })
     ]);
     markLoad('overview rendered');
+    foreground.release();
     // הכרטיסים המקופלים — אחרי שהסקירה הוצגה
     loadRaces();
     loadQuickTags();

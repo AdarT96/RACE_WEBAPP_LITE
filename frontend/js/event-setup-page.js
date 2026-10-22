@@ -16,6 +16,8 @@ import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel
 import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
 import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { createForegroundGate } from './load-priority.js';
+import { mountMessageCenter } from './message-center.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -30,6 +32,9 @@ let users = [];
 let rosterBusy = false;
 let candidateImportPreview = null;
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
+// הודעות פנימיות הן עבודת רקע: מתחילות אחרי שמסך ההגדרה נטען.
+const foreground = createForegroundGate();
+let messageCenter = null;
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -662,13 +667,19 @@ document.getElementById('activate-event-button').addEventListener('click', async
 });
 
 onAuthStateChanged(auth, async user => {
-  if (!user) { location.href = 'index.html'; return; }
+  if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   try {
     const snapshot = await getDoc(doc(db, 'users', user.uid));
     if (!snapshot.exists() || snapshot.data().role !== ROLES.ADMIN) {
       await signOut(auth); location.href = 'index.html'; return;
     }
     currentUser = { uid:user.uid, ...snapshot.data() };
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid:user.uid, name:currentUser.name }, role: ROLES.ADMIN,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground
+    });
+    setTimeout(() => foreground.release(), 8000);
     document.getElementById('setup-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
     repository = createEventSetupRepository(db, currentUser, { stationMapFactory:defaultStationMap });
     scheduleRepository = createScheduleRepository(db, currentUser);
@@ -681,5 +692,7 @@ onAuthStateChanged(auth, async user => {
     if (requested) openSetupCard(initialCardId, { scroll: true });
   } catch (error) {
     showAlert('טעינת מסך ההגדרה נכשלה: ' + error.message, 'danger');
+  } finally {
+    foreground.release();
   }
 });

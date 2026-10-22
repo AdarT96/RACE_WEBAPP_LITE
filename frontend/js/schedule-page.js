@@ -20,6 +20,8 @@ import {
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
 import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { mountMessageCenter } from './message-center.js';
+import { activeEventIdFromPointer } from './messages-model.js';
 
 markLoad('script loaded');
 
@@ -43,6 +45,7 @@ let saving = false;
 let conflict = false;
 let teamProjection = null;
 let stationTypesRead = Promise.resolve();
+let messageCenter = null;
 // הלו״ז הוא מה שהמשתמש פתח. היסטוריית הגרסאות נטענת אחריו.
 const foreground = createForegroundGate();
 
@@ -51,6 +54,7 @@ const escapeHtml = value => String(value ?? '')
 const pad2 = value => String(Number(value)).padStart(2, '0');
 
 function showBlocking(message) {
+  foreground.release();
   const element = document.getElementById('schedule-blocking');
   element.textContent = message;
   element.hidden = false;
@@ -613,6 +617,13 @@ function scheduleShown() {
 
 async function initializePage(pointerRead) {
   updateBackLink();
+  // הודעות פנימיות: הפעמון נבנה מיד, המאזינים מתחילים אחרי הצגת הלו״ז
+  messageCenter?.dispose();
+  messageCenter = mountMessageCenter({
+    db, user: { uid: currentUser.uid, name: currentUser.name }, role: currentUser.role,
+    anchor: document.querySelector('.navbar-actions'), gate: foreground,
+    resolveEventId: () => pointerRead.then(item => activeEventIdFromPointer(item.exists() ? item.data() : null))
+  });
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
   const [, event] = await Promise.all([stationTypesRead, loadEventAndTeams(pointerRead)]);
   activeEvent = event;
@@ -652,7 +663,7 @@ setInterval(() => {
 }, 30000);
 
 onAuthStateChanged(auth, async user => {
-  if (!user) { location.href = 'index.html'; return; }
+  if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   markLoad('auth ready');
   try {
     // שלוש קריאות בלתי תלויות יוצאות יחד. ה-catch הריק רק מסמן את ההבטחה
