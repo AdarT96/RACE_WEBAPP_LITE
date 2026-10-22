@@ -778,3 +778,136 @@ body.outdoor-mode select.role-sel { background: #f7fafc; border-color: #cbd5e0; 
 @media (max-width: 360px) {
   .stat-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ══════════════════════════════════════════════════════
+   MESSAGE CENTER — פעמון, מגירת הודעות וכרטיסי התראה
+   (js/message-center.js). הכרטיסים אינם חוסמים את הדף.
+   ══════════════════════════════════════════════════════ */
+.mc-bell {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 44px; height: 44px; padding: 0;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  cursor: pointer; flex: 0 0 auto;
+}
+.mc-bell:hover { background: var(--card); }
+.mc-badge {
+  position: absolute; top: -7px; left: -7px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--danger); color: #fff; border-radius: 10px;
+  font-size: 12px; font-weight: 800; line-height: 1;
+  pointer-events: none;
+}
+body.outdoor-mode .navbar .mc-bell { color: #fff; border-color: rgba(255,255,255,0.4); }
+
+.mc-toasts {
+  position: fixed; left: 0; right: 0; z-index: 2900;
+  top: calc(env(safe-area-inset-top, 0px) + 68px);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0 4vw; pointer-events: none;
+}
+.mc-toast {
+  pointer-events: auto;
+  display: flex; align-items: stretch; gap: 4px;
+  width: min(420px, 92vw); max-width: 92vw;
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-inline-start: 5px solid var(--accent);
+  border-radius: var(--radius-sm); box-shadow: var(--shadow);
+  animation: mc-pop 0.18s ease-out;
+}
+.mc-toast-content { flex: 1 1 auto; min-width: 0; padding: 10px 12px; cursor: pointer; }
+.mc-toast-title { font-weight: 800; font-size: 15px; overflow-wrap: anywhere; }
+.mc-toast-body { margin-top: 2px; font-size: 14px; color: var(--text-muted); overflow-wrap: anywhere; }
+@keyframes mc-pop { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
+
+.mc-icon-button {
+  flex: 0 0 auto; width: 44px; min-height: 44px;
+  background: transparent; color: var(--text-muted); border: none;
+  font-size: 18px; cursor: pointer; border-radius: var(--radius-sm);
+}
+.mc-icon-button:hover { color: var(--text); background: var(--surface); }
+
+.mc-backdrop {
+  position: fixed; inset: 0; z-index: 3000;
+  background: rgba(0,0,0,0.5);
+  opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s;
+}
+.mc-backdrop.mc-open { opacity: 1; visibility: visible; }
+.mc-drawer {
+  position: fixed; top: 0; bottom: 0; left: 0; z-index: 3001;
+  width: min(400px, 92vw);
+  display: flex; flex-direction: column;
+  background: var(--surface); color: var(--text);
+  border-inline-end: 1px solid var(--border); box-shadow: var(--shadow);
+  transform: translateX(-105%); visibility: hidden;
+  transition: transform 0.22s ease, visibility 0.22s;
+}
+.mc-drawer.mc-open { transform: none; visibility: visible; }
+.mc-drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border);
+}
+.mc-drawer-title { font-size: 18px; font-weight: 800; }
+.mc-drawer-body {
+  flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.mc-compose {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; margin-bottom: 14px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.mc-compose-label { font-weight: 700; font-size: 14px; }
+.mc-textarea {
+  width: 100%; resize: vertical; min-height: 84px;
+  padding: 10px; font: inherit; font-size: 16px; line-height: 1.4;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.mc-textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.mc-counter { align-self: flex-end; font-size: 12px; color: var(--text-dim); }
+.mc-roles { border: none; display: flex; flex-wrap: wrap; gap: 8px; }
+.mc-roles-legend { width: 100%; font-size: 13px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
+.mc-role-choice {
+  display: inline-flex; align-items: center; gap: 8px;
+  min-height: 44px; padding: 0 12px; cursor: pointer;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 22px;
+  font-size: 14px;
+}
+.mc-role-choice input { width: 20px; height: 20px; accent-color: var(--accent); }
+.mc-role-choice:has(input:checked) { border-color: var(--accent); background: rgba(99,102,241,0.18); }
+.mc-send { min-height: 48px; font-size: 16px; }
+.mc-status { min-height: 20px; font-size: 14px; font-weight: 600; }
+.mc-status[data-kind="ok"] { color: var(--success); }
+.mc-status[data-kind="error"] { color: var(--danger); }
+.mc-disabled-note { font-size: 13px; color: var(--text-muted); }
+
+.mc-list { display: flex; flex-direction: column; gap: 10px; }
+.mc-empty { padding: 24px 8px; text-align: center; color: var(--text-muted); }
+.mc-message {
+  padding: 10px 12px; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+}
+.mc-message.mc-new { border-inline-start: 5px solid var(--accent); }
+.mc-message-head { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; font-size: 13px; }
+.mc-sender { color: var(--text); overflow-wrap: anywhere; }
+.mc-time { color: var(--text-dim); direction: ltr; unicode-bidi: plaintext; }
+.mc-text { margin: 6px 0 8px; font-size: 16px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mc-chip {
+  padding: 2px 10px; font-size: 12px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 12px;
+}
+@media (max-width: 480px) {
+  .navbar { flex-wrap: wrap; row-gap: 6px; }
+  .navbar-actions { gap: 6px; }
+  .mc-bell { width: 42px; height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mc-toast { animation: none; }
+  .mc-drawer, .mc-backdrop { transition: none; }
+}

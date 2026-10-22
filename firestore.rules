@@ -58,6 +58,17 @@ service cloud.firestore {
          (scoped && staff.get('active', false) == true && staff.get('role', '') == role));
     }
 
+    // התפקיד האפקטיבי של המשתמש המחובר (ריק אם אינו מאושר). נקרא פעם אחת
+    // ומועבר הלאה, כדי לא לעבור את תקרת 1000 הביטויים של בקשה אחת.
+    function effectiveRoleIn(pointer) {
+      let user = caller();
+      let scoped = pointerUsesStaffing(pointer);
+      let staff = scoped ? staffRecord(pointer.eventId) : {};
+      return user.get('approved', false) != true ? '' :
+        (scoped ? (staff.get('active', false) == true ? staff.get('role', '') : '')
+                : user.get('role', ''));
+    }
+
     function isFormationCommander() {
       return isApprovedRole('formation_commander');
     }
@@ -735,6 +746,56 @@ service cloud.firestore {
         allow create: if (isAdmin() || isFormationCommander()) &&
           isActiveEvent(eventId) && validTransition();
         allow delete: if purgeableEvent(eventId);
+      }
+
+      // הודעות פנימיות באירוע. שולחים: מנהל ומפקד הגיבוש בלבד. הודעה אינה
+      // ניתנת לעדכון אחרי היצירה; מחיקה למנהל בלבד. נמען קורא רק הודעה שתפקידו
+      // מופיע ב-targetRoles (השאילתה array-contains על התפקיד שלו).
+      match /messages/{messageId} {
+        function validMessageShape(senderRole) {
+          let data = request.resource.data;
+          return data.keys().hasAll([
+              'text', 'targetRoles', 'senderUid', 'senderName', 'senderRole', 'createdAt', 'schemaVersion'
+            ]) &&
+            data.keys().hasOnly([
+              'text', 'targetRoles', 'senderUid', 'senderName', 'senderRole', 'createdAt', 'schemaVersion'
+            ]) &&
+            data.text is string && data.text.size() >= 1 && data.text.size() <= 1000 &&
+            data.targetRoles is list && data.targetRoles.size() >= 1 && data.targetRoles.size() <= 5 &&
+            data.targetRoles.hasOnly(['operator', 'evaluator', 'formation_commander', 'adjutant', 'admin']) &&
+            data.senderUid == request.auth.uid &&
+            data.senderName is string && data.senderName.size() <= 200 &&
+            data.senderRole == senderRole &&
+            data.createdAt == request.time &&
+            data.schemaVersion == 1;
+        }
+
+        allow read: if isAdmin() ||
+          (isActiveEvent(eventId) &&
+           (effectiveRoleIn(activePointer()) == 'formation_commander' ||
+            effectiveRoleIn(activePointer()) in resource.data.get('targetRoles', [])));
+
+        allow create: if isActiveEvent(eventId) &&
+          ((isAdmin() && validMessageShape('admin')) ||
+           (isFormationCommander() && validMessageShape('formation_commander')));
+
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+
+      // מצב הקריאה של כל משתמש: owner-only. lastReadAt קובע מה "לא נקרא".
+      match /messageReads/{readerUid} {
+        function ownApprovedReader() {
+          return signedIn() && request.auth.uid == readerUid &&
+            caller().get('approved', false) == true;
+        }
+
+        allow read: if ownApprovedReader();
+        allow create, update: if ownApprovedReader() &&
+          request.resource.data.keys().hasAll(['lastReadAt', 'schemaVersion']) &&
+          request.resource.data.keys().hasOnly(['lastReadAt', 'schemaVersion']) &&
+          request.resource.data.lastReadAt is timestamp &&
+          request.resource.data.schemaVersion == 1;
       }
 
       // Event membership is the durable source of staffing. The global user role/team

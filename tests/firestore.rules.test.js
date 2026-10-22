@@ -6,7 +6,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection, doc, getDoc, getDocs, query, where,
-  deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction, writeBatch
+  addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction, writeBatch
 } from 'firebase/firestore';
 import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
@@ -14,6 +14,7 @@ import {
 import { createEventSetupRepository } from './helpers/event-setup-repository.js';
 import { createScheduleRepository } from './helpers/schedule-repository.js';
 import { createArrivalRepository } from './helpers/arrival-repository.js';
+import { createMessagesRepository } from './helpers/messages-repository.js';
 import { candidateRowsFromMatrix, buildCandidateRosterImport } from '../frontend/js/candidate-roster-import.js';
 
 const PROJECT_ID = 'demo-race-webapp-lite';
@@ -1320,4 +1321,167 @@ test('station staff list their station rounds with the app queries, before and a
   await assertSucceeds(stationRounds(operator, '01', true));
   await assertFails(stationRounds(evaluator, '01', false));
   await assertFails(stationRounds(evaluator, '02', true));
+});
+
+// ---- הודעות פנימיות (events/{eventId}/messages, messageReads) ----
+const messagesRef = db => collection(db, 'events', 'event-1', 'messages');
+function messagePayload(senderUid, senderRole, overrides = {}) {
+  return {
+    text: 'כולם לאסוף ציוד', targetRoles: ['operator', 'evaluator'],
+    senderUid, senderName: 'שולח', senderRole,
+    createdAt: serverTimestamp(), schemaVersion: 1, ...overrides
+  };
+}
+const recipientQuery = (db, role) =>
+  getDocs(query(messagesRef(db), where('targetRoles', 'array-contains', role)));
+
+async function seedMessage(id = 'm1', targetRoles = ['evaluator']) {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-1', 'messages', id), {
+      text: 'שלום', targetRoles, senderUid: 'admin1', senderName: 'מנהל', senderRole: 'admin',
+      createdAt: Timestamp.now(), schemaVersion: 1
+    });
+  });
+}
+
+test('messages: only admin and formation commander send, with their own sender role', async () => {
+  await assertSucceeds(addDoc(messagesRef(userDb('admin1')), messagePayload('admin1', 'admin')));
+  await assertSucceeds(addDoc(messagesRef(userDb('formation1')), messagePayload('formation1', 'formation_commander')));
+  await assertFails(addDoc(messagesRef(userDb('operator1')), messagePayload('operator1', 'admin')));
+  await assertFails(addDoc(messagesRef(userDb('evaluator1')), messagePayload('evaluator1', 'formation_commander')));
+  await assertFails(addDoc(messagesRef(userDb('formation1')), messagePayload('formation1', 'admin')));
+  await assertFails(addDoc(messagesRef(userDb('admin1')), messagePayload('formation1', 'admin')));
+  await assertFails(addDoc(messagesRef(testEnv.unauthenticatedContext().firestore()), messagePayload('x', 'admin')));
+});
+
+test('messages: shape violations are rejected', async () => {
+  const db = userDb('admin1');
+  const bad = overrides => assertFails(addDoc(messagesRef(db), messagePayload('admin1', 'admin', overrides)));
+  await bad({ text: '' });
+  await bad({ text: 'א'.repeat(1001) });
+  await bad({ text: 7 });
+  await bad({ targetRoles: [] });
+  await bad({ targetRoles: 'operator' });
+  await bad({ targetRoles: ['operator', 'hacker'] });
+  await bad({ targetRoles: ['operator', 'evaluator', 'formation_commander', 'adjutant', 'admin', 'admin'] });
+  await bad({ senderName: 'ש'.repeat(201) });
+  await bad({ createdAt: Timestamp.fromMillis(Date.now() - 60_000) });
+  await bad({ schemaVersion: 2 });
+  await bad({ extra: true });
+  const { senderName, ...withoutName } = messagePayload('admin1', 'admin');
+  await assertFails(addDoc(messagesRef(db), withoutName));
+  await assertSucceeds(addDoc(messagesRef(db), messagePayload('admin1', 'admin', {
+    text: 'א'.repeat(1000), targetRoles: ['operator', 'evaluator', 'formation_commander', 'adjutant', 'admin']
+  })));
+});
+
+test('messages: cannot be sent to an event that is not active', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-2'), { name: 'ישן', status: 'closed', schemaVersion: 3 });
+  });
+  await assertFails(addDoc(collection(userDb('admin1'), 'events', 'event-2', 'messages'), messagePayload('admin1', 'admin')));
+});
+
+test('messages: recipients query their own role only; senders read everything', async () => {
+  await seedMessage('m-eval', ['evaluator']);
+  await seedMessage('m-op', ['operator', 'admin']);
+  const evaluator = userDb('evaluator1');
+  const own = await assertSucceeds(recipientQuery(evaluator, 'evaluator'));
+  assert.deepEqual(own.docs.map(d => d.id), ['m-eval']);
+  await assertFails(recipientQuery(evaluator, 'operator'));
+  await assertFails(getDocs(messagesRef(evaluator)));
+  await assertFails(getDoc(doc(messagesRef(evaluator), 'm-op')));
+  await assertSucceeds(getDoc(doc(messagesRef(evaluator), 'm-eval')));
+  assert.equal((await assertSucceeds(recipientQuery(userDb('operator1'), 'operator'))).size, 1);
+  assert.equal((await assertSucceeds(getDocs(messagesRef(userDb('admin1'))))).size, 2);
+  assert.equal((await assertSucceeds(getDocs(messagesRef(userDb('formation1'))))).size, 2);
+  await assertFails(getDocs(messagesRef(testEnv.unauthenticatedContext().firestore())));
+});
+
+test('messages: an unapproved user and a stale event get nothing', async () => {
+  await seedMessage('m-eval', ['evaluator']);
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users', 'evaluator2'), { approved: false });
+  });
+  await assertFails(recipientQuery(userDb('evaluator2'), 'evaluator'));
+  await assertSucceeds(recipientQuery(userDb('evaluator1'), 'evaluator'));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'settings', 'activeEvent'), { status: 'closed' });
+  });
+  await assertFails(recipientQuery(userDb('evaluator1'), 'evaluator'));
+});
+
+test('messages: with event staffing the role comes from the staff record', async () => {
+  await seedMessage('m-eval', ['evaluator']);
+  await seedMessage('m-fc', ['formation_commander']);
+  await enableEventStaffing();
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    // התפקיד הגלובלי של המשתמש אינו קובע יותר: operator2 משובץ כמעריך.
+    await setDoc(doc(db, 'events', 'event-1', 'staff', 'operator2'), {
+      eventId: 'event-1', uid: 'operator2', displayName: 'x', role: 'evaluator', team: '02', active: true,
+      createdAt: Timestamp.now(), createdBy: 'admin1', updatedAt: Timestamp.now(), updatedBy: 'admin1'
+    });
+    await updateDoc(doc(db, 'events', 'event-1', 'staff', 'evaluator1'), { active: false });
+  });
+  assert.equal((await assertSucceeds(recipientQuery(userDb('operator2'), 'evaluator'))).size, 1);
+  await assertFails(recipientQuery(userDb('operator2'), 'operator'));
+  await assertFails(recipientQuery(userDb('evaluator1'), 'evaluator')); // שיבוץ לא פעיל
+  assert.equal((await assertSucceeds(getDocs(messagesRef(userDb('formation1'))))).size, 2);
+  await assertSucceeds(addDoc(messagesRef(userDb('formation1')), messagePayload('formation1', 'formation_commander')));
+  await assertFails(addDoc(messagesRef(userDb('operator2')), messagePayload('operator2', 'admin')));
+});
+
+test('messages: immutable, deleted only by admin', async () => {
+  await seedMessage('m1');
+  for (const uid of ['admin1', 'formation1', 'evaluator1']) {
+    await assertFails(updateDoc(doc(messagesRef(userDb(uid)), 'm1'), { text: 'שונה' }));
+  }
+  await assertFails(deleteDoc(doc(messagesRef(userDb('formation1')), 'm1')));
+  await assertFails(deleteDoc(doc(messagesRef(userDb('evaluator1')), 'm1')));
+  await assertSucceeds(deleteDoc(doc(messagesRef(userDb('admin1')), 'm1')));
+});
+
+test('messageReads: owner-only with a strict shape', async () => {
+  const ref = (db, uid) => doc(db, 'events', 'event-1', 'messageReads', uid);
+  const payload = { lastReadAt: serverTimestamp(), schemaVersion: 1 };
+  await assertSucceeds(setDoc(ref(userDb('evaluator1'), 'evaluator1'), payload));
+  await assertSucceeds(setDoc(ref(userDb('evaluator1'), 'evaluator1'), payload));
+  await assertSucceeds(getDoc(ref(userDb('evaluator1'), 'evaluator1')));
+  await assertFails(getDoc(ref(userDb('evaluator2'), 'evaluator1')));
+  await assertFails(getDoc(ref(userDb('admin1'), 'evaluator1')));
+  await assertFails(setDoc(ref(userDb('evaluator2'), 'evaluator1'), payload));
+  await assertFails(setDoc(ref(userDb('evaluator1'), 'evaluator1'), { ...payload, extra: 1 }));
+  await assertFails(setDoc(ref(userDb('evaluator1'), 'evaluator1'), { lastReadAt: 'now', schemaVersion: 1 }));
+  await assertFails(setDoc(ref(userDb('evaluator1'), 'evaluator1'), { ...payload, schemaVersion: 2 }));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'users', 'evaluator2'), { approved: false });
+  });
+  await assertFails(setDoc(ref(userDb('evaluator2'), 'evaluator2'), payload));
+});
+
+test('messages repository: send, role-scoped subscription and read marker work against the rules', async () => {
+  const sender = createMessagesRepository(userDb('formation1'), { uid: 'formation1', name: 'מפקד', role: 'formation_commander' });
+  const evaluatorRepo = createMessagesRepository(userDb('evaluator1'), { uid: 'evaluator1', name: 'מעריך', role: 'evaluator' });
+  const operatorRepo = createMessagesRepository(userDb('operator1'), { uid: 'operator1', name: 'מפקצ', role: 'operator' });
+  const received = [];
+  const stop = evaluatorRepo.subscribe('event-1', snapshot => received.push(snapshot), error => assert.fail(error));
+  const operatorSeen = [];
+  const stopOperator = operatorRepo.subscribe('event-1', snapshot => operatorSeen.push(snapshot), () => {});
+  await sender.send('event-1', { text: 'לכל המעריכים', targetRoles: ['evaluator'] });
+  await new Promise(resolve => setTimeout(resolve, 600));
+  stop(); stopOperator();
+  const added = received.flatMap(snapshot => snapshot.added);
+  assert.equal(added.length, 1);
+  assert.equal(added[0].text, 'לכל המעריכים');
+  assert.equal(added[0].senderRole, 'formation_commander');
+  assert.deepEqual(added[0].targetRoles, ['evaluator']);
+  assert.equal(operatorSeen.flatMap(snapshot => snapshot.messages).length, 0);
+  await assert.rejects(evaluatorRepo.send('event-1', { text: 'x', targetRoles: ['operator'] }), /הרשאה/);
+  await evaluatorRepo.markRead('event-1');
+  const state = [];
+  const stopState = evaluatorRepo.subscribeReadState('event-1', snapshot => state.push(snapshot), () => {});
+  await new Promise(resolve => setTimeout(resolve, 400));
+  stopState();
+  assert.ok(state.at(-1).lastReadAtMs > 0);
 });
