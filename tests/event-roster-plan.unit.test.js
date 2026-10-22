@@ -89,3 +89,27 @@ test('an active team cannot exceed 20 after preserving omitted candidates', () =
   assert.throws(()=>planEventRoster({...input,status:'active',
     existing:Array.from({length:20},(_,i)=>candidate('01',String(i+1)))}),/20/);
 });
+
+test('imports refuse numbers that intake gave to a general candidate or to another team', () => {
+  assert.throws(() => planEventRoster({ ...input, unassigned:[{ id:'100', participantId:'100' }] }), /כללי/);
+  assert.throws(() => planEventRoster({ ...input, numberRegistry:[{ id:'100', participantId:'100', team:'02' }] }), /לצוות 2/);
+  assert.throws(() => planEventRoster({ ...input, numberRegistry:[{ id:'100', participantId:'100', team:'' }] }), /כללי/);
+  // The same team (re-import of a candidate intake placed there) is fine.
+  assert.equal(planEventRoster({ ...input, numberRegistry:[{ id:'100', participantId:'100', team:'01' }] }).plans[0].changes[0].kind, 'create');
+  // An existing candidate of the team is an update, not a new number.
+  const existing=[candidate('01','100')];
+  assert.doesNotThrow(() => planEventRoster({ ...input, existing, numberRegistry:[{ id:'100', participantId:'100', team:'01' }] }));
+});
+
+test('a draft replacement cannot silently drop a candidate that intake placed in the team', () => {
+  const existing=[candidate('01','99'),candidate('01','98')];
+  assert.throws(() => planEventRoster({ ...input, existing, numberRegistry:[{ id:'98', participantId:'98', team:'01' }] }), /98[\s\S]*שלישות/);
+  // Imported candidates without an intake registration keep the old replace behaviour.
+  assert.deepEqual(planEventRoster({ ...input, existing }).plans[0].changes.map(change => change.kind), ['delete','delete','create']);
+});
+
+test('national ids are unique across team candidates and general candidates', () => {
+  assert.throws(() => planEventRoster({ ...input,
+    groups:[{ team:'01', candidates:[{ participantId:'100', nationalId:'039284906' }] }],
+    unassigned:[{ id:'300', participantId:'300', nationalId:'039284906' }] }), /כללי/);
+});

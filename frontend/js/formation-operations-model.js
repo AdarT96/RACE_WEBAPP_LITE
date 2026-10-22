@@ -323,7 +323,8 @@ export function buildFormationDashboardSnapshot({
   };
 }
 
-function candidateSearchScore(candidate, query, digits) {
+// Shared ranking for every candidate search (dashboard and intake).
+export function candidateSearchScore(candidate, query, digits) {
   const participant = String(candidate.participantId || '');
   const rawNationalId = String(candidate.nationalId || '');
   const rawName = String(candidate.fullName ?? candidate.firstName ?? '').trim().toLocaleLowerCase('he');

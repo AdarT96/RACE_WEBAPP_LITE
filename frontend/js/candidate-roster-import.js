@@ -104,13 +104,14 @@ function clearanceFromCell(value) {
   return value;
 }
 
-function nationalIdFromCell(value) {
+// Also used by manual intake, so a typed ID is normalized exactly like an Excel cell.
+export function nationalIdFromCell(value) {
   const digits = String(value ?? '').replace(/\D+/g, '');
   if (!digits || /^0+$/.test(digits)) return '0';
   return digits && digits.length <= 9 ? digits.padStart(9, '0') : digits || '0';
 }
 
-function phoneFromCell(value) {
+export function phoneFromCell(value) {
   const digits = String(value ?? '').replace(/\D+/g, '');
   if (!digits || /^0+$/.test(digits)) return '0';
   return typeof value === 'number' && digits.length === 9 ? `0${digits}` : digits || '0';

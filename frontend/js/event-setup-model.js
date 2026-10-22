@@ -2,7 +2,7 @@ import {
   CANDIDATE_PROFILE_DEFAULTS, CLEARANCE_STATUSES, TEAM_ROSTER_SCHEMA_VERSION, isValidEmergencyContactPhone,
   isValidIsraeliNationalId, normalizeCandidateProfile
 } from './formation-operations-model.js';
-import { ROLES } from './roles.js';
+import { EVENT_STAFF_ROLES, ROLES, roleNeedsTeam } from './roles.js';
 import { padScheduleTeam } from './schedule-model.js';
 
 export const EVENT_SETUP_SCHEMA_VERSION = 1;
@@ -52,13 +52,12 @@ export function normalizeEventDraft(value = {}) {
 }
 
 export function normalizeEventStaff(value = {}) {
-  const role = [ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(value.role)
-    ? value.role : '';
+  const role = EVENT_STAFF_ROLES.includes(value.role) ? value.role : '';
   return {
     uid: boundedText(value.uid ?? value.id, 128),
     displayName: boundedText(value.displayName ?? value.name, 100),
     role,
-    team: role === ROLES.OPERATOR || role === ROLES.EVALUATOR ? normalizeEventTeamId(value.team) : '',
+    team: roleNeedsTeam(role) ? normalizeEventTeamId(value.team) : '',
     active: value.active !== false
   };
 }
@@ -69,7 +68,7 @@ export function eventTeamIds({ teams = [] } = {}) {
 
 export function eventSetupReadiness({
   event = {}, schedule = null, teams = [], candidates = [], staff = [], artifacts = [],
-  scheduleErrors = []
+  scheduleErrors = [], unassignedCandidates = []
 } = {}) {
   const normalizedEvent = normalizeEventDraft(event);
   const teamIds = eventTeamIds({ schedule, teams });
@@ -131,6 +130,21 @@ export function eventSetupReadiness({
     if (candidate.medicClearance === CLEARANCE_STATUSES.PENDING) warnings.push(`${label}: כשירות חובש טרם עודכנה.`);
   });
 
+  // מועמדים כלליים מהקליטה (שלישות): עדיין בלי צוות, ולכן לא ישתתפו בסבבים.
+  // זו אזהרה ולא חסימה — אפשר לשבץ אותם גם אחרי ההפעלה. תעודת זהות כפולה
+  // מול מועמד אחר באירוע היא אותו אדם פעמיים, ולכן חוסמת כמו בין צוותים.
+  const general = (Array.isArray(unassignedCandidates) ? unassignedCandidates : [])
+    .map(source => normalizeCandidateProfile(source, { participantId:source?.id }));
+  if (general.length) {
+    warnings.push(`${general.length} מועמדים כלליים (ללא צוות) עדיין לא שובצו לצוות ולא ישתתפו בסבבים עד שישובצו במסך הקליטה.`);
+  }
+  general.forEach(candidate => {
+    if (candidate.nationalId === CANDIDATE_PROFILE_DEFAULTS.nationalId) return;
+    if (nationalIdOwners.has(candidate.nationalId)) {
+      blockers.push(`תעודת הזהות ${candidate.nationalId} משויכת ליותר ממועמד אחד.`);
+    } else nationalIdOwners.set(candidate.nationalId, `general/${candidate.participantId}`);
+  });
+
   teamIds.forEach(team => {
     if (!schedule?.teamIds?.includes(team)) warnings.push(`צוות ${Number(team)} עדיין אינו משובץ בלו״ז.`);
     if (!candidateCounts[team]) warnings.push(`לצוות ${Number(team)} עדיין לא הוגדרו מועמדים.`);
@@ -163,6 +177,7 @@ export function eventSetupReadiness({
     counts: {
       teams: teamIds.length,
       candidates: Object.values(candidateCounts).reduce((total, count) => total + count, 0),
+      unassigned: general.length,
       staff: activeStaff.length
     },
     teamIds

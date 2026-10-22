@@ -5,10 +5,10 @@
 // האירוע — events/{id}/staff/{uid} — ולא מרשומת המשתמש. שינוי בפאנל המנהל
 // חייב לעדכן את שניהם, ואפליקציה פתוחה צריכה לדעת שהשיבוץ שלה השתנה.
 
-import { ROLES, roleLabel, roleNeedsTeam } from './roles.js';
+import { EVENT_STAFF_ROLES, ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { padScheduleTeam } from './schedule-model.js';
 
-const STAFF_ROLES = [ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER];
+const STAFF_ROLES = EVENT_STAFF_ROLES;
 
 // השדות לעדכון במסמך הסגל כשהמנהל משנה תפקיד או צוות, או null כשאין מה
 // לעדכן בו (המשתמש אינו משובץ, או הופך למנהל — מנהל אינו נקרא מהסגל).

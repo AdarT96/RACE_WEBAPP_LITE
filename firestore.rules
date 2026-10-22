@@ -93,6 +93,32 @@ service cloud.firestore {
         get(/databases/$(database)/documents/events/$(eventId)).data.status == 'active';
     }
 
+    // ── Candidate intake (adjutancy, formation commander, admin) ──
+    // Intake works in draft and active events. With event staffing on (the
+    // active pointer has eventStaffingSchemaVersion 1) a non-admin must be an
+    // active intake-role staff member of that event and may work only in it;
+    // otherwise the approved global role decides. As elsewhere, the user,
+    // pointer and staff documents are read once and passed down.
+    function intakeCallerIn(eventId, user, pointer) {
+      let scoped = pointerUsesStaffing(pointer);
+      let staff = scoped && user.role != 'admin' ? staffRecord(pointer.eventId) : {};
+      return user.role == 'admin' ||
+        (user.approved == true &&
+         ((!scoped && user.role in ['adjutant', 'formation_commander']) ||
+          (scoped && eventId == pointer.eventId && staff.get('active', false) == true &&
+           staff.get('role', '') in ['adjutant', 'formation_commander'])));
+    }
+
+    function intakeEventOpen(eventId) {
+      let path = /databases/$(database)/documents/events/$(eventId);
+      return exists(path) && get(path).data.status in ['draft', 'active'];
+    }
+
+    function mayIntake(eventId) {
+      return signedIn() && intakeEventOpen(eventId) &&
+        intakeCallerIn(eventId, caller(), activePointer());
+    }
+
     // מחיקת גיבוש שהסתיים. מותרת רק לאירוע שאינו פעיל ושהמצביע
     // settings/activeEvent אינו מפנה אליו — הגיבוש הרץ לעולם אינו נמחק,
     // וגם לא אירוע שנסגר בעוד המצביע נותר עליו.
@@ -138,11 +164,11 @@ service cloud.firestore {
         request.resource.data.email.size() <= 320 &&
         request.resource.data.approved == false &&
         request.resource.data.createdAt == request.time &&
-        request.resource.data.role in ['operator', 'evaluator', 'formation_commander'] &&
+        request.resource.data.role in ['operator', 'evaluator', 'formation_commander', 'adjutant'] &&
         ((request.resource.data.role in ['operator', 'evaluator'] &&
           request.resource.data.team is int &&
           request.resource.data.team >= 1 && request.resource.data.team <= 20) ||
-         (request.resource.data.role == 'formation_commander' &&
+         (request.resource.data.role in ['formation_commander', 'adjutant'] &&
           request.resource.data.team == null));
 
       allow update: if signedIn() && request.auth.uid == uid &&
@@ -160,6 +186,10 @@ service cloud.firestore {
         ((isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team) &&
          (resource.data.evaluationSchemaVersion == 2 || !privacyMigrationComplete())) ||
         (isFormationCommander() && resource.data.evaluationSchemaVersion == 2 &&
+         resource.data.eventId is string && isActiveEvent(resource.data.eventId)) ||
+        // Adjutancy: schema-2 rounds hold lifecycle and roster ids only. Intake
+        // needs them to refuse moving a candidate who already took part.
+        (isApprovedRole('adjutant') && resource.data.evaluationSchemaVersion == 2 &&
          resource.data.eventId is string && isActiveEvent(resource.data.eventId));
 
       allow create: if isAdmin() ||
@@ -314,6 +344,13 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if isAdmin() || isFormationCommander() ||
         (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')));
+      // Intake: one open event by id; listing open events only when no
+      // staffing-scoped event is active (then the pointer names the event).
+      allow get: if signedIn() && resource.data.status in ['draft', 'active'] &&
+        intakeCallerIn(eventId, caller(), activePointer());
+      allow list: if signedIn() && resource.data.status in ['draft', 'active'] &&
+        caller().approved == true && caller().role == 'adjutant' &&
+        !pointerUsesStaffing(activePointer());
       allow create: if isAdmin() && (request.resource.data.status != 'active' || hasPublishedSchedule(eventId));
       allow update: if isAdmin() && (request.resource.data.status != 'active' || resource.data.status == 'active' || hasPublishedSchedule(eventId));
       allow delete: if purgeableEvent(eventId);
@@ -323,10 +360,185 @@ service cloud.firestore {
           getAfter(/databases/$(database)/documents/events/$(id)/schedule/master).data.rows.size() > 0;
       }
 
+      // ── Candidate number registry (intake) ──
+      // candidateNumbers/{participantId}.team says where the number lives:
+      // '' = a general (unassigned) candidate, '01'..'20' = that team. Every
+      // intake write that creates, moves or removes a record must leave the
+      // registry pointing at the one place where the record exists afterwards,
+      // so a number can never be held by two records through intake.
+      function numberRegistryPath(id) {
+        return /databases/$(database)/documents/events/$(eventId)/candidateNumbers/$(id);
+      }
+
+      function numberHeldAfter(id, team) {
+        return existsAfter(numberRegistryPath(id)) && getAfter(numberRegistryPath(id)).data.team == team;
+      }
+
+      function numberMovedAwayAfter(id, team) {
+        return existsAfter(numberRegistryPath(id)) && getAfter(numberRegistryPath(id)).data.team != team;
+      }
+
+      function intakeRecordExistsAfter(team, id) {
+        return team == ''
+          ? existsAfter(/databases/$(database)/documents/events/$(eventId)/unassignedCandidates/$(id))
+          : existsAfter(/databases/$(database)/documents/events/$(eventId)/candidates/$(team + '_' + id));
+      }
+
+      function eventTeamAfter(team) {
+        return getAfter(/databases/$(database)/documents/events/$(eventId)/teams/$(team)).data;
+      }
+
+      function validIntakeProfile(candidate) {
+        return candidate.firstName is string && candidate.firstName.size() > 0 &&
+          candidate.firstName.size() <= 80 &&
+          candidate.fullName is string && candidate.fullName == candidate.firstName &&
+          candidate.nationalId is string &&
+          (candidate.nationalId == '0' || candidate.nationalId.matches('^[0-9]{9}$')) &&
+          candidate.emergencyContactPhone is string &&
+          (candidate.emergencyContactPhone == '0' ||
+           candidate.emergencyContactPhone.matches('^[0-9]{9,15}$')) &&
+          candidate.doctorClearance is int && candidate.doctorClearance in [0, 1, 2] &&
+          candidate.medicClearance is int && candidate.medicClearance in [0, 1, 2];
+      }
+
       match /teams/{teamNumber} {
+        // Intake changes a roster by exactly one number per write: adding a
+        // number that the registry places in this team and whose record exists,
+        // or removing one whose record left the team in the same transaction.
+        // Station maps, names and every other team field stay admin-only.
+        function validIntakeRosterChange() {
+          let before = resource.data.get('participantIds', []);
+          let after = request.resource.data.get('participantIds', []);
+          let added = after.removeAll(before);
+          let removed = before.removeAll(after);
+          return request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['participantIds', 'updatedAt', 'updatedBy']) &&
+            after is list && after.size() <= 20 &&
+            request.resource.data.updatedAt == request.time &&
+            request.resource.data.updatedBy == request.auth.uid &&
+            ((added.size() == 1 && removed.size() == 0 && after.size() == before.size() + 1 &&
+              resource.data.get('active', true) != false &&
+              added[0] is string &&
+              intakeRecordExistsAfter(teamNumber, added[0]) &&
+              numberHeldAfter(added[0], teamNumber)) ||
+             (removed.size() == 1 && added.size() == 0 && after.size() == before.size() - 1 &&
+              removed[0] is string &&
+              !intakeRecordExistsAfter(teamNumber, removed[0]) &&
+              numberMovedAwayAfter(removed[0], teamNumber)));
+        }
+
         allow read: if isAdmin() || isFormationCommander() ||
-          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber));
+          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(teamNumber)) ||
+          mayIntake(eventId);
         allow create, update: if isAdmin();
+        allow update: if mayIntake(eventId) && validIntakeRosterChange();
+        allow delete: if purgeableEvent(eventId);
+      }
+
+      // General candidates entered by intake without a team yet. Same profile
+      // fields as an event candidate; no status, since they take part in no
+      // round until they are assigned to a team.
+      match /unassignedCandidates/{participantId} {
+        function validUnassignedRecord() {
+          let candidate = request.resource.data;
+          return candidate.keys().hasAll([
+              'participantId', 'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
+              'doctorClearance', 'medicClearance', 'profileRevision', 'profileUpdatedAt',
+              'profileUpdatedBy', 'createdAt', 'createdBy', 'schemaVersion'
+            ]) &&
+            candidate.keys().hasOnly([
+              'participantId', 'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
+              'doctorClearance', 'medicClearance', 'profileRevision', 'profileUpdatedAt',
+              'profileUpdatedBy', 'createdAt', 'createdBy', 'schemaVersion'
+            ]) &&
+            candidate.participantId == participantId &&
+            participantId.size() <= 100 && participantId.matches('^[0-9]+$') && participantId != '0' &&
+            validIntakeProfile(candidate) &&
+            candidate.profileRevision is int && candidate.profileRevision >= 0 &&
+            candidate.profileUpdatedAt is timestamp && candidate.profileUpdatedBy is string &&
+            candidate.createdAt is timestamp && candidate.createdBy is string &&
+            candidate.schemaVersion == 1;
+        }
+
+        allow read: if mayIntake(eventId);
+        allow create: if mayIntake(eventId) && validUnassignedRecord() &&
+          request.resource.data.profileRevision == 0 &&
+          request.resource.data.createdAt == request.time &&
+          request.resource.data.createdBy == request.auth.uid &&
+          request.resource.data.profileUpdatedAt == request.time &&
+          request.resource.data.profileUpdatedBy == request.auth.uid &&
+          numberHeldAfter(participantId, '');
+        allow update: if mayIntake(eventId) && validUnassignedRecord() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
+            'doctorClearance', 'medicClearance',
+            'profileRevision', 'profileUpdatedAt', 'profileUpdatedBy'
+          ]) &&
+          request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
+          request.resource.data.profileUpdatedAt == request.time &&
+          request.resource.data.profileUpdatedBy == request.auth.uid;
+        allow delete: if purgeableEvent(eventId) ||
+          (mayIntake(eventId) && numberMovedAwayAfter(participantId, ''));
+      }
+
+      // One document per participant number of the event. Creation is the
+      // allocation itself: a create on an existing number is an update and is
+      // refused, so two devices can never both obtain the same number. Fresh
+      // numbers ('intake') must equal the counter written in the same
+      // transaction; 'legacy' registers a number that already existed (for
+      // example from the Excel import) when its candidate is first moved.
+      match /candidateNumbers/{numberId} {
+        function validNumberEntry() {
+          let entry = request.resource.data;
+          return entry.keys().hasAll([
+              'participantId', 'team', 'source', 'claimedAt', 'claimedBy', 'updatedAt', 'updatedBy', 'schemaVersion'
+            ]) &&
+            entry.keys().hasOnly([
+              'participantId', 'team', 'source', 'claimedAt', 'claimedBy', 'updatedAt', 'updatedBy', 'schemaVersion'
+            ]) &&
+            entry.participantId == numberId &&
+            numberId.size() <= 100 && numberId.matches('^[0-9]+$') && numberId != '0' &&
+            entry.team is string && (entry.team == '' || entry.team.matches('^[0-9]{2}$')) &&
+            entry.source in ['intake', 'legacy'] &&
+            entry.claimedAt is timestamp && entry.claimedBy is string &&
+            entry.updatedAt == request.time && entry.updatedBy == request.auth.uid &&
+            entry.schemaVersion == 1;
+        }
+
+        allow read: if mayIntake(eventId);
+        allow create: if mayIntake(eventId) && validNumberEntry() &&
+          request.resource.data.claimedAt == request.time &&
+          request.resource.data.claimedBy == request.auth.uid &&
+          intakeRecordExistsAfter(request.resource.data.team, numberId) &&
+          (request.resource.data.source == 'legacy' ||
+           getAfter(/databases/$(database)/documents/events/$(eventId)/intake/counter).data.lastNumber == int(numberId));
+        // A move: the number leaves exactly the place it was registered in and
+        // arrives where its record now exists.
+        allow update: if mayIntake(eventId) && validNumberEntry() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['team', 'updatedAt', 'updatedBy']) &&
+          request.resource.data.team != resource.data.team &&
+          intakeRecordExistsAfter(request.resource.data.team, numberId) &&
+          !intakeRecordExistsAfter(resource.data.team, numberId);
+        allow delete: if purgeableEvent(eventId);
+      }
+
+      // intake/counter: the last number handed out by intake. It only grows,
+      // and only together with the registry entry of that very number.
+      match /intake/{docId} {
+        function validIntakeCounter() {
+          return request.resource.data.keys().hasAll(['lastNumber', 'updatedAt', 'updatedBy']) &&
+            request.resource.data.keys().hasOnly(['lastNumber', 'updatedAt', 'updatedBy']) &&
+            request.resource.data.lastNumber is int &&
+            request.resource.data.lastNumber > 0 && request.resource.data.lastNumber <= 999999999 &&
+            request.resource.data.updatedAt == request.time &&
+            request.resource.data.updatedBy == request.auth.uid &&
+            getAfter(numberRegistryPath(string(request.resource.data.lastNumber))).data.claimedAt == request.time;
+        }
+
+        allow read: if mayIntake(eventId);
+        allow create: if docId == 'counter' && mayIntake(eventId) && validIntakeCounter();
+        allow update: if docId == 'counter' && mayIntake(eventId) && validIntakeCounter() &&
+          request.resource.data.lastNumber > resource.data.lastNumber;
         allow delete: if purgeableEvent(eventId);
       }
 
@@ -581,14 +793,22 @@ service cloud.firestore {
         }
 
         allow read: if isAdmin() || isFormationCommander() ||
-          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team));
-        allow create: if adminMayEditEvent(eventId) && validCandidateRecord() &&
+          (isActiveEvent(eventId) && (isApprovedRole('operator') || isApprovedRole('evaluator')) && isOwnTeam(resource.data.team)) ||
+          mayIntake(eventId);
+        // Admin import, or intake: a new record (or the arriving side of a
+        // move) whose number the registry places in this team and whose team
+        // roster lists it after the same transaction.
+        allow create: if validCandidateRecord() &&
           request.resource.data.status == 'active' && request.resource.data.statusRevision == 0 &&
           request.resource.data.profileRevision == 0 && request.resource.data.lastTransitionId == '' &&
           request.resource.data.statusChangedAt == request.time &&
           request.resource.data.statusChangedBy == request.auth.uid &&
           request.resource.data.profileUpdatedAt == request.time &&
-          request.resource.data.profileUpdatedBy == request.auth.uid;
+          request.resource.data.profileUpdatedBy == request.auth.uid &&
+          (adminMayEditEvent(eventId) ||
+           (mayIntake(eventId) &&
+            numberHeldAfter(request.resource.data.participantId, request.resource.data.team) &&
+            request.resource.data.participantId in eventTeamAfter(request.resource.data.team).participantIds));
         allow update: if request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'reasonCode', 'reasonLabel', 'statusRevision', 'lastTransitionId',
             'statusChangedAt', 'statusChangedBy'
@@ -608,11 +828,20 @@ service cloud.firestore {
             'firstName', 'fullName', 'nationalId', 'emergencyContactPhone',
             'doctorClearance', 'medicClearance',
             'profileRevision', 'profileUpdatedAt', 'profileUpdatedBy'
-          ]) && adminMayEditEvent(eventId) && validCandidateRecord() &&
+          ]) && mayIntake(eventId) && validCandidateRecord() &&
           request.resource.data.profileRevision == resource.data.profileRevision + 1 &&
           request.resource.data.profileUpdatedAt == request.time &&
           request.resource.data.profileUpdatedBy == request.auth.uid;
-        allow delete: if purgeableEvent(eventId);
+        // Intake removes a record only as the leaving side of a move, and only
+        // while the candidate has no data: status never changed, no dropout
+        // recommendation, number re-registered elsewhere and off this roster.
+        // (Rounds are checked by the client; rules cannot query them.)
+        allow delete: if purgeableEvent(eventId) ||
+          (mayIntake(eventId) &&
+           resource.data.statusRevision == 0 && resource.data.status == 'active' &&
+           !exists(/databases/$(database)/documents/events/$(eventId)/dropoutRecommendations/$(candidateId)) &&
+           numberMovedAwayAfter(resource.data.participantId, resource.data.team) &&
+           !(resource.data.participantId in eventTeamAfter(resource.data.team).participantIds));
       }
 
       match /dropoutRecommendations/{recommendationId} {
@@ -815,11 +1044,11 @@ service cloud.firestore {
           ]) &&
           request.resource.data.eventId == eventId && request.resource.data.uid == staffUid &&
           request.resource.data.displayName is string && request.resource.data.displayName.size() <= 100 &&
-          request.resource.data.role in ['operator', 'evaluator', 'formation_commander'] &&
+          request.resource.data.role in ['operator', 'evaluator', 'formation_commander', 'adjutant'] &&
           request.resource.data.team is string &&
           ((request.resource.data.role in ['operator', 'evaluator'] &&
             request.resource.data.team.matches('^[0-9]{2}$')) ||
-           (request.resource.data.role == 'formation_commander' && request.resource.data.team == '')) &&
+           (request.resource.data.role in ['formation_commander', 'adjutant'] && request.resource.data.team == '')) &&
           request.resource.data.active is bool &&
           request.resource.data.createdAt is timestamp && request.resource.data.createdBy is string &&
           request.resource.data.updatedAt == request.time && request.resource.data.updatedBy == request.auth.uid;

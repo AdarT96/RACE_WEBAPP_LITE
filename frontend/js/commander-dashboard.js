@@ -12,7 +12,7 @@ import {
 import { buildFormationAlerts } from './formation-alerts-model.js';
 import { createFormationOperationsRepository } from './formation-operations-repository.js';
 import { ISSUE_REPORT_SCHEMA_VERSION } from './issue-report.js';
-import { ROLES, canManageFormation } from './roles.js';
+import { ROLES, canManageFormation, destinationForRole } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
@@ -31,6 +31,7 @@ let eventId = '';
 let eventData = null;
 let teams = [];
 let candidates = [];
+let unassignedCount = 0;
 let recommendations = [];
 let races = [];
 let publishedSchedule = null;
@@ -65,6 +66,7 @@ function clearEventSubscriptions() {
   eventData = null;
   teams = [];
   candidates = [];
+  unassignedCount = 0;
   recommendations = [];
   races = [];
   publishedSchedule = null;
@@ -120,6 +122,14 @@ function attachEvent(nextEventId) {
     candidates = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
   }, fail('המועמדים')));
+  // מועמדים כלליים מהקליטה (שלישות) — רק מניין, לתזכורת שיש מי שעוד לא שובץ
+  eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'unassignedCandidates'), snapshot => {
+    unassignedCount = snapshot.size;
+    renderDashboard();
+  }, () => {
+    unassignedCount = 0;
+    renderDashboard();
+  }));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'dropoutRecommendations'), snapshot => {
     recommendations = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
@@ -348,6 +358,7 @@ window.renderDashboard = () => {
   text('kpi-withdrawn', snapshot.totals.withdrawn);
   text('kpi-teams', snapshot.teams.length);
   text('kpi-running', snapshot.totals.teamsRunning);
+  text('kpi-unassigned', unassignedCount);
   renderOperationalAlerts(snapshot);
   renderTeams(snapshot);
   renderCandidateSearch(snapshot);
@@ -496,6 +507,10 @@ onAuthStateChanged(auth, async user => {
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
+    if (profile?.approved && profile.eventAccess !== false && profile.role === ROLES.ADJUTANT) {
+      location.href = destinationForRole(profile.role);
+      return;
+    }
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canManageFormation(profile.role)) {
       await signOut(auth);
       location.href = 'index.html';

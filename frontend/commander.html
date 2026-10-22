@@ -10,7 +10,7 @@
     .formation-container { max-width: 1180px; margin: 0 auto; padding: 18px; }
     .formation-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; }
     .formation-heading p { margin-top:5px; }
-    .formation-kpis { display:grid; grid-template-columns:repeat(5,minmax(120px,1fr)); gap:10px; margin:16px 0; }
+    .formation-kpis { display:grid; grid-template-columns:repeat(6,minmax(110px,1fr)); gap:10px; margin:16px 0; }
     .formation-kpi { padding:16px 12px; border:1px solid var(--border); border-radius:12px; background:var(--card); text-align:center; }
     .formation-kpi strong { display:block; font-size:clamp(25px,5vw,35px); line-height:1; }
     .formation-kpi span { display:block; margin-top:7px; color:var(--text-muted); font-size:12px; }
@@ -128,6 +128,7 @@
       <span id="commander-user" class="user-name"></span>
       <span class="badge badge-info">תפעול</span>
       <a href="schedule.html" class="btn btn-ghost" style="padding:6px 10px">לו״ז</a>
+      <a href="intake.html" class="btn btn-ghost" style="padding:6px 10px">קליטה</a>
       <a id="admin-link" href="admin.html" class="btn btn-ghost" style="display:none; padding:6px 10px">ניהול</a>
       <button class="btn btn-ghost" style="padding:6px 10px" onclick="logout()">התנתק</button>
     </div>
@@ -150,6 +151,7 @@
         <div class="formation-kpi"><strong id="kpi-withdrawn">0</strong><span>נשרו</span></div>
         <div class="formation-kpi"><strong id="kpi-teams">0</strong><span>צוותים</span></div>
         <div class="formation-kpi"><strong id="kpi-running">0</strong><span>צוותים בתחנה פעילה</span></div>
+        <a class="formation-kpi" href="intake.html" style="color:inherit; text-decoration:none"><strong id="kpi-unassigned">0</strong><span>כלליים (ללא צוות) · לקליטה</span></a>
       </section>
 
       <section class="formation-card candidate-search-card">

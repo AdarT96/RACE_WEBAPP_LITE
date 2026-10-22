@@ -2,7 +2,8 @@ export const ROLES = Object.freeze({
   ADMIN: 'admin',
   OPERATOR: 'operator',
   EVALUATOR: 'evaluator',
-  FORMATION_COMMANDER: 'formation_commander'
+  FORMATION_COMMANDER: 'formation_commander',
+  ADJUTANT: 'adjutant'
 });
 
 export const EVENT_STAFFING_SCHEMA_VERSION = 1;
@@ -11,8 +12,15 @@ export const ROLE_LABELS = Object.freeze({
   [ROLES.ADMIN]: 'מנהל',
   [ROLES.OPERATOR]: 'מפק״צ',
   [ROLES.EVALUATOR]: 'מעריך',
-  [ROLES.FORMATION_COMMANDER]: 'מפקד הגיבוש'
+  [ROLES.FORMATION_COMMANDER]: 'מפקד הגיבוש',
+  [ROLES.ADJUTANT]: 'שלישות'
 });
+
+// תפקידים שמשובצים לאירוע דרך events/{id}/staff (מנהל אינו משובץ), וגם
+// התפקידים שמשתמש רשאי לבחור לעצמו בהרשמה — המנהל מאשר אחר כך.
+export const EVENT_STAFF_ROLES = Object.freeze([
+  ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER, ROLES.ADJUTANT
+]);
 
 export function roleLabel(role) {
   return ROLE_LABELS[String(role || '')] || String(role || '');
@@ -55,9 +63,18 @@ export function canManageSchedule(role) {
   return [ROLES.ADMIN, ROLES.FORMATION_COMMANDER].includes(String(role || ''));
 }
 
+// קליטת מועמדים (intake.html): הזנת פרטים, מספור אוטומטי, תיקון פרטים ושיבוץ
+// לצוות כל עוד אין למועמד נתונים. השלישות עובדת רק במסך הזה ואינה רואה
+// הערכות, הערות, סדרי הגעה, המלצות נשירה או לו״ז; מפקד הגיבוש והמנהל
+// מקבלים את אותן יכולות קליטה בנוסף ליכולות שלהם.
+export function canManageIntake(role) {
+  return [ROLES.ADJUTANT, ROLES.FORMATION_COMMANDER, ROLES.ADMIN].includes(String(role || ''));
+}
+
 export function destinationForRole(role) {
   if (role === ROLES.ADMIN) return 'admin.html';
   if (role === ROLES.FORMATION_COMMANDER) return 'commander.html';
+  if (role === ROLES.ADJUTANT) return 'intake.html';
   if ([ROLES.OPERATOR, ROLES.EVALUATOR].includes(role)) return 'app.html';
   return 'index.html';
 }
@@ -72,7 +89,7 @@ export function profileForActiveEvent(profile = {}, pointer = {}, staff = null) 
   const role = String(staff?.role || '');
   const team = roleNeedsTeam(role) ? Number(staff?.team) : null;
   const validAssignment = staff?.active === true &&
-    [ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(role) &&
+    EVENT_STAFF_ROLES.includes(role) &&
     (!roleNeedsTeam(role) || (Number.isInteger(team) && team >= 1 && team <= 20));
   if (!validAssignment) return { ...profile, activeEventId, eventAccess:false };
 

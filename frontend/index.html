@@ -125,6 +125,15 @@
               <p>תמונת מצב תפעולית של כל הצוותים והנשירות</p>
             </div>
           </label>
+
+          <label class="role-option" id="role-opt-adjutant">
+            <input type="radio" name="role" value="adjutant" id="role-adjutant" onchange="updateRoleSelected()">
+            <span class="role-icon">🗂️</span>
+            <div class="role-info">
+              <h4>שלישות</h4>
+              <p>קליטת מועמדים, מספור ושיבוץ לצוותים</p>
+            </div>
+          </label>
         </div>
 
         <!-- סלקטור נסתר לתפקיד -->
@@ -156,7 +165,8 @@
     const sel = document.getElementById('reg-role');
     if (chosen && sel) {
       sel.value = chosen.value;
-      const globalRole = chosen.value === 'formation_commander';
+      // תפקידים ללא צוות: מפקד הגיבוש והשלישות עובדים על כל הגיבוש
+      const globalRole = ['formation_commander', 'adjutant'].includes(chosen.value);
       const teamGroup = document.getElementById('reg-team-group');
       const teamSelect = document.getElementById('reg-team');
       teamGroup.style.display = globalRole ? 'none' : '';
@@ -171,7 +181,7 @@
     const blankRole = document.createElement('option');
     blankRole.value = ''; blankRole.textContent = '';
     sel.appendChild(blankRole);
-    ['operator','evaluator','formation_commander'].forEach(r => {
+    ['operator','evaluator','formation_commander','adjutant'].forEach(r => {
       const o = document.createElement('option');
       o.value = r; o.text = r;
       sel.appendChild(o);

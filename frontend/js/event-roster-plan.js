@@ -1,4 +1,6 @@
-import { candidateKey, candidateRosterIssues, normalizeCandidateProfile, CANDIDATE_PROFILE_FIELDS } from './formation-operations-model.js';
+import {
+  candidateKey, candidateRosterIssues, normalizeCandidateProfile, normalizeParticipantId, CANDIDATE_PROFILE_FIELDS
+} from './formation-operations-model.js';
 import { normalizeEventTeamId } from './event-setup-model.js';
 import { normalizeRosterSource } from './candidate-roster-import.js';
 import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
@@ -8,9 +10,17 @@ export const PROFILE_FIELDS = CANDIDATE_PROFILE_FIELDS;
 
 // Pure planning shared by Excel import and manual team editing. No writes until
 // every team and the resulting event roster have been validated.
-export function planEventRoster({ status, teams, existing, groups, source = {} }) {
+// unassigned / numberRegistry: general candidates and the number registry of
+// intake (adjutancy). A number that intake already gave to a general candidate
+// or placed in another team is refused, and a draft replacement may not drop
+// a candidate that intake registered in the replaced team.
+export function planEventRoster({ status, teams, existing, groups, source = {}, unassigned = [], numberRegistry = [] }) {
   if (!['draft', 'active'].includes(status)) throw new Error('לא ניתן לערוך מועמדים באירוע במצב הנוכחי.');
   if (!Array.isArray(groups) || !groups.length) throw new Error('לא נמצאו מועמדים לייבוא.');
+  const generalIds = new Set((Array.isArray(unassigned) ? unassigned : [])
+    .map(candidate => normalizeParticipantId(candidate.participantId ?? candidate.id)).filter(Boolean));
+  const registeredTeam = new Map((Array.isArray(numberRegistry) ? numberRegistry : [])
+    .map(entry => [normalizeParticipantId(entry.participantId ?? entry.id), normalizeEventTeamId(entry.team)]));
   const teamById = new Map(teams.map(team => [team.id, team]));
   const next = new Map(existing.map(candidate => [candidate.id, candidate]));
   const seen = new Set();
@@ -45,6 +55,22 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
     const previousById = new Map(previous.map(candidate => [candidate.id, candidate]));
     const keys = new Set(candidates.map(candidate => candidateKey(team, candidate.participantId)));
     const deletes = status === 'draft' ? previous.filter(candidate => !keys.has(candidate.id)) : [];
+    const intakeDropped = deletes.filter(candidate => registeredTeam.get(candidate.participantId) === team);
+    if (intakeDropped.length) {
+      throw new Error(`צוות ${Number(team)}: המועמדים ${intakeDropped.map(candidate => candidate.participantId).join(', ')} ` +
+        'נקלטו או הועברו בשלישות ואינם ברשימה החדשה. הוסף אותם לקובץ, או העבר אותם ל"כללי" במסך הקליטה לפני הייבוא.');
+    }
+    for (const candidate of candidates) {
+      if (previousById.has(candidateKey(team, candidate.participantId))) continue;
+      if (generalIds.has(candidate.participantId)) {
+        throw new Error(`צוות ${Number(team)}: מספר המועמד ${candidate.participantId} כבר שייך למועמד כללי (ללא צוות) שנקלט בשלישות.`);
+      }
+      if (registeredTeam.has(candidate.participantId) && registeredTeam.get(candidate.participantId) !== team) {
+        const holder = registeredTeam.get(candidate.participantId);
+        throw new Error(`צוות ${Number(team)}: מספר המועמד ${candidate.participantId} כבר הוקצה בקליטה ` +
+          `${holder ? `לצוות ${Number(holder)}` : 'למועמד כללי'}.`);
+      }
+    }
     const changes = [];
     for (const candidate of deletes) {
       changes.push({ kind:'delete', id:candidate.id, previous:candidate });
@@ -80,6 +106,12 @@ export function planEventRoster({ status, teams, existing, groups, source = {} }
     if (!nationalId || nationalId === '0') continue;
     if (nationalIds.has(nationalId)) throw new Error('תעודת זהות משויכת ליותר ממועמד אחד באירוע.');
     nationalIds.set(nationalId, candidate.id);
+  }
+  for (const candidate of (Array.isArray(unassigned) ? unassigned : [])) {
+    const nationalId = normalizeCandidateProfile(candidate).nationalId;
+    if (nationalId !== '0' && nationalIds.has(nationalId)) {
+      throw new Error('תעודת זהות משויכת ליותר ממועמד אחד באירוע (אחד מהם מועמד כללי שנקלט בשלישות).');
+    }
   }
   // A team is never split: its candidate documents and roster commit together.
   const chunks = [];
