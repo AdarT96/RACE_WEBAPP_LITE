@@ -87,6 +87,7 @@ function doPost(e) {
     if (type === "general_note")           return handleGeneralNote_(ss, payload);
     if (type === "ensure_evaluator_sheet") return handleEnsureEvaluatorSheet_(ss, payload);
     if (type === "ensure_team_sheet")      return handleEnsureTeamSheet_(ss, payload);
+    if (type === "ensure_files")           return handleEnsureFiles_(ss, payload);
     if (type === "audit_files")            return handleAuditFiles_(ss, payload);
     if (type === "sync_batch")             return handleSyncBatch_(ss, payload);
     if (type === "reset_registries")       return handleResetRegistries_(ss, payload);
@@ -108,13 +109,13 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-10-05-event-scoped-hints";
+var CODE_VERSION = "2026-10-22-batched-file-check";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
 // היא גורמת לבדיקת הפריסה לעבור בזמן שהיא בעצם נכשלת.
 var FEATURES = ["ensure_team_sheet", "audit_files", "reset_registries", "sync_batch",
-                "set_drive_target", "get_drive_target", "event_scoped_files"];
+                "set_drive_target", "get_drive_target", "event_scoped_files", "ensure_files"];
 
 function doGet(e) {
   return buildDataResponse_(true, "Gibush sync alive", {
@@ -261,8 +262,10 @@ function findStationRow_(sheet, pid, round, evalName) {
 }
 
 // סבב עולה, ובתוכו מקום עולה — כך סדר ההגעה נקרא מלמעלה למטה.
-function sortStationTab_(sheet) {
-  var last = sheet.getLastRow();
+// knownLast (אופציונלי): מספר השורה האחרונה כשהמיזוג כבר יודע אותו —
+// חוסך קריאת getLastRow. בלעדיו (הנתיב הישן) מתנהג כמו תמיד.
+function sortStationTab_(sheet, knownLast) {
+  var last = knownLast || sheet.getLastRow();
   if (last < 3) return; // אין מה למיין
   sheet.getRange(2, 1, last - 1, STATION_HEADERS.length)
        .sort([{ column: 1, ascending: true }, { column: 2, ascending: true }]);
@@ -448,9 +451,12 @@ function createTeamFile_(ss, team, eventId, eventName) {
 }
 
 // הקצאה יזומה מהגדרת האירוע. idempotent: אם כבר יש קובץ חי — מחזיר אותו.
-function handleEnsureTeamSheet_(ss, payload) {
+// הלוגיקה בפונקציה פנימית שמחזירה אובייקט פשוט, כדי ש-ensure_files יריץ
+// בדיוק אותה לוגיקה לכל פריט בלי לעבור דרך ContentService.
+// מחזירה { ok:false, message } | { ok:true, created, url, fileId, warning? }.
+function ensureTeamFile_(ss, payload) {
   var team = parseInt(String(payload.team || "").replace(/\D+/g, ""), 10);
-  if (!team) return buildResponse(false, "Missing team");
+  if (!team) return { ok: false, message: "Missing team" };
 
   // force: יוצר קובץ חדש ביעד הנוכחי גם כשקיים קובץ במקום אחר. הרישום
   // מכריע לפי השורה האחרונה, ולכן הקובץ החדש הופך למקור מרגע זה.
@@ -461,13 +467,18 @@ function handleEnsureTeamSheet_(ss, payload) {
   var eventName = String(payload.eventName || "").trim();
   var entry = findTeamEntry_(ss, team, eventId);
   if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
-    return buildDataResponse_(true, "Team sheet exists", { url: entry.url, fileId: entry.fileId });
+    return { ok: true, created: false, url: entry.url, fileId: entry.fileId };
   }
 
   var created = createTeamFile_(ss, team, eventId, eventName);
-  return buildDataResponse_(true, "Team sheet created", {
-    url: created.ss.getUrl(), fileId: created.ss.getId(), warning: created.placement
-  });
+  return { ok: true, created: true, url: created.ss.getUrl(), fileId: created.ss.getId(), warning: created.placement };
+}
+
+function handleEnsureTeamSheet_(ss, payload) {
+  var r = ensureTeamFile_(ss, payload);
+  if (!r.ok) return buildResponse(false, r.message);
+  if (!r.created) return buildDataResponse_(true, "Team sheet exists", { url: r.url, fileId: r.fileId });
+  return buildDataResponse_(true, "Team sheet created", { url: r.url, fileId: r.fileId, warning: r.warning });
 }
 
 function findTeamEntry_(ss, team, eventId) {
@@ -655,17 +666,18 @@ function hebMonth_() {
 }
 
 // ---------- קבצי מעריכים ----------
-function handleEnsureEvaluatorSheet_(ss, payload) {
+// כמו ensureTeamFile_: גוף הטיפול כפונקציה פנימית, משותף ל-ensure_files.
+function ensureEvaluatorFile_(ss, payload) {
   var uid  = String(payload.uid || "").trim();
   var name = String(payload.name || "").trim();
   var eventId = eventId_(payload);
   var eventName = String(payload.eventName || "").trim();
-  if (!uid && !name) return buildResponse(false, "Missing uid/name");
+  if (!uid && !name) return { ok: false, message: "Missing uid/name" };
 
   var force = payload.force === true || String(payload.force) === "true";
   var entry = findEvaluatorEntry_(ss, uid, name, eventId);
   if (!force && entry && entry.fileId && fileState_(entry.fileId) === "alive") {
-    return buildDataResponse_(true, "Evaluator sheet exists", { url: entry.url, fileId: entry.fileId });
+    return { ok: true, created: false, url: entry.url, fileId: entry.fileId };
   }
 
   var newSs = SpreadsheetApp.create("שיט מעריך — " + (name || uid) +
@@ -682,8 +694,78 @@ function handleEnsureEvaluatorSheet_(ss, payload) {
   reg.appendRow([uid, name, String(payload.team || ""), newSs.getId(), newSs.getUrl(),
                  Utilities.formatDate(new Date(), TIMEZONE, TIMESTAMP_FORMAT), eventId]);
 
-  return buildDataResponse_(true, "Evaluator sheet created", {
-    url: newSs.getUrl(), fileId: newSs.getId(), warning: placement
+  return { ok: true, created: true, url: newSs.getUrl(), fileId: newSs.getId(), warning: placement };
+}
+
+function handleEnsureEvaluatorSheet_(ss, payload) {
+  var r = ensureEvaluatorFile_(ss, payload);
+  if (!r.ok) return buildResponse(false, r.message);
+  if (!r.created) return buildDataResponse_(true, "Evaluator sheet exists", { url: r.url, fileId: r.fileId });
+  return buildDataResponse_(true, "Evaluator sheet created", { url: r.url, fileId: r.fileId, warning: r.warning });
+}
+
+// ---------- בדיקת/יצירת קבצים לכל הפריטים בבקשה אחת ----------
+// עד עכשיו כל צוות וכל מעריך שילמו בקשת HTTP משלהם (הפעלת סקריפט + נעילה +
+// פתיחת הקובץ הראשי). כאן הכול רץ בהרצה אחת, עם אותה לוגיקה בדיוק לכל פריט
+// (ensureTeamFile_ / ensureEvaluatorFile_). כשל בפריט אחד לא עוצר את השאר.
+// שימוש: POST { type:"ensure_files", eventId, eventName, teams:[..], evaluators:[{uid,name,team}] }
+var ENSURE_FILES_BUDGET_MS = 300000; // מתחת לתקרת 6 הדקות של Apps Script
+
+function handleEnsureFiles_(ss, payload) {
+  var t0 = Date.now();
+  var eventId = String(payload.eventId || "");
+  var eventName = String(payload.eventName || "");
+  var teams = Array.isArray(payload.teams) ? payload.teams : [];
+  var evaluators = Array.isArray(payload.evaluators) ? payload.evaluators : [];
+  var results = [];
+  var teamMs = 0, evalMs = 0;
+
+  var runItem = function (kind, key, fn) {
+    if (Date.now() - t0 > ENSURE_FILES_BUDGET_MS) {
+      results.push({ kind: kind, key: key, ok: false, created: false, error: "נגמר הזמן להרצה — הרץ שוב" });
+      return;
+    }
+    try {
+      var r = fn();
+      if (!r.ok) {
+        results.push({ kind: kind, key: key, ok: false, created: false, error: r.message });
+      } else {
+        var item = { kind: kind, key: key, ok: true, created: !!r.created, url: r.url };
+        if (r.warning) item.warning = r.warning;
+        results.push(item);
+      }
+    } catch (err) {
+      results.push({ kind: kind, key: key, ok: false, created: false, error: String((err && err.message) || err) });
+    }
+  };
+
+  var tTeams = Date.now();
+  for (var i = 0; i < teams.length; i++) {
+    (function (team) {
+      runItem("team", String(team), function () {
+        return ensureTeamFile_(ss, { team: team, eventId: eventId, eventName: eventName });
+      });
+    })(teams[i]);
+  }
+  teamMs = Date.now() - tTeams;
+
+  var tEvals = Date.now();
+  for (var j = 0; j < evaluators.length; j++) {
+    (function (ev) {
+      ev = ev || {};
+      var key = String(ev.uid || ev.name || "");
+      runItem("evaluator", key, function () {
+        return ensureEvaluatorFile_(ss, {
+          uid: ev.uid, name: ev.name, team: ev.team, eventId: eventId, eventName: eventName
+        });
+      });
+    })(evaluators[j]);
+  }
+  evalMs = Date.now() - tEvals;
+
+  return buildDataResponse_(true, "Files checked", {
+    results: results,
+    timings: { teamsMs: teamMs, evaluatorsMs: evalMs, totalMs: Date.now() - t0, items: results.length }
   });
 }
 
@@ -784,6 +866,8 @@ function handleSyncBatch_(ss, payload) {
 
   var warnings = [];
   var written  = 0;
+  var tStart = Date.now();
+  var teamsMs = 0, evaluatorsMs = 0;
 
   var byTeam = {};
   for (var i = 0; i < rows.length; i++) {
@@ -795,6 +879,7 @@ function handleSyncBatch_(ss, payload) {
     byTeam[groupKey].rows.push(rows[i]);
   }
 
+  var tTeams = Date.now();
   for (var teamKey in byTeam) {
     var teamGroup = byTeam[teamKey];
     var teamSs;
@@ -808,10 +893,15 @@ function handleSyncBatch_(ss, payload) {
     written += writeTeamBatch_(teamSs, teamGroup.rows, warnings);
   }
 
+  teamsMs = Date.now() - tTeams;
+
+  var tEvals = Date.now();
   mirrorEvaluatorBatches_(ss, rows, warnings);
+  evaluatorsMs = Date.now() - tEvals;
 
   return buildDataResponse_(true, "Batch written", {
-    rows: rows.length, written: written, warnings: warnings
+    rows: rows.length, written: written, warnings: warnings,
+    timings: { teamFilesMs: teamsMs, evaluatorFilesMs: evaluatorsMs, totalMs: Date.now() - tStart }
   });
 }
 
@@ -842,18 +932,18 @@ function writeTeamBatch_(teamSs, rows, warnings) {
   }
 
   var count = 0;
+  var tabs = openTabIndex_(teamSs);   // getSheets פעם אחת במקום getSheetByName לכל טאב
   for (var tabName in byTab) {
-    var sheet = getOrCreateSheet_(teamSs, tabName);
-    ensureHeaders_(sheet, STATION_HEADERS, "#0f766e");
-    count += mergeRows_(sheet, STATION_HEADERS, stationRowKey_, byTab[tabName]);
-    sortStationTab_(sheet);   // פעם אחת לטאב, לא אחרי כל שורה
+    var merged = mergeIntoTab_(tabs, tabName, STATION_HEADERS, "#0f766e", stationRowKey_, byTab[tabName]);
+    count += byTab[tabName].length;
+    sortStationTab_(merged.sheet, merged.lastRow);   // פעם אחת לטאב, לא אחרי כל שורה
   }
 
-  if (notes.length) count += writeTeamNotesBatch_(teamSs, notes);
+  if (notes.length) count += writeTeamNotesBatch_(teamSs, notes, tabs);
   return count;
 }
 
-function writeTeamNotesBatch_(teamSs, notes) {
+function writeTeamNotesBatch_(teamSs, notes, tabs) {
   var vals = [];
   for (var i = 0; i < notes.length; i++) {
     var pid  = parseInt(notes[i].participant_id, 10);
@@ -863,9 +953,9 @@ function writeTeamNotesBatch_(teamSs, notes) {
   }
   if (!vals.length) return 0;
 
-  var sheet = getOrCreateSheet_(teamSs, GENERAL_NOTES_TAB);
-  ensureHeaders_(sheet, GENERAL_NOTES_HEADERS, "#9333ea");
-  return mergeRows_(sheet, GENERAL_NOTES_HEADERS, noteRowKey_, vals);
+  tabs = tabs || openTabIndex_(teamSs);
+  mergeIntoTab_(tabs, GENERAL_NOTES_TAB, GENERAL_NOTES_HEADERS, "#9333ea", noteRowKey_, vals);
+  return vals.length;
 }
 
 // ---------- אצווה: קבצי מעריכים ----------
@@ -925,25 +1015,53 @@ function writeEvaluatorBatch_(evalSs, rows) {
     (byPid[pid] = byPid[pid] || []).push(vals);
   }
 
+  var tabs = openTabIndex_(evalSs);   // קובץ מעריך = טאב לכל מועמד; getSheets פעם אחת
   for (var p in byPid) {
-    var sheet = getOrCreateSheet_(evalSs, String(p));
-    ensureHeaders_(sheet, PARTICIPANT_HEADERS, "#4a86e8");
-    mergeRows_(sheet, PARTICIPANT_HEADERS, participantRowKey_, byPid[p]);
+    mergeIntoTab_(tabs, String(p), PARTICIPANT_HEADERS, "#4a86e8", participantRowKey_, byPid[p]);
   }
 }
 
 // ---------- מיזוג אצווה לתוך טאב ----------
-// קורא את הטאב פעם אחת, ממזג בזיכרון לפי מפתח, וכותב פעם אחת.
+// אינדקס שמות הטאבים של קובץ: ss.getSheets() פעם אחת, ואחריו חיפוש בזיכרון.
+// קודם כל טאב עלה getSheetByName משלו (וקובץ מעריך מחזיק טאב לכל מועמד).
+function openTabIndex_(ss) {
+  var byName = {};
+  var all = ss.getSheets();
+  for (var i = 0; i < all.length; i++) byName[all[i].getName()] = all[i];
+  return { ss: ss, byName: byName };
+}
+
+// מיזוג לטאב בקריאה אחת: כותרת + נתונים ב-getValues אחד, בדיקת כותרת ומיזוג
+// בזיכרון, וכתיבה אחת (כותרת רק אם השתנתה — בלוק אחד ביחד עם השורות).
 // מוסיף או מחליף בלבד — לעולם אינו מקצר את הטבלה, כדי ששורות שאינן
 // באצווה (סבב אחר, מעריך אחר, סנכרון קודם) לא יימחקו בטעות.
-function mergeRows_(sheet, headers, keyOf, newRows) {
-  if (!newRows.length) return 0;
+// טאב חדש מקבל בדיוק את העיצוב שנתן ensureHeaders_: מודגש, רקע, גופן לבן, שורה קפואה.
+// מחזיר { sheet, lastRow } — lastRow הוא השורה האחרונה אחרי הכתיבה.
+function mergeIntoTab_(tabs, name, headers, bg, keyOf, newRows) {
+  var width = headers.length;
+  var sheet = tabs.byName[name];
+  var isNew = !sheet;
+  if (isNew) {
+    sheet = tabs.ss.insertSheet(name);
+    tabs.byName[name] = sheet;
+  }
 
-  var last = sheet.getLastRow();
-  var existing = (last >= 2)
-    ? sheet.getRange(2, 1, last - 1, headers.length).getValues()
-    : [];
+  var last = isNew ? 0 : sheet.getLastRow();
+  var block = (last >= 1) ? sheet.getRange(1, 1, last, width).getValues() : [];
+  var headerChanged = false;
 
+  if (last === 0) {
+    // טאב ריק (חדש, או קיים וריק) — כמו ensureHeaders_ הישן: כותרת + עיצוב
+    block = [headers.slice()];
+    headerChanged = true;
+  } else {
+    for (var h = 0; h < width; h++) {
+      if (String(block[0][h] || "") !== String(headers[h])) { headerChanged = true; break; }
+    }
+    if (headerChanged) block[0] = headers.slice();
+  }
+
+  var existing = block.slice(1);
   var index = {};
   for (var i = 0; i < existing.length; i++) index[keyOf(existing[i])] = i;
 
@@ -953,8 +1071,18 @@ function mergeRows_(sheet, headers, keyOf, newRows) {
     else { existing.push(newRows[j]); index[key] = existing.length - 1; }
   }
 
-  sheet.getRange(2, 1, existing.length, headers.length).setValues(existing);
-  return newRows.length;
+  // כותרת שהשתנתה (או טאב חדש) נכתבת יחד עם השורות בבלוק אחד;
+  // כותרת תקינה לא נוגעים בה ורק השורות נכתבות.
+  var out = headerChanged ? [block[0]].concat(existing) : existing;
+  var startRow = headerChanged ? 1 : 2;
+  sheet.getRange(startRow, 1, out.length, width).setValues(out);
+
+  if (last === 0) {
+    sheet.getRange(1, 1, 1, width)
+         .setFontWeight("bold").setBackground(bg).setFontColor("white");
+    sheet.setFrozenRows(1);
+  }
+  return { sheet: sheet, lastRow: existing.length + 1 };
 }
 
 // המפתחות זהים לאלה שהנתיב הישן חיפש לפיהם, כדי שסנכרון חוזר ידרוס
