@@ -3518,9 +3518,80 @@
     return { teams: [...teams], evaluators: [...evaluators.values()] };
   }
 
+  // מה ה-Apps Script הפרוס יודע לעשות. GET על כתובת ה-exec מחזיר { version, features }.
+  // נבדק פעם אחת לכל טעינת דף. חובה: סוג בקשה לא מוכר נופל בפריסה ישנה אל
+  // handleRaceRow_ (כותב שורת מירוץ), ולכן לעולם לא שולחים type שלא אושר כאן.
+  // כשל בבדיקה אינו נשמר — ננסה שוב בסנכרון הבא; בינתיים חוזרים לנתיב הישן.
+  let sheetsFeaturesPromise = null;
+  async function sheetsFeatures() {
+    if (!sheetsFeaturesPromise) {
+      sheetsFeaturesPromise = (async () => {
+        try {
+          const res = await fetch(APP_CONFIG.sheetsApiUrl);
+          if (!res.ok) return null;
+          const data = await res.json();
+          return Array.isArray(data.features) ? data.features : null;
+        } catch (e) {
+          return null;
+        }
+      })();
+    }
+    const features = await sheetsFeaturesPromise;
+    if (!features) sheetsFeaturesPromise = null;
+    return features || [];
+  }
+
+  // כל בדיקות הקבצים בבקשות מעטות במקום בקשה לכל צוות/מעריך. מקטעים כדי
+  // להישאר הרבה מתחת לתקרת 6 הדקות של Apps Script (יצירת קובץ אורכת שניות).
+  const ENSURE_FILES_CHUNK = 25;
+  async function ensureFilesBatched(teams, evaluators, onProgress) {
+    const eventId = activeFormationEvent?.id || '';
+    const eventName = activeFormationEvent?.name || '';
+    const items = [
+      ...teams.map(team => ({ kind:'team', team })),
+      ...evaluators.map(ev => ({ kind:'evaluator', ev }))
+    ];
+    const evByKey = new Map(evaluators.map(ev => [ev.uid || ev.name, ev]));
+    const problems = [];
+    let done = 0, requests = 0;
+
+    for (let i = 0; i < items.length; i += ENSURE_FILES_CHUNK) {
+      const chunk = items.slice(i, i + ENSURE_FILES_CHUNK);
+      requests++;
+      try {
+        const data = await postToSheets({
+          type:'ensure_files', eventId, eventName,
+          teams: chunk.filter(it => it.kind === 'team').map(it => it.team),
+          evaluators: chunk.filter(it => it.kind === 'evaluator').map(it => it.ev)
+        });
+        if (data.timings) console.info('[sync] ensure_files server ms:', data.timings);
+        const results = Array.isArray(data.results) ? data.results : [];
+        for (const r of results) {
+          if (r.ok) continue;
+          const label = r.kind === 'team'
+            ? `קובץ צוות ${r.key}`
+            : `קובץ מעריך ${evByKey.get(r.key)?.name || r.key}`;
+          problems.push(`${label}: ${r.error || 'הפעולה נכשלה'}`);
+        }
+        // תשובה חלקית היא כשל — לא נכתוב על בסיס בדיקה שלא הושלמה
+        if (results.length < chunk.length) {
+          problems.push(`בדיקת קבצים חלקית (${results.length}/${chunk.length})`);
+        }
+      } catch (e) {
+        problems.push(`בדיקת קבצים: ${e.message}`);
+      }
+      done += chunk.length;
+      onProgress?.(done, items.length);
+    }
+    return { checked: items.length, problems, requests };
+  }
+
   async function ensureFilesExist(rows, onProgress) {
     const { teams, evaluators } = filesNeededFor(rows);
     const total = teams.length + evaluators.length;
+    if (total > 0 && (await sheetsFeatures()).includes('ensure_files')) {
+      return ensureFilesBatched(teams, evaluators, onProgress);
+    }
     const problems = [];
     let done = 0;
 
@@ -3546,7 +3617,13 @@
       },
                  `קובץ מעריך ${ev.name || ev.uid}`);
     }
-    return { checked: total, problems };
+    return { checked: total, problems, requests: total };
+  }
+
+  // סיומת לטוסט הסיכום: כמה זמן לקח כל שלב (בדיקת קבצים / כתיבה).
+  function syncTimingSuffix(filesMs, writeMs) {
+    const sec = ms => (ms / 1000).toFixed(1);
+    return ` (קבצים ${sec(filesMs)}ש׳ · כתיבה ${sec(writeMs)}ש׳)`;
   }
 
   async function postToSheets(body) {
@@ -3587,6 +3664,7 @@
       onProgress?.(++done, byTeam.size);
       try {
         const data = await postToSheets({ type: 'sync_batch', rows: teamRows });
+        if (data.timings) console.info(`[sync] sync_batch team ${team} server ms:`, data.timings);
         ok += Number(data.written || 0);
         for (const warning of (data.warnings || [])) {
           problems.set(warning, (problems.get(warning) || 0) + 1);
@@ -3866,9 +3944,12 @@
 
       // ── שלב 1: ודא שכל הקבצים הדרושים קיימים ──
       if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const tFiles0 = performance.now();
       const prep = await ensureFilesExist(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
       });
+      const filesMs = performance.now() - tFiles0;
+      console.info(`[sync] stage 1 (files): ${Math.round(filesMs)}ms, ${prep.checked} files, ${prep.requests} requests`);
       // קובץ חסר פירושו שכל השורות אליו ייכשלו — עוצרים לפני שכותבים חלקית
       if (prep.problems.length) {
         showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
@@ -3878,19 +3959,23 @@
 
       // ── שלב 2: כתיבת הנתונים ──
       if (btn) btn.innerHTML = '⏳ מסנכרן…';
+      const tWrite0 = performance.now();
       const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
         if (btn) btn.innerHTML = total > 1 ? `⏳ מסנכרן ${done}/${total}…` : '⏳ מסנכרן…';
       });
+      const writeMs = performance.now() - tWrite0;
+      console.info(`[sync] stage 2 (write): ${Math.round(writeMs)}ms`);
+      const timing = syncTimingSuffix(filesMs, writeMs);
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
 
       if (fail === 0 && problems.length === 0) {
-        showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
+        showToast(`✓ סונכרנו ${ok} רשומות (${summary})${timing}`, 'success');
       } else {
         // מציג את הסיבה עצמה, לא רק מונה. תקלה חוזרת = שורה אחת עם מונה.
         const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
         const head = ok === 0 ? `הסנכרון נכשל (${fail})` : `סונכרנו ${ok}/${allRows.length}`;
-        showToast(`${head} — ${detail}`, ok === 0 ? 'error' : 'info');
+        showToast(`${head} — ${detail}${timing}`, ok === 0 ? 'error' : 'info');
         console.warn('[sync] problems:', problems);
       }
     } catch (e) {
@@ -3928,25 +4013,32 @@
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
 
       if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const tFiles0 = performance.now();
       const prep = await ensureFilesExist(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
       });
+      const filesMs = performance.now() - tFiles0;
+      console.info(`[sync-all] stage 1 (files): ${Math.round(filesMs)}ms, ${prep.checked} files, ${prep.requests} requests`);
       if (prep.problems.length) {
         showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
         console.warn('[sync-all] stage 1 failed:', prep.problems);
         return;
       }
 
+      const tWrite0 = performance.now();
       const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ מסנכרן צוות ${done}/${total}…`;
       });
+      const writeMs = performance.now() - tWrite0;
+      console.info(`[sync-all] stage 2 (write): ${Math.round(writeMs)}ms`);
+      const timing = syncTimingSuffix(filesMs, writeMs);
       const summary = `${teams.length} צוותים · ${races.length} סבבים · הערות ${noteRows.length}`;
 
       if (problems.length === 0 && ok === allRows.length) {
-        showToast(`✓ סונכרן האירוע כולו — ${ok} רשומות (${summary})`, 'success');
+        showToast(`✓ סונכרן האירוע כולו — ${ok} רשומות (${summary})${timing}`, 'success');
       } else {
         const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
-        showToast(`סונכרנו ${ok}/${allRows.length} (${summary}) — ${detail}`, ok === 0 ? 'error' : 'info');
+        showToast(`סונכרנו ${ok}/${allRows.length} (${summary}) — ${detail}${timing}`, ok === 0 ? 'error' : 'info');
         console.warn('[sync-all] problems:', problems);
       }
     } catch (e) {
