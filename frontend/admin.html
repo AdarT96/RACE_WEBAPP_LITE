@@ -118,6 +118,7 @@
       </div>
       <div class="flex gap-8" style="flex-wrap:wrap">
         <a href="event-setup.html" class="btn btn-success">צור או ערוך אירוע</a>
+        <a href="intake.html" class="btn btn-ghost">קליטת מועמדים</a>
         <a id="formation-schedule-link" href="schedule.html" class="btn btn-primary" style="display:none">פתח לו״ז</a>
         <a id="formation-dashboard-link" href="commander.html" class="btn btn-info" style="display:none">פתח דשבורד</a>
       </div>
@@ -681,6 +682,7 @@
               <option value="operator"  ${u.role==='operator'  ? 'selected':''}>מפק״צ</option>
               <option value="evaluator" ${u.role==='evaluator' ? 'selected':''}>מעריך</option>
               <option value="formation_commander" ${u.role==='formation_commander' ? 'selected':''}>מפקד הגיבוש</option>
+              <option value="adjutant" ${u.role==='adjutant' ? 'selected':''}>שלישות</option>
               <option value="admin"     ${u.role==='admin'     ? 'selected':''}>מנהל</option>
             </select>
             ${roleNeedsTeam(u.role) ? `<select class="role-sel" onchange="changeTeam('${u.uid}', this.value)" title="צוות">
@@ -1762,7 +1764,9 @@
   // גיבוש תשאיר אותו מאחור בשקט.
   const PURGE_EVENT_SUBCOLLECTIONS = [
     'candidates', 'candidateStatusEvents', 'dropoutRecommendations',
-    'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts', 'rosterImports'
+    'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts', 'rosterImports',
+    // קליטת מועמדים: מועמדים כלליים (ללא צוות), רישום המספרים והמונה
+    'unassignedCandidates', 'candidateNumbers', 'intake'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 

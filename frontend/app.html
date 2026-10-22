@@ -1690,6 +1690,11 @@
       window.location.href = 'commander.html';
       return;
     }
+    // השלישות אינה עובדת במסכי התחנה ואינה רואה נתוני הערכה
+    if (data.role === ROLES.ADJUTANT) {
+      window.location.href = 'intake.html';
+      return;
+    }
     if (![ROLES.ADMIN, ROLES.OPERATOR, ROLES.EVALUATOR].includes(data.role)) {
       await signOut(auth);
       window.location.href = 'index.html';

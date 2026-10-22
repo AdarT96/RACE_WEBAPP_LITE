@@ -11,7 +11,7 @@ import {
   ARTIFACT_STATUSES, EVENT_STATUSES, eventSetupReadiness, normalizeEventTeamId, eventTeamIds
 } from './event-setup-model.js';
 import { CLEARANCE_LABELS, padTeam, normalizeCandidateProfile } from './formation-operations-model.js';
-import { ROLES, roleLabel, roleNeedsTeam } from './roles.js';
+import { EVENT_STAFF_ROLES, ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
 import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
@@ -208,15 +208,14 @@ function renderStaff() {
   const container = document.getElementById('staff-list');
   container.innerHTML = users.map(user => {
     const selected = staffMemberSelection(user);
-    const role = selected?.role || ([ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(user.role) ? user.role : ROLES.EVALUATOR);
+    const role = selected?.role || (EVENT_STAFF_ROLES.includes(user.role) ? user.role : ROLES.EVALUATOR);
     const team = selected?.team || padTeam(user.team) || teams[0] || '';
     return `<div class="staff-row" data-staff-row data-uid="${escapeHtml(user.uid)}">
       <label class="staff-identity"><input data-field="selected" type="checkbox" ${selected ? 'checked' : ''}>
         <span><strong>${escapeHtml(user.name || user.email || user.uid)}</strong><br><small>${escapeHtml(user.email || '')}</small></span></label>
       <select class="form-select" data-field="role">
-        <option value="operator" ${role === ROLES.OPERATOR ? 'selected' : ''}>מפק״צ</option>
-        <option value="evaluator" ${role === ROLES.EVALUATOR ? 'selected' : ''}>מעריך</option>
-        <option value="formation_commander" ${role === ROLES.FORMATION_COMMANDER ? 'selected' : ''}>מפקד הגיבוש</option>
+        ${EVENT_STAFF_ROLES.map(value =>
+          `<option value="${value}" ${role === value ? 'selected' : ''}>${escapeHtml(roleLabel(value))}</option>`).join('')}
       </select>
       <select class="form-select" data-field="team" ${roleNeedsTeam(role) ? '' : 'disabled hidden'}>
         ${teams.map(id => `<option value="${id}" ${id === team ? 'selected' : ''}>צוות ${Number(id)}</option>`).join('')}
@@ -285,7 +284,7 @@ function selectedStaffFromDom() {
       uid:row.dataset.uid,
       displayName:user?.name || user?.email || row.dataset.uid,
       role,
-      team:role === ROLES.FORMATION_COMMANDER ? '' : row.querySelector('[data-field="team"]').value,
+      team:roleNeedsTeam(role) ? row.querySelector('[data-field="team"]').value : '',
       active:true
     }];
   });

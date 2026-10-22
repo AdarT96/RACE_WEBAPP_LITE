@@ -15,7 +15,7 @@ import {
   normalizeScheduleDraft, schedulePublicationLabel
 } from './schedule-publication-model.js';
 import {
-  ROLES, canManageSchedule, canViewSchedule, roleLabel
+  ROLES, canManageSchedule, canViewSchedule, destinationForRole, roleLabel
 } from './roles.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
@@ -665,6 +665,10 @@ onAuthStateChanged(auth, async user => {
     const profile = rawProfile
       ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
+    // לשלישות אין לו״ז (אינה צריכה את מטריצת התנועה); מחזירים אותה למסך הקליטה
+    if (profile?.approved && profile.eventAccess !== false && profile.role === ROLES.ADJUTANT) {
+      location.href = destinationForRole(profile.role); return;
+    }
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canViewSchedule(profile.role)) {
       await signOut(auth); location.href = 'index.html'; return;
     }
