@@ -30,16 +30,33 @@ self.addEventListener('activate', event => {
   })());
 });
 
+// דף שלם בקליטה חלשה מאוד: לא מחכים לרשת לנצח. אם יש עותק שמור, אחרי 4 שניות
+// מוצג הוא, והבקשה לרשת ממשיכה ומעדכנת את המטמון לפעם הבאה.
+const NAVIGATION_TIMEOUT_MS = 4000;
+
 async function networkFirst(request) {
   const cache = await caches.open(CACHE_NAME);
-  try {
-    const response = await fetch(request);
+  const network = fetch(request).then(response => {
     if (response && response.ok && (response.type === 'basic' || response.type === 'cors')) {
       cache.put(request, response.clone()).catch(() => {});
     }
     return response;
+  });
+  const cachedCopy = () => cache.match(request, { ignoreSearch: true }); // ?v= הוא רק מניעת מטמון
+  if (request.mode === 'navigate') {
+    const cached = await cachedCopy();
+    if (cached) {
+      network.catch(() => {});
+      return Promise.race([
+        network.catch(() => cached),
+        new Promise(resolve => setTimeout(() => resolve(cached), NAVIGATION_TIMEOUT_MS))
+      ]);
+    }
+  }
+  try {
+    return await network;
   } catch (error) {
-    const cached = await cache.match(request, { ignoreSearch: true }); // ?v= הוא רק מניעת מטמון
+    const cached = await cachedCopy();
     if (cached) return cached;
     throw error;
   }
