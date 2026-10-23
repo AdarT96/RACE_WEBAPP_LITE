@@ -228,6 +228,17 @@ service cloud.firestore {
         (!request.resource.data.keys().hasAny(['endedReason']) ||
           request.resource.data.endedReason in ['manual', 'time_limit']);
 
+      // Fast start: the round is opened from the roster on the device and the
+      // candidates are checked against the server afterwards. A candidate who had
+      // withdrawn without the device knowing is then removed. The commander may
+      // only shrink the participant list of their own running round.
+      allow update: if isApprovedRole('operator') && isOwnTeam(resource.data.team) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantIds']) &&
+        resource.data.status == 'running' &&
+        request.resource.data.participantIds is list &&
+        request.resource.data.participantIds.size() < resource.data.get('participantIds', []).size() &&
+        resource.data.get('participantIds', []).hasAll(request.resource.data.participantIds);
+
       // Compatibility is automatically disabled when the migration marker is set.
       // New clients never write evaluator data into the shared race document.
       allow update: if (!resource.data.keys().hasAny(['evaluationSchemaVersion']) ||

@@ -1164,7 +1164,7 @@
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     doc, getDoc, setDoc, updateDoc, collection,
-    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction
+    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction, writeBatch
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -1790,7 +1790,9 @@
     evaluationRepository = createEvaluationRepository(db, currentUser, {
       onWriteError: error => showToast('שמירת ההערכה נכשלה: ' + errorText(error), 'error')
     });
-    arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace);
+    arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace, {
+      onWriteError: error => showToast('סדר ההגעה לא נשמר בשרת: ' + errorText(error) + ' — רענן את הדף.', 'error')
+    });
     privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
     formationRepository = createFormationOperationsRepository(db, currentUser);
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים.
@@ -2863,65 +2865,88 @@
     const raceId = raceIdFor(activeFormationEvent.id, selectedTeam, selectedStation, nextRound);
     const raceRef = doc(db, 'races', raceId);
     const previousRaceRef = expiredPreviousRace ? doc(db, 'races', expiredPreviousRace.id) : null;
-    const eventRef = doc(db, 'events', activeFormationEvent.id);
     const roster = uniqueParticipantIds(teamData.participants);
-    setControlActionBusy(true);
-    try {
-      await runTransaction(db, async (transaction) => {
-        // Do not read raceRef before creation. A missing race has no team field,
-        // so a least-privilege read rule cannot authorize that lookup. The
-        // deterministic id is still race-safe: if another device creates it
-        // first, this set becomes an update and the lifecycle rules reject it.
-        const reads = [transaction.get(eventRef)];
-        if (previousRaceRef) reads.push(transaction.get(previousRaceRef));
-        roster.forEach(participantId => reads.push(transaction.get(
-          formationRepository.candidateRef(activeFormationEvent.id, selectedTeam, participantId)
-        )));
-        const snapshots = await Promise.all(reads);
-        const eventSnapshot = snapshots[0];
-        const previous = previousRaceRef ? snapshots[1] : null;
-        const stateOffset = previousRaceRef ? 2 : 1;
-        const states = roster.map((participantId, index) => normalizeCandidateRecord(
-          snapshots[stateOffset + index]?.exists() ? snapshots[stateOffset + index].data() : null,
-          { team: selectedTeam, participantId }
-        ));
-        const participants = activeParticipantIds({
-          id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
-        }, states);
-        if (!eventSnapshot.exists() || eventSnapshot.data().status !== 'active') {
-          throw new Error('אירוע הגיבוש אינו פעיל');
-        }
-        if (participants.length === 0) throw new Error('אין מועמדים פעילים בצוות');
-        if (previous?.exists() && previous.data().status === 'running') {
-          if (!isSessionExpired(previous.data())) throw new Error('הסבב הקודם עדיין פעיל');
-          transaction.update(previousRaceRef, {
-            status: 'stopped',
-            endedAt: serverTimestamp(),
-            endedBy: currentUser.uid,
-            endedReason: 'time_limit'
-          });
-        }
-        transaction.set(raceRef, {
-          eventId:   activeFormationEvent.id,
-          team:      selectedTeam,
-          station:   selectedStation,
-          round:     nextRound,
-          status:    'running',
-          startedAt: serverTimestamp(),
-          startedBy: currentUser.uid,
-          timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
-          evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
-          participantIds: participants,
-          tags:      []
+    if (navigator.onLine === false) {
+      showToast('אין קליטה — לא ניתן להתחיל סבב. נסה שוב כשתחזור קליטה.', 'error');
+      return;
+    }
+    // השעון מתחיל כשהשרת מקבל את השמירה. קודם קדמה לה טרנזקציה שקראה מהשרת את
+    // האירוע, הסבב הקודם וכל המועמדים — השעון התחיל 0.7–3 שניות אחרי הלחיצה.
+    // עכשיו הבדיקה נעשית מהנתונים שכבר במכשיר והשמירה יוצאת מיד; השרת אוכף את
+    // השאר (אירוע פעיל, מזהה סבב שלא קיים), ובדיקת המועמדים המלאה רצה ברקע.
+    const knownCandidates = new Map((candidatesByTeam.get(selectedTeam) || [])
+      .map(candidate => [String(candidate.participantId), candidate]));
+    const participants = activeParticipantIds({
+      id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
+    }, roster.map(participantId => normalizeCandidateRecord(
+      knownCandidates.get(String(participantId)) || null, { team: selectedTeam, participantId }
+    )));
+    if (participants.length === 0) { showToast('אין מועמדים פעילים בצוות', 'error'); return; }
+    const raceData = {
+      eventId:   activeFormationEvent.id,
+      team:      selectedTeam,
+      station:   selectedStation,
+      round:     nextRound,
+      status:    'running',
+      startedAt: serverTimestamp(),
+      startedBy: currentUser.uid,
+      timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
+      evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
+      participantIds: participants,
+      tags:      []
+    };
+    const commitStart = includePrevious => {
+      const batch = writeBatch(db);
+      if (includePrevious && previousRaceRef) {
+        batch.update(previousRaceRef, {
+          status: 'stopped', endedAt: serverTimestamp(), endedBy: currentUser.uid, endedReason: 'time_limit'
         });
-      });
+      }
+      // מזהה הסבב דטרמיניסטי: אם מכשיר אחר פתח אותו ראשון, השמירה הופכת לעדכון והחוקים דוחים
+      batch.set(raceRef, raceData);
+      return batch.commit();
+    };
+    setControlActionBusy(true);
+    const slowNotice = setTimeout(() => showToast('ההתחלה עדיין לא הגיעה לשרת — בדוק קליטה', 'info'), 8000);
+    try {
+      try {
+        await commitStart(true);
+      } catch (error) {
+        // הסבב הקודם שפג נסגר בינתיים במכשיר אחר — פותחים בלי לסגור אותו שוב
+        if (!previousRaceRef || !isPermissionDenied(error)) throw error;
+        await commitStart(false);
+      }
       showToast('סבב ' + nextRound + ' התחיל', 'success');
+      verifyStartedRoundInBackground(raceRef, activeFormationEvent.id, selectedTeam, participants);
     } catch (e) {
-      showToast('שגיאה בהתחלת סבב: ' + errorText(e), 'error');
+      showToast('שגיאה בהתחלת סבב: ' + (isPermissionDenied(e)
+        ? 'הסבב כבר נפתח במכשיר אחר, או שהאירוע אינו פעיל. רענן את הדף.'
+        : errorText(e)), 'error');
     } finally {
+      clearTimeout(slowNotice);
       setControlActionBusy(false);
     }
   };
+
+  function isPermissionDenied(error) {
+    return String(error?.code || '').replace('firestore/', '') === 'permission-denied';
+  }
+
+  // הבדיקה המלאה, אחרי שהסבב כבר רץ: מועמד שנשר והעדכון עוד לא הגיע למכשיר
+  // מוסר מהסבב (החוקים מתירים למפק״צ רק להוריד מועמדים מסבב פעיל, לא להוסיף).
+  async function verifyStartedRoundInBackground(raceRef, eventId, team, participants) {
+    try {
+      const snapshots = await Promise.all(participants.map(participantId =>
+        getDoc(formationRepository.candidateRef(eventId, team, participantId))));
+      const withdrawn = participants.filter((participantId, index) => snapshots[index].exists() &&
+        normalizeCandidateRecord(snapshots[index].data(), { team, participantId }).status === CANDIDATE_STATUSES.WITHDRAWN);
+      if (!withdrawn.length) return;
+      await updateDoc(raceRef, { participantIds: participants.filter(participantId => !withdrawn.includes(participantId)) });
+      showToast('הוסר מהסבב מועמד שנשר: ' + withdrawn.join(', '), 'info');
+    } catch (error) {
+      console.warn('[start] background candidate check failed', error);
+    }
+  }
 
   window.markFinished = (participantId, raceId = currentRaceId) => {
     if (!canEvaluate() || !currentRace || currentRace.id !== raceId || !supportsRoundTabs() ||
@@ -3169,24 +3194,28 @@
       return;
     }
     if (!confirm('לסיים את הסבב הנוכחי?')) return;
+    if (navigator.onLine === false) {
+      showToast('אין קליטה — לא ניתן לסיים סבב. נסה שוב כשתחזור קליטה.', 'error');
+      return;
+    }
     const raceRef = doc(db, 'races', latestRace.id);
     setControlActionBusy(true);
+    const slowNotice = setTimeout(() => showToast('הסיום עדיין לא הגיע לשרת — בדוק קליטה', 'info'), 8000);
     try {
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(raceRef);
-        if (!snap.exists()) throw new Error('הסבב לא נמצא');
-        if (snap.data().status !== 'running') return;
-        transaction.update(raceRef, {
-          status:  'stopped',
-          endedAt: serverTimestamp(),
-          endedBy: currentUser.uid,
-          endedReason: 'manual'
-        });
+      // שמירה ישירה (כמו בהתחלה): זמן הסיום נקבע כשהשרת מקבל אותה. סבב שכבר
+      // הסתיים נדחה בחוקים (מעבר מ"רץ" ל"עצור" בלבד).
+      await updateDoc(raceRef, {
+        status:  'stopped',
+        endedAt: serverTimestamp(),
+        endedBy: currentUser.uid,
+        endedReason: 'manual'
       });
       showToast('הסבב הסתיים', 'info');
     } catch (e) {
-      showToast('שגיאה בסיום סבב: ' + errorText(e), 'error');
+      showToast('שגיאה בסיום סבב: ' + (isPermissionDenied(e)
+        ? 'הסבב כבר הסתיים במכשיר אחר.' : errorText(e)), 'error');
     } finally {
+      clearTimeout(slowNotice);
       setControlActionBusy(false);
     }
   };

@@ -1859,3 +1859,46 @@ test('the evaluation repository writes pass the rules without transactions (firs
   await flush();
   assert.ok(intruderErrors.length >= 1);
 });
+
+test('fast start: one write opens a round, the commander may only remove candidates from a running round', async () => {
+  const operator = userDb('operator1');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'races', 'race_01_07_5'), {
+      eventId: 'event-1', team: '01', station: '07', round: 5, status: 'running',
+      startedAt: Timestamp.now(), startedBy: 'operator1', timeLimitSeconds: 2400,
+      participantIds: ['100', '101', '102'], tags: [], evaluationSchemaVersion: 2
+    });
+  });
+  const ref = doc(operator, 'races', 'race_01_07_5');
+  await assertSucceeds(updateDoc(ref, { participantIds: ['100', '102'] }));
+  await assertFails(updateDoc(ref, { participantIds: ['100', '102', '999'] }));       // adding
+  await assertFails(updateDoc(ref, { participantIds: ['100', '777'] }));              // swapping
+  await assertFails(updateDoc(doc(userDb('operator2'), 'races', 'race_01_07_5'), { participantIds: ['100'] })); // other team
+  await assertFails(updateDoc(doc(userDb('evaluator1'), 'races', 'race_01_07_5'), { participantIds: ['100'] })); // evaluator
+  await assertSucceeds(updateDoc(ref, { status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual' }));
+  await assertFails(updateDoc(ref, { participantIds: ['100'] }));                     // stopped round
+  await assertFails(updateDoc(ref, { status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual' })); // ended twice
+
+  // a new round in one batch (no transaction): create, and a second create of the same id is refused
+  const batch = writeBatch(operator);
+  batch.set(doc(operator, 'races', 'race_01_07_6'), { ...racePayload(), round: 6, evaluationSchemaVersion: 2 });
+  await assertSucceeds(batch.commit());
+  await assertFails(setDoc(doc(operator, 'races', 'race_01_07_6'), { ...racePayload(), round: 6, evaluationSchemaVersion: 2 }));
+});
+
+test('arrival place times are the tap moments, not the time the server processed the queue', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'races', 'race_01_07_1'), { participantIds: ['100', '320', '8'] });
+  });
+  const db = userDb('evaluator1');
+  const repo = createArrivalRepository(db, { uid: 'evaluator1' }, arrivalState);
+  const tapped = Date.now() - 60_000;        // taps made a minute before they reached the server
+  await repo.mutate('race_01_07_1', { type: 'append', pid: '100', at: tapped });
+  await repo.mutate('race_01_07_1', { type: 'append', pid: '320', at: tapped + 4_000 });
+  await repo.mutate('race_01_07_1', { type: 'append', pid: '8', at: tapped + 9_500 });
+  const saved = (await getDoc(arrivalReference(db))).data();
+  assert.deepEqual(saved.order, ['100', '320', '8']);
+  assert.deepEqual(['1', '2', '3'].map(place => saved.slotTimes[place].toMillis() - tapped), [0, 4_000, 9_500]);
+  assert.equal(saved.revision, 3);
+  assert.equal(saved.completedAt.toMillis(), tapped + 9_500);
+});
