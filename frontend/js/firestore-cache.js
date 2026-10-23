@@ -31,17 +31,19 @@ export function openFirestore(app) {
 // יציאה מנקה את המטמון כדי שמשתמש אחר באותו מכשיר לא יראה נתונים שנשמרו.
 // שמירות שעדיין לא נשלחו קודמות לניקוי: אם אין קליטה והן לא יצאו תוך כמה
 // שניות, המטמון נשאר והן יישלחו בכניסה הבאה של אותו משתמש במכשיר.
-// קריאות הפתיחה של דף (פרופיל, אירוע פעיל, שיבוץ). בסימולציה נצפה דפדפן שבו
-// Firestore החזיר "unavailable" ברגעים הראשונים אף שהרשת תקינה (בין לשוניות
-// המטמון המשותף, למשל אחרי שהדפדפן נסגר בכוח) — והדף נתקע על "טעינה נכשלה"
-// או נשאר ריק. ניסיון חוזר קצר עובר את החלון הזה; כשל אחר נזרק מיד.
-export async function getDocPatiently(reference, { attempts = 7, delayMs = 1500 } = {}) {
-  for (let attempt = 1; ; attempt += 1) {
+// קריאות הפתיחה של דף (פרופיל, אירוע פעיל, שיבוץ). Firestore מחזיר "unavailable"
+// כשהוא עדיין לא התחבר והמסמך לא שמור במכשיר: כ-5 שניות אחרי שהדפדפן נסגר בכוח
+// (עד שהנעילה של המטמון המשותף פגה), ויותר מזה בקליטה חלשה. קודם הדף נתקע על
+// "טעינה נכשלה" או נשאר ריק; עכשיו ממשיכים לנסות עד דקה, והדף נשאר במצב "טוען"
+// ומתאושש לבד כשהחיבור נפתח. כשל מסוג אחר נזרק מיד.
+export async function getDocPatiently(reference, { budgetMs = 60000 } = {}) {
+  const deadline = Date.now() + budgetMs;
+  for (let delay = 1000; ; delay = Math.min(delay * 1.5, 5000)) {
     try {
       return await getDoc(reference);
     } catch (error) {
-      if (error?.code !== 'unavailable' || attempt >= attempts) throw error;
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      if (error?.code !== 'unavailable' || Date.now() + delay > deadline) throw error;
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
 }
