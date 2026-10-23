@@ -2112,8 +2112,10 @@
   async function loadTeamData(teamNumber) {
     if (!teamNumber || !activeFormationEvent) return null;
     try {
+      // מסמך הצוות (רשימת המשתתפים) נקרא בסבלנות: בפתיחה ברשת חלשה Firestore עוד
+      // "לא מחובר" לכמה שניות, והקריאה נכשלה — ו"התחל סבב" אמר שאין משתתפים.
       const [snap, candidatesSnapshot] = await Promise.all([
-        getDoc(doc(db, 'events', activeFormationEvent.id, 'teams', teamNumber)),
+        getDocPatiently(doc(db, 'events', activeFormationEvent.id, 'teams', teamNumber)),
         getDocs(query(
           collection(db, 'events', activeFormationEvent.id, 'candidates'),
           where('team', '==', teamNumber)
@@ -2869,7 +2871,8 @@
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
-    const teamData = teamsCache[selectedTeam];
+    // נתוני הצוות עוד לא נטענו (פתיחה ברשת חלשה) — טוענים עכשיו במקום להודיע שאין משתתפים
+    const teamData = teamsCache[selectedTeam] || await loadTeamData(selectedTeam);
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
     }
