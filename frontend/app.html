@@ -1206,6 +1206,11 @@
   // את מספר הסבב הבא ממנה, ולכן ממתין עד שהשרת אישר אותה.
   let raceListSnapshotSeen = false;
   let raceListConfirmedByServer = false;
+  // עד שהשרת מאשר את רשימת הסבבים בפעם הראשונה, ובלי שהמעריך בחר סבב בעצמו,
+  // הסבב המוצג נקבע מחדש: מטמון שהציג סבב ישן לא נועל את המעריך עליו. בסימולציה
+  // מעריך דירג בטעות את הסבב הקודם (ולחיצות חוזרות אף מחקו בו ציונים).
+  let initialRoundConfirmed = false;
+  let roundChosenByUser = false;
   let evaluatorArrival = null;      // current evaluator's order for the viewed round
   let evaluatorArrivalRaceId = null;
   let evaluatorArrivalLoading = false;
@@ -2347,6 +2352,7 @@
 
     const contextKey = JSON.stringify([activeFormationEvent.id, selectedTeam, selectedStation]);
     const preservedId = contextKey === raceContextKey ? currentRaceId : null;
+    if (contextKey !== raceContextKey) roundChosenByUser = false;
     localReps = {};
     detachRaceSubscription();
     raceContextKey = contextKey;
@@ -2370,6 +2376,8 @@
       raceListSnapshotSeen = true;
       raceListConfirmedByServer = !snap.metadata.fromCache;
       updateStaleViewBanner();
+      const followLatestUntilConfirmed = !roundChosenByUser && !initialRoundConfirmed;
+      if (!snap.metadata.fromCache) initialRoundConfirmed = true;
       if (metadataOnly) return;
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
@@ -2390,7 +2398,8 @@
         return;
       }
 
-      const targetId = viewedRoundId(list, previousViewedId, isOperator() || !supportsRoundTabs());
+      const targetId = viewedRoundId(list, previousViewedId,
+        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed);
       const target = list.find(r => r.id === targetId) || latestRace;
       const roundChanged = target.id !== previousViewedId;
 
@@ -2435,6 +2444,7 @@
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
     raceListSnapshotSeen = false;
     raceListConfirmedByServer = false;
+    initialRoundConfirmed = false;
     updateStaleViewBanner();
     detachEvaluatorArrivalSubscription();
     detachCurrentAssessmentSubscription();
@@ -2448,6 +2458,7 @@
   window.selectViewedRound = async (raceId) => {
     if (!canEvaluate() || !supportsRoundTabs()) return;
     if (!racesForContext.some(r => r.id === raceId) || raceId === currentRaceId) return;
+    roundChosenByUser = true;
     const request = ++roundSelectionRequest;
     const generation = raceQueryGeneration;
     await commitPendingReps();
@@ -2858,7 +2869,6 @@
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
-    if (!raceListConfirmedByServer) { showToast('ממתין לעדכון מהשרת — נסה שוב בעוד רגע', 'info'); return; }
     const teamData = teamsCache[selectedTeam];
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
@@ -2913,6 +2923,9 @@
       batch.set(raceRef, raceData);
       return batch.commit();
     };
+    // אין חסימה כשהרשימה עוד לא אושרה מול השרת (ברשת חלשה זה חסם את ההתחלה):
+    // מזהה הסבב קבוע, ושרת שכבר מכיר את הסבב הזה דוחה את השמירה.
+    const listWasConfirmed = raceListConfirmedByServer;
     setControlActionBusy(true);
     const slowNotice = setTimeout(() => showToast('ההתחלה עדיין לא הגיעה לשרת — בדוק קליטה', 'info'), 8000);
     try {
@@ -2927,7 +2940,9 @@
       verifyStartedRoundInBackground(raceRef, activeFormationEvent.id, selectedTeam, participants);
     } catch (e) {
       showToast('שגיאה בהתחלת סבב: ' + (isPermissionDenied(e)
-        ? 'הסבב כבר נפתח במכשיר אחר, או שהאירוע אינו פעיל. רענן את הדף.'
+        ? (listWasConfirmed
+          ? 'הסבב כבר נפתח במכשיר אחר, או שהאירוע אינו פעיל. רענן את הדף.'
+          : 'המסך עוד לא היה מעודכן מול השרת. המתן לעדכון ונסה שוב.')
         : errorText(e)), 'error');
     } finally {
       clearTimeout(slowNotice);
