@@ -1773,7 +1773,10 @@
     setTimeout(() => foreground.release(), 5000);
     // תיוגים משותפים + real-time refresh — משמשים רק את ההערות הכלליות
     foreground.background(subscribeToQuickTags);
-    evaluationRepository = createEvaluationRepository(db, currentUser);
+    // שמירת הערכה לא ממתינה לשרת (עובדת גם בלי קליטה); כשל מאוחר מגיע לכאן
+    evaluationRepository = createEvaluationRepository(db, currentUser, {
+      onWriteError: error => showToast('שמירת ההערכה נכשלה: ' + error.message, 'error')
+    });
     arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace);
     privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
     formationRepository = createFormationOperationsRepository(db, currentUser);
@@ -2179,6 +2182,19 @@
     return [...arrivalControllers.values()].some(({controller}) => controller.state().pendingCount > 0);
   }
 
+  // ציונים/הערות שנשמרו במכשיר ועוד לא הגיעו לשרת. מוצג רק אם ההמתנה נמשכת
+  // (עם קליטה האישור מגיע תוך שבריר שנייה, ואין טעם להבהב הודעה).
+  let evaluationPendingVisible = false;
+  let evaluationPendingTimer = null;
+  function setEvaluationPending(pending) {
+    clearTimeout(evaluationPendingTimer);
+    if (!pending) {
+      if (evaluationPendingVisible) { evaluationPendingVisible = false; renderArrivalSaveStatus(); }
+      return;
+    }
+    evaluationPendingTimer = setTimeout(() => { evaluationPendingVisible = true; renderArrivalSaveStatus(); }, 2000);
+  }
+
   function renderArrivalSaveStatus() {
     const panel = document.getElementById('arrival-save-status');
     const entries = [...arrivalControllers.values()].filter(({controller, race}) => {
@@ -2186,8 +2202,10 @@
       return state.pendingCount || (state.error && (race.id === currentRaceId ||
         (candidateRoute() && candidateState.arrivalsByRace.has(race.id))));
     });
-    panel.hidden = !entries.length;
-    panel.innerHTML = entries.map(({controller, race}) => {
+    panel.hidden = !entries.length && !evaluationPendingVisible;
+    const evaluationLine = evaluationPendingVisible
+      ? '<div class="alert alert-info">⏳ ההערכה שמורה במכשיר ותישלח כשתחזור קליטה. אפשר להמשיך לעבוד.</div>' : '';
+    panel.innerHTML = evaluationLine + entries.map(({controller, race}) => {
       const state = controller.state();
       const label = 'צוות ' + Number(race.team) + ' · תחנה ' + Number(race.station) + ' · סבב ' + Number(race.round);
       return '<div class="alert ' + (state.error ? 'alert-danger' : 'alert-info') + '">' + escHtml(label) + ' — ' +
@@ -2231,6 +2249,7 @@
   }
 
   function detachCurrentAssessmentSubscription() {
+    setEvaluationPending(false);
     if (currentAssessmentUnsubscribe) currentAssessmentUnsubscribe();
     currentAssessmentUnsubscribe = null;
     currentAssessment = normalizeAssessment(null, currentUser?.uid || '');
@@ -2247,10 +2266,11 @@
     detachCurrentAssessmentSubscription();
     currentAssessmentRaceId = race.id;
     currentAssessmentLoading = true;
-    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, assessment => {
+    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, (assessment, meta = {}) => {
       if (currentRaceId !== race.id) return;
       currentAssessment = assessment;
       currentAssessmentLoading = false;
+      setEvaluationPending(meta.pending === true);
       renderRace();
     }, error => {
       if (currentRaceId !== race.id) return;

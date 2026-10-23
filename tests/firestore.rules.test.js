@@ -15,6 +15,7 @@ import { createEventSetupRepository } from './helpers/event-setup-repository.js'
 import { createScheduleRepository } from './helpers/schedule-repository.js';
 import { createArrivalRepository } from './helpers/arrival-repository.js';
 import { createMessagesRepository } from './helpers/messages-repository.js';
+import { createEvaluationRepository } from './helpers/evaluation-repository.js';
 import { createIntakeRepository, IntakeMoveBlockedError } from './helpers/intake-repository.js';
 import { candidateRowsFromMatrix, buildCandidateRosterImport } from '../frontend/js/candidate-roster-import.js';
 
@@ -1823,4 +1824,38 @@ test('adjutancy receives messages addressed to adjutancy only', async () => {
     { lastReadAt: serverTimestamp(), schemaVersion: 1 }));
   await assertFails(addDoc(collection(adjutant, 'events', 'event-1', 'messages'),
     messagePayload('adjutant1', 'adjutant', { targetRoles: ['operator'] })));
+});
+
+test('the evaluation repository writes pass the rules without transactions (first score, per-candidate update, other evaluator denied)', async () => {
+  const errors = [];
+  const repo = createEvaluationRepository(userDb('evaluator1'), { uid: 'evaluator1' }, { onWriteError: e => errors.push(e) });
+  const ref = doc(userDb('evaluator1'), 'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1');
+  const flush = () => new Promise(resolve => setTimeout(resolve, 700));
+
+  // first score creates the private document
+  const first = await repo.mutateParticipant('race_01_07_1', '100', entry => ({ ...entry, scores: { resilience: 5 } }));
+  assert.equal(first.entries['100'].scores.resilience, 5);
+  await flush();
+  assert.equal((await getDoc(ref)).data().entries['100'].scores.resilience, 5);
+
+  // a later change replaces only that candidate's entry (a cleared score does not survive)
+  await repo.mutateParticipant('race_01_07_1', '100', entry => ({ ...entry, scores: { activity: 3 } }));
+  await repo.mutateParticipant('race_01_07_1', '101', entry => ({ ...entry, scores: { resilience: 7 } }));
+  await flush();
+  const saved = (await getDoc(ref)).data();
+  assert.deepEqual(saved.entries['100'].scores, { activity: 3 });
+  assert.equal(saved.entries['101'].scores.resilience, 7);
+
+  // multi-candidate mutate (repetitions) still replaces the whole document
+  await repo.mutate('race_01_07_1', entries => ({ ...entries, '100': { ...entries['100'], measurement: 12 } }));
+  await flush();
+  assert.equal((await getDoc(ref)).data().entries['100'].measurement, 12);
+  assert.deepEqual(errors, []);
+
+  // another evaluator's repository cannot write into evaluator1's document path
+  const intruderErrors = [];
+  const intruder = createEvaluationRepository(userDb('evaluator2'), { uid: 'evaluator1' }, { onWriteError: e => intruderErrors.push(e) });
+  await intruder.mutateParticipant('race_01_07_1', '100', entry => ({ ...entry, scores: { resilience: 1 } })).catch(e => intruderErrors.push(e));
+  await flush();
+  assert.ok(intruderErrors.length >= 1);
 });

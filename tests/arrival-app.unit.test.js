@@ -32,7 +32,7 @@ test('every arrival row has a handle and empty/full lists retain both drop targe
 test('candidate-page-only listener failure exposes a retry action', () => {
   const panel = {};
   const context = vm.createContext({
-    document:{getElementById:()=>panel}, escHtml, currentRaceId:'station-round',
+    document:{getElementById:()=>panel}, escHtml, currentRaceId:'station-round', evaluationPendingVisible:false,
     candidateRoute:()=>true,candidateState:{arrivalsByRace:new Map([['candidate-round',{}]])},
     arrivalControllers:new Map([['candidate-round',{
       race:{id:'candidate-round',team:'01',station:'01',round:2},
@@ -43,6 +43,21 @@ test('candidate-page-only listener failure exposes a retry action', () => {
   context.renderArrivalSaveStatus();
   assert.equal(panel.hidden,false);
   assert.match(panel.innerHTML,/data-arrival-retry="candidate-round"/);
+});
+
+test('scores waiting for reception are announced in the save panel', () => {
+  const panel = {};
+  const context = vm.createContext({
+    document:{getElementById:()=>panel}, escHtml, currentRaceId:'r1', evaluationPendingVisible:true,
+    candidateRoute:()=>false, candidateState:{arrivalsByRace:new Map()}, arrivalControllers:new Map()
+  });
+  vm.runInContext(extract('  function renderArrivalSaveStatus()', "  document.getElementById('arrival-save-status').addEventListener"),context);
+  context.renderArrivalSaveStatus();
+  assert.equal(panel.hidden,false);
+  assert.match(panel.innerHTML,/שמורה במכשיר ותישלח כשתחזור קליטה/);
+  context.evaluationPendingVisible = false;
+  context.renderArrivalSaveStatus();
+  assert.equal(panel.hidden,true);
 });
 
 test('a delayed tap from a previous round cannot mark the newly selected round', () => {
