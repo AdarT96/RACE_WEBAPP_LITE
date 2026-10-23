@@ -132,13 +132,26 @@ function showFormError(message) {
   $('form-error').hidden = !message;
 }
 
+function duplicateIdMessage(profile, exceptKey = '') {
+  const owner = nationalIdOwner(roster, profile.nationalId, exceptKey);
+  return owner ? `תעודת הזהות כבר רשומה למועמד ${owner.participantId} (${intakeTeamLabel(owner.team)}).` : '';
+}
+
 // בודק לפני שליחה: אותם כללים כמו בייבוא, ותעודת זהות שכבר רשומה באירוע.
 function validateProfile(values, exceptKey = '') {
   const { profile, errors } = prepareIntakeProfile(values);
   if (errors.length) return errors.join('\n');
-  const owner = nationalIdOwner(roster, profile.nationalId, exceptKey);
-  if (owner) return `תעודת הזהות כבר רשומה למועמד ${owner.participantId} (${intakeTeamLabel(owner.team)}).`;
-  return '';
+  return duplicateIdMessage(profile, exceptKey);
+}
+
+// בדיקה מיידית בזמן ההקלדה מול הרשימה שכבר נטענה בדף (בלי שרת).
+// השרת ממשיך לבדוק בשמירה.
+let duplicateIdShown = false;
+function checkDuplicateIdWhileTyping() {
+  const { profile, errors } = prepareIntakeProfile({ ...formValues(), fullName: 'x' });
+  const message = errors.length ? '' : duplicateIdMessage(profile);
+  if (message) { duplicateIdShown = true; showFormError(message); }
+  else if (duplicateIdShown) { duplicateIdShown = false; showFormError(''); }
 }
 
 function knownMaxNumber() {
@@ -340,6 +353,7 @@ $('search').addEventListener('input', () => { visibleCount = PAGE_SIZE; renderLi
 $('filter').addEventListener('change', () => { visibleCount = PAGE_SIZE; renderList(); });
 $('show-more').addEventListener('click', () => { visibleCount += PAGE_SIZE; renderList(); });
 $('intake-form').addEventListener('submit', saveNewCandidate);
+$('field-nationalId').addEventListener('input', checkDuplicateIdWhileTyping);
 // Enter בשדה טקסט עובר לשדה הבא ולא שולח בטעות לפני שהטופס מולא
 ['field-fullName', 'field-nationalId', 'field-emergencyContactPhone'].forEach((id, index, ids) => {
   $(id).addEventListener('keydown', event => {

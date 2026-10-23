@@ -75,3 +75,10 @@
 /* כרטיס סגור: הכותרת בלבד, בלי קו ההפרדה והרווח שמתחתיה */
 .setup-card:not([open]) > .setup-card-head { border-bottom:0; padding-bottom:0; margin-bottom:0; }
 .setup-start-card:not([open]) { gap:0; }
+/* תפקיד בלי צוות: בורר הצוות מוסתר לגמרי (display של form-select גובר על hidden) */
+.staff-row [hidden] { display:none !important; }
+/* בטלפון: סרגל השלבים אינו דבוק — הסרגל העליון והשלבים יחד תפסו ~156px קבועים */
+@media (max-width:480px) {
+  .setup-steps { position:static; }
+  .setup-card { scroll-margin-top:calc(var(--setup-navbar-height, 68px) + 8px); }
+}

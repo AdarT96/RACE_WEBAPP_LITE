@@ -70,6 +70,16 @@ docs/
   PLAN-evaluation-metrics.md   תכנון פיצ'ר ההערכה (רקע מלא)
 ```
 
+## PWA ומצב לא מקוון
+
+-  +  — התקנה למסך הבית (עברית, RTL, ). כל דף מכיל  ו־, שרושם את  בנתיב יחסי (עובד תחת  וב־localhost).
+-  +  (קלאסיים, ללא build): **רשת קודם** לכל בקשת GET מאותו מקור ולשלושת מודולי ה־SDK של Firebase (gstatic 10.7.0); המטמון () משמש רק כשהרשת נכשלת (התאמה בלי ). בהתקנה נטענת מראש כל המעטפת (). Firestore, Auth ו־Apps Script (googleapis, firebaseio, identitytoolkit, securetoken, script.google.com) והכתיבות אינם עוברים ב־SW כלל.  +  ומחיקת מטמונים ישנים בהפעלה — גרסה חדשה מגיעה בטעינה הבאה עם קליטה.
+- **מוסיפים קובץ JS/CSS/דף?** יש להוסיף אותו ל־ ב־ (בדיקת  נכשלת אחרת). שינוי באסטרטגיה/רשימה: להעלות  באותו קובץ.
+- בסימולציה (Playwright) ה־SW עוקף את ניתוב ה־SDK; יש להשתמש ב־ כשבודקים מול האמולטור.
+
+### נתיבי app.html
+ ו־ — מסך המועמד (פתיחה ישירה וגם ;  אחרי ה־# נסבל),  — סנכרון מלא (מנהל בלבד),  — פתיחת תחנה.
+
 ## מודל הנתונים (Firestore)
 - `users/{uid}` — `name, email, role` (`admin|operator|evaluator|formation_commander|adjutant`), `approved`, `team`, `sheetUrl`/`sheetFileId` (קובץ המעריך). ל־`formation_commander` ול־`adjutant` (שלישות) אין צוות (`team: null`; בסגל האירוע `team: ''`).
 - `teams/{teamNumber}` — מאגר התאימות הישן ותבניות התחנות. אירוע חדש אינו מצולם ממנו אוטומטית; המקור התפעולי הוא `events/{eventId}`.

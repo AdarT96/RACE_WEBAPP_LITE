@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f1117">
+  <script src="js/pwa-register.js" defer></script>
   <title>מערכת גיבוש עוקץ</title>
   <link rel="stylesheet" href="css/main.css?v=1.4-messages">
   <!-- defer: הגרפים משמשים רק את מסך המועמד, ואסור להם לעכב את הצגת התחנה.
@@ -897,11 +900,15 @@
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
-      <button class="btn btn-primary admin-only" onclick="doSyncAllSheets()" style="padding:12px 20px"
-              title="מסנכרן את כל האירוע: כל הצוותים, כל התחנות וכל המעריכים">
-        🗂 סנכרן הכל
-      </button>
     </div>
+  </div>
+
+  <!-- סנכרון מלא של האירוע: מחוץ לפאנל הסבב כדי שיופיע גם לפני בחירת צוות -->
+  <div class="admin-only" style="display:flex; justify-content:center; margin-top:20px">
+    <button class="btn btn-primary admin-only" onclick="doSyncAllSheets()" style="padding:12px 20px"
+            title="מסנכרן את כל האירוע: כל הצוותים, כל התחנות וכל המעריכים">
+      🗂 סנכרן הכל
+    </button>
   </div>
 
   <!-- ══════════ General notes (station-independent) ══════════ -->
@@ -1806,7 +1813,7 @@
     initRoundNavigationKeyboard();
 
     if (!activeFormationEvent) {
-      showBlockingWarn('לא הוגדר אירוע גיבוש פעיל. מנהל המערכת צריך ליצור אירוע בפאנל המנהל.');
+      showBlockingWarn('האירוע עדיין לא הופעל. הסבבים ייפתחו אחרי שהמנהל יפעיל אירוע (אם עוד לא הוגדר אחד — המנהל יוצר אותו בפאנל המנהל).');
       return;
     }
 
@@ -4392,7 +4399,7 @@
   }
 
   function candidateRoute() {
-    const match = location.hash.match(/^#candidate(?:\/([^/]+))?$/);
+    const match = location.hash.match(/^#candidate(?:\/([^/?]+))?(?:\?.*)?$/); // סובל ?query אחרי ה-#
     return match ? { participantId: match[1] ? decodeURIComponent(match[1]) : null } : null;
   }
 
