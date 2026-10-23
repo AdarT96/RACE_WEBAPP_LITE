@@ -720,6 +720,9 @@
 </nav>
 
 <div class="container" id="arrival-save-status" role="status" aria-live="polite" hidden></div>
+<div class="container" id="stale-view-banner" role="status" aria-live="polite" hidden style="padding-top:12px">
+  <div class="alert alert-warning" style="margin:0">⚠️ אין עדכון מהשרת כרגע — ייתכן שהמסך אינו מעודכן (סבב חדש עלול לא להופיע). בדוק קליטה לפני שממשיכים לדרג.</div>
+</div>
 <div class="container" id="station-view" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
@@ -2005,6 +2008,31 @@
     });
   }
 
+  // בסימולציה ערוץ העדכונים של Firestore נפל ברשת חלשה ("Could not reach Cloud
+  // Firestore backend"), והמסך המשיך להציג את הסבב הקודם מהמטמון: מעריך דירג את
+  // הסבב הלא נכון בלי לדעת. כשרשימת הסבבים לא מאושרת מול השרת יותר מכמה שניות,
+  // מוצגת אזהרה והנקודה העליונה מפסיקה להיות ירוקה.
+  let staleViewTimer = null;
+  function updateStaleViewBanner() {
+    const banner = document.getElementById('stale-view-banner');
+    if (!banner) return;
+    if (!raceListSnapshotSeen || raceListConfirmedByServer) {
+      clearTimeout(staleViewTimer);
+      staleViewTimer = null;
+      banner.hidden = true;
+      setConnectedFirebase(navigator.onLine !== false);
+      return;
+    }
+    if (staleViewTimer) return;
+    staleViewTimer = setTimeout(() => {
+      staleViewTimer = null;
+      if (raceListSnapshotSeen && !raceListConfirmedByServer) {
+        banner.hidden = false;
+        setConnectedFirebase(false);
+      }
+    }, 8000);
+  }
+
   function setConnectedFirebase(ok) {
     const dot   = document.getElementById('conn-dot');
     const label = document.getElementById('conn-label');
@@ -2332,6 +2360,7 @@
       const metadataOnly = raceListSnapshotSeen && snap.docChanges().length === 0;
       raceListSnapshotSeen = true;
       raceListConfirmedByServer = !snap.metadata.fromCache;
+      updateStaleViewBanner();
       if (metadataOnly) return;
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
@@ -2397,6 +2426,7 @@
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
     raceListSnapshotSeen = false;
     raceListConfirmedByServer = false;
+    updateStaleViewBanner();
     detachEvaluatorArrivalSubscription();
     detachCurrentAssessmentSubscription();
     racesForContext = [];
