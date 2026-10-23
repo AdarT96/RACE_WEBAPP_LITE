@@ -26,6 +26,19 @@ import {
 } from './intake-model.js';
 import { ROLES, canManageIntake } from './roles.js';
 
+// "מהשרת בלבד" כשאפשר. בסימולציה נצפה דפדפן שנסגר בכוח באמצע עבודה ונשאר במצב
+// שבו Firestore דוחה קריאות כאלה (unavailable) אף שהרשת תקינה — והקליטה נחסמה
+// כולה בהודעה על קליטה חלשה. הקריאות כאן הן בדיקה מוקדמת: הטרנזקציה בודקת שוב
+// מול השרת לפני כל כתיבה, ולכן מותר ליפול לקריאה רגילה.
+const readDoc = reference => getDocFromServer(reference).catch(error => {
+  if (error?.code !== 'unavailable') throw error;
+  return getDoc(reference);
+});
+const readDocs = reference => getDocsFromServer(reference).catch(error => {
+  if (error?.code !== 'unavailable') throw error;
+  return getDocs(reference);
+});
+
 const RACE_SCHEMA_VERSION = 2;
 // כל קליטה כותבת את אותו מונה, ולכן עד 10 קולטים במקביל מתחרים עליו. כל
 // התנגשות מנסה שוב מההתחלה (קריאה מחדש מהשרת); ברירת המחדל של 5 קצרה מדי.
@@ -102,7 +115,7 @@ export function createIntakeRepository(db, user) {
 
   async function counterMovedFrom(eventId, observed) {
     try {
-      const snapshot = await getDocFromServer(counterRef(eventId));
+      const snapshot = await readDoc(counterRef(eventId));
       return (snapshot.exists() ? Number(snapshot.data().lastNumber) || 0 : 0) !== observed;
     } catch (_) {
       return false;
@@ -116,7 +129,7 @@ export function createIntakeRepository(db, user) {
       return await operation();
     } catch (error) {
       if (!isPermissionDenied(error)) throw error;
-      const latest = await getDocFromServer(reference).catch(() => null);
+      const latest = await readDoc(reference).catch(() => null);
       if (latest && !latest.exists()) throw new Error('המועמד הועבר או נמחק במכשיר אחר. רענן ונסה שוב.');
       if (latest?.exists() && expectedRevision != null &&
           Number(latest.data().profileRevision || 0) !== Number(expectedRevision)) {
@@ -130,8 +143,8 @@ export function createIntakeRepository(db, user) {
   // מספרים מייבוא ה־Excel, שאין להם רישום במונה.
   async function scanMaxNumber(eventId) {
     const [candidates, unassigned] = await Promise.all([
-      getDocsFromServer(collection(db, 'events', String(eventId), 'candidates')),
-      getDocsFromServer(collection(db, 'events', String(eventId), 'unassignedCandidates'))
+      readDocs(collection(db, 'events', String(eventId), 'candidates')),
+      readDocs(collection(db, 'events', String(eventId), 'unassignedCandidates'))
     ]);
     return maxParticipantNumber(rowsOf(candidates), rowsOf(unassigned));
   }
@@ -145,14 +158,14 @@ export function createIntakeRepository(db, user) {
     const participantId = normalizeParticipantId(candidate.participantId);
     const [races, recommendation, record] = await Promise.all([
       eventStatus === 'active'
-        ? getDocsFromServer(query(collection(db, 'races'), where('eventId', '==', String(eventId)),
+        ? readDocs(query(collection(db, 'races'), where('eventId', '==', String(eventId)),
           where('team', '==', team), where('evaluationSchemaVersion', '==', RACE_SCHEMA_VERSION))).then(rowsOf)
         : Promise.resolve([]),
       canReadRecommendations
-        ? getDocFromServer(doc(db, 'events', String(eventId), 'dropoutRecommendations', candidateKey(team, participantId)))
+        ? readDoc(doc(db, 'events', String(eventId), 'dropoutRecommendations', candidateKey(team, participantId)))
           .then(snapshot => snapshot.exists())
         : Promise.resolve(false),
-      getDocFromServer(candidateRef(eventId, team, participantId))
+      readDoc(candidateRef(eventId, team, participantId))
         .then(snapshot => (snapshot.exists() ? { id: snapshot.id, ...snapshot.data() } : null))
     ]);
     return candidateDataReasons({ candidate: record || candidate, races, hasRecommendation: recommendation });
@@ -200,10 +213,10 @@ export function createIntakeRepository(db, user) {
       for (let round = 0; round < CREATE_MAX_ROUNDS; round += 1) {
         // קודם גרסת הרשימות ורק אחריה רשימת הצוותים: ייבוא שיסתיים ביניהן
         // ייראה כאן, וייבוא מאוחר יותר ישנה את rosterRevision וייתפס בטרנזקציה.
-        const eventSnapshot = await getDocFromServer(eventRef(eventId));
+        const eventSnapshot = await readDoc(eventRef(eventId));
         assertOpen(eventSnapshot);
         const rosterRevision = Number(eventSnapshot.data().rosterRevision || 0);
-        const teamsSnapshot = await getDocsFromServer(collection(db, 'events', String(eventId), 'teams'));
+        const teamsSnapshot = await readDocs(collection(db, 'events', String(eventId), 'teams'));
         const teamIds = teamsSnapshot.docs.map(item => padTeam(item.id)).filter(Boolean);
         if (target && !teamIds.includes(target)) throw new Error(`${intakeTeamLabel(target)} אינו קיים באירוע.`);
         if (hint === null) hint = await scanMaxNumber(eventId);
