@@ -15,7 +15,7 @@ import { EVENT_STAFF_ROLES, ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
 import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
-import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { createForegroundGate } from './load-priority.js';
 import { mountMessageCenter } from './message-center.js';
 
@@ -712,7 +712,7 @@ document.getElementById('activate-event-button').addEventListener('click', async
 onAuthStateChanged(auth, async user => {
   if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   try {
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     if (!snapshot.exists() || snapshot.data().role !== ROLES.ADMIN) {
       await signOut(auth); location.href = 'index.html'; return;
     }

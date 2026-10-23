@@ -12,7 +12,7 @@ import { doc, setDoc,
 import { ROLES, destinationForRole, isKnownRole, roleNeedsTeam } from './roles.js';
 import { SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { resolveActiveUserContext } from './active-user-context.js';
-import { openFirestore } from './firestore-cache.js';
+import { openFirestore, getDocPatiently } from './firestore-cache.js';
 
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
@@ -130,7 +130,7 @@ async function loginUser() {
   const stopSlowNotice = slowNotice('login-msg', 'הכניסה מתעכבת — כנראה קליטה חלשה. נא להמתין.');
   try {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
-    const snap = await getDoc(doc(db, 'users', cred.user.uid));
+    const snap = await getDocPatiently(doc(db, 'users', cred.user.uid));
 
     if (!snap.exists()) {
       await signOut(auth);

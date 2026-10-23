@@ -17,7 +17,7 @@ import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
-import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 
@@ -501,9 +501,9 @@ onAuthStateChanged(auth, async user => {
   markLoad('auth ready');
   try {
     // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');

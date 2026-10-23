@@ -1152,7 +1152,7 @@
   import { resolveActiveUserContext } from "./js/active-user-context.js";
   import { staffAssignmentChange } from "./js/staff-assignment.js";
   import { createForegroundGate, markLoad } from "./js/load-priority.js";
-  import { openFirestore, signOutAndClearCache } from "./js/firestore-cache.js";
+  import { openFirestore, signOutAndClearCache, getDocPatiently } from "./js/firestore-cache.js";
   import { mountMessageCenter } from "./js/message-center.js";
   import { activeEventIdFromPointer } from "./js/messages-model.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
@@ -1678,9 +1678,16 @@
     if (!user) { window.location.href = 'index.html'; return; }
     markLoad('auth ready');
     // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
-    const snap = await getDoc(doc(db, 'users', user.uid));
+    let snap;
+    try {
+      snap = await getDocPatiently(doc(db, 'users', user.uid));
+    } catch (error) {
+      // קודם כשל כאן השאיר את המסך ריק בלי שום הודעה
+      showBlockingWarn('טעינת הפרופיל נכשלה: ' + error.message + ' — רענן את הדף.');
+      return;
+    }
     if (!snap.exists()) { await signOut(auth); window.location.href = 'index.html'; return; }
     const data = await resolveActiveUserContext(db, user.uid, snap.data(), { pointerRead });
     markLoad('profile resolved');

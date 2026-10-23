@@ -1,4 +1,5 @@
-import { doc, getDoc } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
+import { doc } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
+import { getDocPatiently as getDoc } from './firestore-cache.js';
 import {
   EVENT_STAFFING_SCHEMA_VERSION, ROLES, profileForActiveEvent
 } from './roles.js';

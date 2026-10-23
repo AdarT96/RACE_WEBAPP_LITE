@@ -19,7 +19,7 @@ import {
 } from './roles.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
-import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 
@@ -668,10 +668,10 @@ onAuthStateChanged(auth, async user => {
   try {
     // שלוש קריאות בלתי תלויות יוצאות יחד. ה-catch הריק רק מסמן את ההבטחה
     // כמטופלת; מי שממתין לה עדיין מקבל את השגיאה.
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
     stationTypesRead = loadStationTypes();
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile
       ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;

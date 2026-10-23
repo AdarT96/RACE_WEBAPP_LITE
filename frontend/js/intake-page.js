@@ -20,7 +20,7 @@ import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
-import { openFirestore, signOutAndClearCache } from './firestore-cache.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -434,9 +434,9 @@ onAuthStateChanged(auth, async user => {
   if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   markLoad('auth ready');
   try {
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
