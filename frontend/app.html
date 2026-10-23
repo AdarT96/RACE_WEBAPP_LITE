@@ -1774,7 +1774,10 @@
   async function initApp() {
     const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
     setText('user-role-badge', roleLabel(currentUser.role) + teamLabel);
-    setConnectedFirebase(true);
+    // הנקודה נקבעה ל"מחובר" פעם אחת ונשארה ירוקה גם בלי קליטה
+    setConnectedFirebase(navigator.onLine !== false);
+    window.addEventListener('online', () => setConnectedFirebase(true));
+    window.addEventListener('offline', () => setConnectedFirebase(false));
 
     // רשת ביטחון: עבודת הרקע לא תחכה לנצח אם הסבב לא נטען (שגיאה, אין צוות)
     setTimeout(() => foreground.release(), 5000);
@@ -2007,7 +2010,7 @@
     const label = document.getElementById('conn-label');
     if (!dot || !label) return;
     dot.className     = ok ? 'conn-dot connected' : 'conn-dot disconnected';
-    label.textContent = ok ? 'מחובר' : 'לא מחובר';
+    label.textContent = ok ? 'מחובר' : 'אין קליטה — נשמר במכשיר';
   }
 
   function showBlockingWarn(msg) {
@@ -2194,12 +2197,20 @@
   let evaluationPendingVisible = false;
   let evaluationPendingTimer = null;
   function setEvaluationPending(pending) {
-    clearTimeout(evaluationPendingTimer);
     if (!pending) {
+      clearTimeout(evaluationPendingTimer);
+      evaluationPendingTimer = null;
       if (evaluationPendingVisible) { evaluationPendingVisible = false; renderArrivalSaveStatus(); }
       return;
     }
-    evaluationPendingTimer = setTimeout(() => { evaluationPendingVisible = true; renderArrivalSaveStatus(); }, 2000);
+    // כל לחיצה מעדכנת את המנוי; הטיימר לא מתאפס בכל אחת, אחרת ההודעה לא מופיעה
+    // אצל מעריך שממשיך לדרג בלי קליטה.
+    if (evaluationPendingVisible || evaluationPendingTimer) return;
+    evaluationPendingTimer = setTimeout(() => {
+      evaluationPendingTimer = null;
+      evaluationPendingVisible = true;
+      renderArrivalSaveStatus();
+    }, 2000);
   }
 
   function renderArrivalSaveStatus() {
@@ -5129,11 +5140,16 @@
   }
 
   // ═════════ Toast ═════════
+  // אותה הודעה שוב (שמירה אחרי שמירה) מאריכה את המוצגת במקום להיערם, ולא יותר
+  // משתיים על המסך — בסימולציה הודעות "נשמרה" כיסו את כרטיס הדירוג.
   window.showToast = (msg, type='info') => {
     const c = document.getElementById('toast-container');
+    const same = [...c.children].find(item => item.textContent === msg && item.classList.contains(type));
+    if (same) { clearTimeout(same.expiry); same.expiry = setTimeout(() => same.remove(), 3500); return; }
+    while (c.children.length >= 2) c.firstElementChild.remove();
     const el = document.createElement('div');
     el.className = `toast ${type}`; el.textContent = msg;
-    c.appendChild(el); setTimeout(() => el.remove(), 3500);
+    c.appendChild(el); el.expiry = setTimeout(() => el.remove(), 3500);
   };
 
 </script>
