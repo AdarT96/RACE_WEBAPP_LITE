@@ -1171,7 +1171,7 @@
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
     doc, getDoc, setDoc, updateDoc, collection,
-    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction, writeBatch
+    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction, writeBatch, Timestamp
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
@@ -2868,6 +2868,7 @@
 
   // ═════════ Session actions ═════════
   window.startSession = async () => {
+    const tappedAt = Date.now(); // רגע הלחיצה — זה הרגע שבו הסבב מתחיל (ראה session-policy)
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
@@ -2909,6 +2910,7 @@
       round:     nextRound,
       status:    'running',
       startedAt: serverTimestamp(),
+      startTappedAt: Timestamp.fromMillis(tappedAt),
       startedBy: currentUser.uid,
       timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
       evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
@@ -3211,6 +3213,7 @@
   };
 
   window.endSession = async () => {
+    const tappedAt = Date.now(); // הלחיצה על "עצור", לפני חלון האישור
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים לסיים סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!latestRace || latestRace.status !== 'running') return;
@@ -3232,6 +3235,7 @@
       await updateDoc(raceRef, {
         status:  'stopped',
         endedAt: serverTimestamp(),
+        endTappedAt: Timestamp.fromMillis(tappedAt),
         endedBy: currentUser.uid,
         endedReason: 'manual'
       });

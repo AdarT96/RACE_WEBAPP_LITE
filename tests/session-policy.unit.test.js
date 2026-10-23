@@ -58,3 +58,22 @@ test('the station commander and the administrator control session lifecycle', ()
   assert.equal(canRoleControlSession('formation_commander'), false);
   assert.equal(canRoleControlSession(undefined), false);
 });
+
+test('the commander\'s tap is the round start/end when plausible; otherwise the server time', async () => {
+  const { sessionStartMs, sessionStoredEndMs, effectiveSessionElapsedMs, TAP_LEAD_MAX_MS } = await import('../frontend/js/session-policy.js');
+  const server = 1_000_000;
+  // tap 0.7 s before the server stamp → the tap
+  assert.equal(sessionStartMs({ startedAt: server, startTappedAt: server - 700 }), server - 700);
+  // server time still pending right after saving → the tap (the timer runs at once)
+  assert.equal(sessionStartMs({ startedAt: null, startTappedAt: server - 700 }), server - 700);
+  // a device clock ahead of the server, or far behind it → the server time
+  assert.equal(sessionStartMs({ startedAt: server, startTappedAt: server + 50 }), server);
+  assert.equal(sessionStartMs({ startedAt: server, startTappedAt: server - TAP_LEAD_MAX_MS - 1 }), server);
+  // older rounds without a tap keep working
+  assert.equal(sessionStartMs({ startedAt: server }), server);
+  assert.equal(sessionStoredEndMs({ endedAt: server + 60_000, endTappedAt: server + 59_200 }), server + 59_200);
+  assert.equal(effectiveSessionElapsedMs({
+    status: 'stopped', startedAt: server, startTappedAt: server - 700,
+    endedAt: server + 60_000, endTappedAt: server + 59_200, timeLimitSeconds: 2400
+  }), 59_900);
+});

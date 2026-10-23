@@ -195,7 +195,8 @@ service cloud.firestore {
       allow create: if isAdmin() ||
         (isApprovedRole('operator') && isOwnTeam(request.resource.data.team) &&
          request.resource.data.keys()
-           .hasOnly(['eventId', 'team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds', 'evaluationSchemaVersion']) &&
+           .hasOnly(['eventId', 'team', 'station', 'round', 'status', 'startedAt', 'startTappedAt', 'startedBy', 'participantIds', 'tags', 'timeLimitSeconds', 'evaluationSchemaVersion']) &&
+         (!request.resource.data.keys().hasAny(['startTappedAt']) || request.resource.data.startTappedAt is timestamp) &&
          request.resource.data.keys().hasAll(['eventId', 'team', 'station', 'round', 'status', 'startedAt', 'startedBy', 'participantIds', 'tags']) &&
          request.resource.data.eventId is string && isActiveEvent(request.resource.data.eventId) &&
          request.resource.data.team is string && request.resource.data.station is string &&
@@ -219,7 +220,8 @@ service cloud.firestore {
       // Commander: forward-only running -> stopped transition, without touching tags.
       allow update: if isApprovedRole('operator') && isOwnTeam(resource.data.team) &&
         request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'endedAt', 'endedBy', 'endedReason']) &&
+          .hasOnly(['status', 'endedAt', 'endTappedAt', 'endedBy', 'endedReason']) &&
+        (!request.resource.data.keys().hasAny(['endTappedAt']) || request.resource.data.endTappedAt is timestamp) &&
         resource.data.status == 'running' &&
         request.resource.data.status == 'stopped' &&
         request.resource.data.endedAt == request.time &&

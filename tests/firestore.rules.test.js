@@ -1902,3 +1902,13 @@ test('arrival place times are the tap moments, not the time the server processed
   assert.equal(saved.revision, 3);
   assert.equal(saved.completedAt.toMillis(), tapped + 9_500);
 });
+
+test('the commander may record the tap moments of start and end, as timestamps only', async () => {
+  const operator = userDb('operator1');
+  const ref = doc(operator, 'races', 'race_01_07_7');
+  await assertFails(setDoc(ref, { ...racePayload(), round: 7, evaluationSchemaVersion: 2, startTappedAt: 'now' }));
+  await assertSucceeds(setDoc(ref, { ...racePayload(), round: 7, evaluationSchemaVersion: 2, startTappedAt: Timestamp.now() }));
+  await assertFails(updateDoc(ref, { status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual', endTappedAt: 5 }));
+  await assertSucceeds(updateDoc(ref, { status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual', endTappedAt: Timestamp.now() }));
+  await assertFails(updateDoc(ref, { startTappedAt: Timestamp.now() }));   // the start cannot be moved afterwards
+});
