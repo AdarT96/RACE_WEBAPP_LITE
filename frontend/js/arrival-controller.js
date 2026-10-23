@@ -1,6 +1,8 @@
 import { arrivalRevision as revisionOf } from './arrival-order-model.js';
 
-// One small queue per evaluator/round. It intentionally does not promise offline persistence.
+// One small queue per evaluator/round. Persistence across reloads and missing
+// reception is the repository's (Firestore's local queue); commands carry the
+// tap time (at) so a queued tap keeps the moment it was made.
 export function createArrivalController({ raceId, repository, initial, onChange = () => {} }) {
   let confirmed = { ...initial, revision:revisionOf(initial) };
   let confirmedFromSnapshot = false;
@@ -89,14 +91,14 @@ export function createArrivalController({ raceId, repository, initial, onChange 
       if (!state().canMark) return false;
       if (!confirmed.participantIds.includes(pid)) throw new Error('המועמד אינו ברשימת הסבב');
       if (confirmed.order.includes(pid) || queue.some(command => command.pid === pid)) return true;
-      queue.push({ type:'append', pid });
+      queue.push({ type:'append', pid, at:Date.now() });
       connect(); notify(); pump(); return true;
     },
     reorder(order, expectedRevision) {
       return edit({ type:'reorder', order:[...order], expectedRevision });
     },
     place(participantId, targetIndex, expectedRevision) {
-      return edit({ type:'place', pid:String(participantId), targetIndex, expectedRevision });
+      return edit({ type:'place', pid:String(participantId), targetIndex, expectedRevision, at:Date.now() });
     },
     retry() {
       if (disposed || writing) return;

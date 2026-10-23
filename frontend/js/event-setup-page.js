@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore
+  collection, doc, getDoc, getDocs
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   buildCandidateRosterImport, candidateRowsFromMatrix, IMPORT_FIELD_LABELS
@@ -11,14 +11,17 @@ import {
   ARTIFACT_STATUSES, EVENT_STATUSES, eventSetupReadiness, normalizeEventTeamId, eventTeamIds
 } from './event-setup-model.js';
 import { CLEARANCE_LABELS, padTeam, normalizeCandidateProfile } from './formation-operations-model.js';
-import { ROLES, roleLabel, roleNeedsTeam } from './roles.js';
+import { EVENT_STAFF_ROLES, ROLES, roleLabel, roleNeedsTeam } from './roles.js';
 import { buildScheduleImport, scheduleImportTemplateCsv } from './schedule-excel-adapter.js';
 import { scheduleIssues, SCHEDULE_MAX_TEAMS } from './schedule-model.js';
 import { createScheduleRepository } from './schedule-repository.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
+import { createForegroundGate } from './load-priority.js';
+import { mountMessageCenter } from './message-center.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let repository = null;
@@ -29,6 +32,9 @@ let users = [];
 let rosterBusy = false;
 let candidateImportPreview = null;
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
+// הודעות פנימיות הן עבודת רקע: מתחילות אחרי שמסך ההגדרה נטען.
+const foreground = createForegroundGate();
+let messageCenter = null;
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -207,15 +213,14 @@ function renderStaff() {
   const container = document.getElementById('staff-list');
   container.innerHTML = users.map(user => {
     const selected = staffMemberSelection(user);
-    const role = selected?.role || ([ROLES.OPERATOR, ROLES.EVALUATOR, ROLES.FORMATION_COMMANDER].includes(user.role) ? user.role : ROLES.EVALUATOR);
+    const role = selected?.role || (EVENT_STAFF_ROLES.includes(user.role) ? user.role : ROLES.EVALUATOR);
     const team = selected?.team || padTeam(user.team) || teams[0] || '';
     return `<div class="staff-row" data-staff-row data-uid="${escapeHtml(user.uid)}">
       <label class="staff-identity"><input data-field="selected" type="checkbox" ${selected ? 'checked' : ''}>
         <span><strong>${escapeHtml(user.name || user.email || user.uid)}</strong><br><small>${escapeHtml(user.email || '')}</small></span></label>
       <select class="form-select" data-field="role">
-        <option value="operator" ${role === ROLES.OPERATOR ? 'selected' : ''}>מפק״צ</option>
-        <option value="evaluator" ${role === ROLES.EVALUATOR ? 'selected' : ''}>מעריך</option>
-        <option value="formation_commander" ${role === ROLES.FORMATION_COMMANDER ? 'selected' : ''}>מפקד הגיבוש</option>
+        ${EVENT_STAFF_ROLES.map(value =>
+          `<option value="${value}" ${role === value ? 'selected' : ''}>${escapeHtml(roleLabel(value))}</option>`).join('')}
       </select>
       <select class="form-select" data-field="team" ${roleNeedsTeam(role) ? '' : 'disabled hidden'}>
         ${teams.map(id => `<option value="${id}" ${id === team ? 'selected' : ''}>צוות ${Number(id)}</option>`).join('')}
@@ -252,7 +257,8 @@ function renderReadiness() {
   list('readiness-blockers', state.blockers, 'אין בעיות חוסמות.');
   list('readiness-warnings', state.warnings, 'אין אזהרות.');
   document.getElementById('activation-summary').textContent =
-    `${state.counts.teams} צוותים · ${state.counts.candidates} מועמדים · ${state.counts.staff} אנשי צוות`;
+    `${state.counts.teams} צוותים · ${state.counts.candidates} מועמדים` +
+    `${state.counts.unassigned ? ` · ${state.counts.unassigned} כלליים (ללא צוות)` : ''} · ${state.counts.staff} אנשי צוות`;
   const button = document.getElementById('activate-event-button');
   button.disabled = !state.canActivate || bundle.event.status !== EVENT_STATUSES.DRAFT;
   button.textContent = bundle.event.status === EVENT_STATUSES.ACTIVE ? 'האירוע פעיל' : 'פרסם לו״ז והפעל אירוע';
@@ -284,7 +290,7 @@ function selectedStaffFromDom() {
       uid:row.dataset.uid,
       displayName:user?.name || user?.email || row.dataset.uid,
       role,
-      team:role === ROLES.FORMATION_COMMANDER ? '' : row.querySelector('[data-field="team"]').value,
+      team:roleNeedsTeam(role) ? row.querySelector('[data-field="team"]').value : '',
       active:true
     }];
   });
@@ -360,6 +366,7 @@ async function postToSheets(body) {
   return data;
 }
 
+// מחזירה את היכולות של הפריסה, כדי לבחור בין בקשה אחת לכל הקבצים לבין בקשה לכל קובץ.
 async function verifyEventDriveApi() {
   const response = await fetch(window.APP_CONFIG.sheetsApiUrl);
   if (!response.ok) throw new Error('לא ניתן לבדוק את פריסת Google Apps Script.');
@@ -367,6 +374,36 @@ async function verifyEventDriveApi() {
   if (!Array.isArray(data.features) || !data.features.includes('event_scoped_files')) {
     throw new Error('גרסת Google Apps Script הפעילה עדיין אינה תומכת בקבצים לפי אירוע. יש לפרוס את Code.gs החדש לפני יצירת קבצים.');
   }
+  return data.features;
+}
+
+// כל קבצי הצוותים והמעריכים בבקשות מעטות (ensure_files) במקום בקשה לכל קובץ —
+// כל בקשה ל-Apps Script עולה שנייה ומעלה. מחזירה Map: מזהה יעד → תוצאה.
+const ENSURE_FILES_CHUNK = 25;
+async function ensureDriveTargetsBatched(targets, progress) {
+  const outcomes = new Map();
+  for (let start = 0; start < targets.length; start += ENSURE_FILES_CHUNK) {
+    const chunk = targets.slice(start, start + ENSURE_FILES_CHUNK);
+    progress.textContent = `יוצר קבצים ${start + 1}–${start + chunk.length} מתוך ${targets.length}…`;
+    let results = [];
+    let chunkError = '';
+    try {
+      const data = await postToSheets({
+        type:'ensure_files', eventId:currentEventId, eventName:bundle.event.name,
+        teams:chunk.filter(target => target.kind === 'team').map(target => target.team),
+        evaluators:chunk.filter(target => target.kind === 'evaluator')
+          .map(target => ({ uid:target.uid, name:target.name, team:target.team }))
+      });
+      results = Array.isArray(data.results) ? data.results : [];
+    } catch (error) { chunkError = error.message; }
+    for (const target of chunk) {
+      const result = results.find(item => item.kind === target.kind && item.key === target.key);
+      outcomes.set(target.id, result?.ok
+        ? { ok:true, data:{ fileId:result.fileId || '', url:result.url || '', warning:result.warning || '' } }
+        : { ok:false, message:result?.error || chunkError || 'לא התקבלה תשובה עבור הקובץ.' });
+    }
+  }
+  return outcomes;
 }
 
 document.getElementById('create-event-button').addEventListener('click', async event => {
@@ -418,7 +455,7 @@ document.querySelectorAll('.setup-steps a[href^="#"]').forEach(link => {
 
 document.getElementById('existing-events').addEventListener('change', event => selectEvent(event.target.value));
 document.getElementById('logout-button').addEventListener('click', async () => {
-  await signOut(auth); location.href = 'index.html';
+  await signOutAndClearCache(auth, db); location.href = 'index.html';
 });
 
 document.getElementById('save-details-button').addEventListener('click', async event => {
@@ -599,19 +636,31 @@ document.getElementById('create-drive-files-button').addEventListener('click', a
   setBusy(button, true, 'בודק פריסה…');
   const progress = document.getElementById('drive-progress');
   try {
-    await verifyEventDriveApi();
+    const features = await verifyEventDriveApi();
     const targets = [
-      ...teamIds().map(team => ({ id:`team-${team}`, type:'ensure_team_sheet', team })),
+      ...teamIds().map(team => ({ id:`team-${team}`, type:'ensure_team_sheet', kind:'team', key:String(team), team })),
       ...activeStaff().filter(member => member.role === ROLES.EVALUATOR).map(member => ({
-        id:`evaluator-${member.uid}`, type:'ensure_evaluator_sheet', uid:member.uid,
-        name:member.displayName, team:member.team
+        id:`evaluator-${member.uid}`, type:'ensure_evaluator_sheet', kind:'evaluator', key:String(member.uid),
+        uid:member.uid, name:member.displayName, team:member.team
       }))
     ];
     let completed = 0;
-    for (const target of targets) {
+    if (features.includes('ensure_files')) {
+      const outcomes = await ensureDriveTargetsBatched(targets, progress);
+      progress.textContent = 'שומר את מצב הקבצים…';
+      await Promise.all(targets.map(target => {
+        const outcome = outcomes.get(target.id);
+        return repository.saveArtifact(currentEventId, target.id, outcome.ok
+          ? { status:ARTIFACT_STATUSES.READY, fileId:outcome.data.fileId, url:outcome.data.url, message:outcome.data.warning }
+          : { status:ARTIFACT_STATUSES.FAILED, message:outcome.message });
+      }));
+      completed = targets.length;
+    }
+    for (const target of features.includes('ensure_files') ? [] : targets) {
       progress.textContent = `יוצר קובץ ${completed + 1} מתוך ${targets.length}…`;
       try {
-        const data = await postToSheets({ ...target, eventId:currentEventId, eventName:bundle.event.name });
+        const { id, kind, key, ...body } = target;
+        const data = await postToSheets({ ...body, id, eventId:currentEventId, eventName:bundle.event.name });
         await repository.saveArtifact(currentEventId, target.id, {
           status:ARTIFACT_STATUSES.READY, fileId:data.fileId, url:data.url, message:data.warning || ''
         });
@@ -661,16 +710,24 @@ document.getElementById('activate-event-button').addEventListener('click', async
 });
 
 onAuthStateChanged(auth, async user => {
-  if (!user) { location.href = 'index.html'; return; }
+  if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   try {
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     if (!snapshot.exists() || snapshot.data().role !== ROLES.ADMIN) {
       await signOut(auth); location.href = 'index.html'; return;
     }
     currentUser = { uid:user.uid, ...snapshot.data() };
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid:user.uid, name:currentUser.name }, role: ROLES.ADMIN,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground
+    });
+    setTimeout(() => foreground.release(), 8000);
     document.getElementById('setup-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
     repository = createEventSetupRepository(db, currentUser, { stationMapFactory:defaultStationMap });
     scheduleRepository = createScheduleRepository(db, currentUser);
+    // לחיצה לפני שהמאגר נוצר נכשלה בשגיאה טכנית באנגלית — הכפתור נפתח רק עכשיו
+    document.getElementById('create-event-button').disabled = false;
     // שלוש קריאות בלתי תלויות — יוצאות יחד
     const [events] = await Promise.all([repository.listEvents(), loadStationTypes(), loadUsers()]);
     renderEventPicker(events);
@@ -680,5 +737,7 @@ onAuthStateChanged(auth, async user => {
     if (requested) openSetupCard(initialCardId, { scroll: true });
   } catch (error) {
     showAlert('טעינת מסך ההגדרה נכשלה: ' + error.message, 'danger');
+  } finally {
+    foreground.release();
   }
 });

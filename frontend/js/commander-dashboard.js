@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getFirestore, onSnapshot, query, where
+  collection, doc, getDoc, onSnapshot, query, where
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import { isSessionEffectivelyRunning } from './session-policy.js';
 import { EVALUATION_SCHEMA_VERSION } from './evaluation-model.js';
@@ -12,15 +12,18 @@ import {
 import { buildFormationAlerts } from './formation-alerts-model.js';
 import { createFormationOperationsRepository } from './formation-operations-repository.js';
 import { ISSUE_REPORT_SCHEMA_VERSION } from './issue-report.js';
-import { ROLES, canManageFormation } from './roles.js';
+import { ROLES, canManageFormation, destinationForRole } from './roles.js';
 import { stationOperationalStatusLabel } from './station-operational-status.js';
 import './station-operational-dialog.js';
 import { resolveActiveUserContext } from './active-user-context.js';
-import { markLoad } from './load-priority.js';
+import { createForegroundGate, markLoad } from './load-priority.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
+import { mountMessageCenter } from './message-center.js';
+import { activeEventIdFromPointer } from './messages-model.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let repository = null;
@@ -28,6 +31,7 @@ let eventId = '';
 let eventData = null;
 let teams = [];
 let candidates = [];
+let unassignedCount = 0;
 let recommendations = [];
 let races = [];
 let publishedSchedule = null;
@@ -44,6 +48,9 @@ let latestDashboardSnapshot = null;
 let effectiveRaceSignature = '';
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 let candidateSearchQuery = '';
+// הודעות פנימיות הן עבודת רקע: מתחילות אחרי שהדשבורד הוצג (או שנחסם).
+const foreground = createForegroundGate();
+let messageCenter = null;
 
 const text = (id, value) => {
   const element = document.getElementById(id);
@@ -59,6 +66,7 @@ function clearEventSubscriptions() {
   eventData = null;
   teams = [];
   candidates = [];
+  unassignedCount = 0;
   recommendations = [];
   races = [];
   publishedSchedule = null;
@@ -66,6 +74,7 @@ function clearEventSubscriptions() {
 }
 
 function showBlocking(message) {
+  foreground.release();
   const block = document.getElementById('blocking-message');
   block.textContent = message;
   block.hidden = false;
@@ -76,7 +85,8 @@ function subscribeToActiveEvent() {
   activeEventSubscription?.();
   activeEventSubscription = onSnapshot(doc(db, 'settings', 'activeEvent'), snapshot => {
     const pointer = snapshot.exists() ? snapshot.data() : null;
-    const nextEventId = pointer?.status === 'active' ? String(pointer.eventId || '') : '';
+    const nextEventId = activeEventIdFromPointer(pointer);
+    messageCenter?.setEventId(nextEventId);
     if (!nextEventId) {
       clearEventSubscriptions();
       text('event-name', 'דשבורד גיבוש');
@@ -100,6 +110,7 @@ function attachEvent(nextEventId) {
     eventData = { id: snapshot.id, ...snapshot.data() };
     markLoad('event loaded');
     renderDashboard();
+    foreground.release();
   }, fail('האירוע')));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'teams'), snapshot => {
     // צוות שהוסר מהאירוע מסומן active:false ואינו מוצג (גם לא המועמדים שלו)
@@ -111,6 +122,14 @@ function attachEvent(nextEventId) {
     candidates = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
   }, fail('המועמדים')));
+  // מועמדים כלליים מהקליטה (שלישות) — רק מניין, לתזכורת שיש מי שעוד לא שובץ
+  eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'unassignedCandidates'), snapshot => {
+    unassignedCount = snapshot.size;
+    renderDashboard();
+  }, () => {
+    unassignedCount = 0;
+    renderDashboard();
+  }));
   eventSubscriptions.push(onSnapshot(collection(db, 'events', eventId, 'dropoutRecommendations'), snapshot => {
     recommendations = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
     renderDashboard();
@@ -339,6 +358,7 @@ window.renderDashboard = () => {
   text('kpi-withdrawn', snapshot.totals.withdrawn);
   text('kpi-teams', snapshot.teams.length);
   text('kpi-running', snapshot.totals.teamsRunning);
+  text('kpi-unassigned', unassignedCount);
   renderOperationalAlerts(snapshot);
   renderTeams(snapshot);
   renderCandidateSearch(snapshot);
@@ -452,7 +472,7 @@ window.reactivateCandidate = async (team, participantId) => {
 };
 
 window.logout = async () => {
-  await signOut(auth);
+  await signOutAndClearCache(auth, db);
   location.href = 'index.html';
 };
 
@@ -473,18 +493,24 @@ document.addEventListener('keydown', event => {
 
 onAuthStateChanged(auth, async user => {
   if (!user) {
+    messageCenter?.dispose();
+    messageCenter = null;
     location.href = 'index.html';
     return;
   }
   markLoad('auth ready');
   try {
     // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
+    if (profile?.approved && profile.eventAccess !== false && profile.role === ROLES.ADJUTANT) {
+      location.href = destinationForRole(profile.role);
+      return;
+    }
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canManageFormation(profile.role)) {
       await signOut(auth);
       location.href = 'index.html';
@@ -516,6 +542,13 @@ onAuthStateChanged(auth, async user => {
     // של מנוי המצביע. אותו מזהה אירוע לא יחובר פעמיים (attachEvent נבדק מולו).
     const pointer = await pointerRead.then(item => (item.exists() ? item.data() : null), () => null);
     if (pointer?.status === 'active' && pointer.eventId) attachEvent(String(pointer.eventId));
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid: user.uid, name: currentUser.name }, role: currentUser.role,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground,
+      eventId: activeEventIdFromPointer(pointer)
+    });
+    setTimeout(() => foreground.release(), 5000);
     subscribeToActiveEvent();
     clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {

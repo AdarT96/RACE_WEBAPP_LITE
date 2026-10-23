@@ -7,7 +7,7 @@ import {
 import {
   EVENT_SETUP_SCHEMA_VERSION, EVENT_STATUSES, normalizeEventStaff, normalizeEventTeamId, newEventTeamData
 } from './event-setup-model.js';
-import { EVENT_STAFFING_SCHEMA_VERSION, ROLES } from './roles.js';
+import { EVENT_STAFFING_SCHEMA_VERSION, roleNeedsTeam } from './roles.js';
 import { planEventRoster, PROFILE_FIELDS } from './event-roster-plan.js';
 // מקור אמת יחיד למספר הצוותים. המספר היה כתוב כאן בנפרד, וזה בדיוק סוג
 // הכפילות שמשאירה מגבלה ישנה אחרי שהעלו אותה במקום אחר.
@@ -51,13 +51,19 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
     // these reads is detected by the transaction, not silently overwritten.
     const initialEvent = await getDoc(eventRef(eventId));
     if (!initialEvent.exists()) throw new Error('האירוע אינו קיים.');
-    const [teamSnapshot, candidateSnapshot] = await Promise.all([
+    // Intake (adjutancy) numbers: general candidates and the number registry.
+    // The plan refuses numbers intake already handed out; the transaction
+    // re-checks each new number, so a number taken meanwhile is not reused.
+    const [teamSnapshot, candidateSnapshot, unassignedSnapshot, registrySnapshot] = await Promise.all([
       getDocs(collection(db, 'events', String(eventId), 'teams')),
-      getDocs(collection(db, 'events', String(eventId), 'candidates'))
+      getDocs(collection(db, 'events', String(eventId), 'candidates')),
+      getDocs(collection(db, 'events', String(eventId), 'unassignedCandidates')),
+      getDocs(collection(db, 'events', String(eventId), 'candidateNumbers'))
     ]);
     const event = initialEvent.data();
     const plan = planEventRoster({ status:event.status, teams:snapshotRows(teamSnapshot),
-      existing:snapshotRows(candidateSnapshot), groups, source });
+      existing:snapshotRows(candidateSnapshot), groups, source,
+      unassigned:snapshotRows(unassignedSnapshot), numberRegistry:snapshotRows(registrySnapshot) });
     let revision = Number(event.rosterRevision || 0);
     let candidateCount = candidateSnapshot.size;
     let teamCount = teamSnapshot.size;
@@ -104,6 +110,21 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
           deletions.forEach((change, index) => {
             if (!deletedSnapshots[index].exists() || deletedSnapshots[index].data().profileRevision !== change.previous.profileRevision) {
               throw new Error('פרטי מועמד השתנו במכשיר אחר.');
+            }
+          });
+          // A new number must still be free of intake: no general candidate,
+          // and no registry entry placing it elsewhere. Intake writes the
+          // registry entry in its own transaction, so the two never both win.
+          const created = chunk.flatMap(team => team.changes.filter(change => change.kind === 'create')
+            .map(change => ({ team:team.team, participantId:change.candidate.participantId })));
+          const intakeSnapshots = await Promise.all(created.flatMap(({ participantId }) => [
+            transaction.get(doc(db, 'events', String(eventId), 'candidateNumbers', participantId)),
+            transaction.get(doc(db, 'events', String(eventId), 'unassignedCandidates', participantId))
+          ]));
+          created.forEach(({ team, participantId }, index) => {
+            const entry = intakeSnapshots[index * 2], general = intakeSnapshots[index * 2 + 1];
+            if (general.exists() || (entry.exists() && String(entry.data().team ?? '') !== team)) {
+              throw new Error(`מספר המועמד ${participantId} נקלט במקביל בשלישות. רענן ובדוק את הקובץ.`);
             }
           });
           for (const team of chunk) {
@@ -199,20 +220,22 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
 
     async load(eventId) {
       const [eventSnapshot, teamsSnapshot, candidatesSnapshot, staffSnapshot, artifactsSnapshot,
-        masterSnapshot, draftSnapshot] = await Promise.all([
+        masterSnapshot, draftSnapshot, unassignedSnapshot] = await Promise.all([
         getDoc(eventRef(eventId)),
         getDocs(collection(db, 'events', String(eventId), 'teams')),
         getDocs(collection(db, 'events', String(eventId), 'candidates')),
         getDocs(collection(db, 'events', String(eventId), 'staff')),
         getDocs(collection(db, 'events', String(eventId), 'artifacts')),
         getDoc(doc(db, 'events', String(eventId), 'schedule', 'master')),
-        getDoc(doc(db, 'events', String(eventId), 'schedule', 'draft'))
+        getDoc(doc(db, 'events', String(eventId), 'schedule', 'draft')),
+        getDocs(collection(db, 'events', String(eventId), 'unassignedCandidates'))
       ]);
       if (!eventSnapshot.exists()) throw new Error('האירוע אינו קיים.');
       return {
         event:{ id:eventSnapshot.id, ...eventSnapshot.data() },
         teams:snapshotRows(teamsSnapshot),
         candidates:snapshotRows(candidatesSnapshot),
+        unassignedCandidates:snapshotRows(unassignedSnapshot),
         staff:snapshotRows(staffSnapshot),
         artifacts:snapshotRows(artifactsSnapshot),
         schedule:draftSnapshot.exists()
@@ -374,7 +397,7 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
       if (eventSnapshot.data().status === EVENT_STATUSES.ACTIVE) {
         toWrite.forEach(member => operations.push(batch => batch.update(doc(db, 'users', member.uid), {
           role:member.role,
-          team:member.role === ROLES.FORMATION_COMMANDER ? null : Number(member.team),
+          team:roleNeedsTeam(member.role) ? Number(member.team) : null,
           updatedAt:serverTimestamp()
         })));
       }
@@ -425,7 +448,7 @@ export function createEventSetupRepository(db, adminUser, { stationMapFactory = 
         }
         members.forEach(member => transaction.update(doc(db, 'users', member.uid), {
           role:member.role,
-          team:member.role === 'formation_commander' ? null : Number(member.team),
+          team:roleNeedsTeam(member.role) ? Number(member.team) : null,
           updatedAt:serverTimestamp()
         }));
         transaction.update(eventReference, {

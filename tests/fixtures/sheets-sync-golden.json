@@ -1,0 +1,3818 @@
+{
+ "stationSync": {
+  "sync": [
+   {
+    "success": true,
+    "message": "Batch written",
+    "rows": 7,
+    "written": 7,
+    "warnings": []
+   }
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       "uid-b",
+       "רון",
+       1,
+       "sheet-8",
+       "https://docs.google.com/spreadsheets/d/sheet-8/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "ספרינטים",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       1,
+       103,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ],
+      [
+       1,
+       1,
+       101,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       7,
+       "",
+       "",
+       "רון"
+      ],
+      [
+       1,
+       3,
+       102,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה",
+       "לא מרוכז; איטי"
+      ],
+      [
+       2,
+       2,
+       101,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "זחילות",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       101,
+       "",
+       14,
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "אלונקה סוציומטרית",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       102,
+       "",
+       "",
+       "אקטיביות",
+       5,
+       "אינטליגנציה חברתית",
+       6,
+       "רון"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "דיבייט",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       102,
+       "",
+       "",
+       "אסרטיביות",
+       9,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       2,
+       2,
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ],
+      [
+       "זחילות",
+       1,
+       "",
+       14,
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "102",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       3,
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה",
+       "לא מרוכז; איטי"
+      ],
+      [
+       "דיבייט",
+       1,
+       "",
+       "",
+       "אסרטיביות",
+       9,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "103",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       1,
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — רון — גיבוש בדיקה#sheet-8": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — רון"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       1,
+       "",
+       "חוסן וכושר הסתגלות",
+       7,
+       "",
+       "",
+       "רון"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "102",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "אלונקה סוציומטרית",
+       1,
+       "",
+       "",
+       "אקטיביות",
+       5,
+       "אינטליגנציה חברתית",
+       6,
+       "רון"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "repeatSync": {
+  "sync": [
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 3,
+     "written": 3,
+     "warnings": []
+    }
+   ],
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 5,
+     "written": 5,
+     "warnings": []
+    }
+   ],
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 5,
+     "written": 5,
+     "warnings": []
+    }
+   ]
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "ספרינטים",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       1,
+       101,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       9,
+       "",
+       "",
+       "דנה",
+       "עודכן"
+      ],
+      [
+       1,
+       2,
+       102,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       2,
+       "",
+       "",
+       "דנה"
+      ],
+      [
+       1,
+       3,
+       103,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       3,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "הערות כלליות",
+     "rows": [
+      [
+       "מועמד",
+       "מעריך",
+       "הערה"
+      ],
+      [
+       101,
+       "דנה",
+       "הערה ראשונה"
+      ],
+      [
+       101,
+       "דנה",
+       "הערה שנייה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       1,
+       "",
+       "חוסן וכושר הסתגלות",
+       9,
+       "",
+       "",
+       "דנה",
+       "עודכן"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "דנה",
+       "הערה ראשונה"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "דנה",
+       "הערה שנייה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "102",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       2,
+       "",
+       "חוסן וכושר הסתגלות",
+       2,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "103",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "ספרינטים",
+       1,
+       3,
+       "",
+       "חוסן וכושר הסתגלות",
+       3,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "newTabs": {
+  "sync": [
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 1,
+     "written": 1,
+     "warnings": []
+    }
+   ],
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 4,
+     "written": 4,
+     "warnings": []
+    }
+   ]
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       "uid-c",
+       "מיכל",
+       1,
+       "sheet-8",
+       "https://docs.google.com/spreadsheets/d/sheet-8/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "אלונקה סוציומטרית",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       101,
+       "",
+       "",
+       "אקטיביות",
+       5,
+       "אינטליגנציה חברתית",
+       6,
+       "דנה"
+      ],
+      [
+       1,
+       "",
+       104,
+       "",
+       "",
+       "אקטיביות",
+       8,
+       "אינטליגנציה חברתית",
+       9,
+       "דנה"
+      ],
+      [
+       1,
+       "",
+       101,
+       "",
+       "",
+       "אקטיביות",
+       3,
+       "אינטליגנציה חברתית",
+       4,
+       "מיכל"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "דיבייט",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       104,
+       "",
+       "",
+       "אסרטיביות",
+       5,
+       "",
+       "",
+       "מיכל"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "הערות כלליות",
+     "rows": [
+      [
+       "מועמד",
+       "מעריך",
+       "הערה"
+      ],
+      [
+       104,
+       "מיכל",
+       "חדש"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "אלונקה סוציומטרית",
+       1,
+       "",
+       "",
+       "אקטיביות",
+       5,
+       "אינטליגנציה חברתית",
+       6,
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "104",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "אלונקה סוציומטרית",
+       1,
+       "",
+       "",
+       "אקטיביות",
+       8,
+       "אינטליגנציה חברתית",
+       9,
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — מיכל — גיבוש בדיקה#sheet-8": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — מיכל"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "אלונקה סוציומטרית",
+       1,
+       "",
+       "",
+       "אקטיביות",
+       3,
+       "אינטליגנציה חברתית",
+       4,
+       "מיכל"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "104",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "דיבייט",
+       1,
+       "",
+       "",
+       "אסרטיביות",
+       5,
+       "",
+       "",
+       "מיכל"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "מיכל",
+       "חדש"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "generalNotes": {
+  "sync": [
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 5,
+     "written": 4,
+     "warnings": []
+    }
+   ],
+   [
+    {
+     "success": true,
+     "message": "Batch written",
+     "rows": 5,
+     "written": 4,
+     "warnings": []
+    }
+   ]
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       "uid-b",
+       "רון",
+       1,
+       "sheet-8",
+       "https://docs.google.com/spreadsheets/d/sheet-8/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "דיבייט",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       "",
+       101,
+       "",
+       "",
+       "אסרטיביות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,11": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "הערות כלליות",
+     "rows": [
+      [
+       "מועמד",
+       "מעריך",
+       "הערה"
+      ],
+      [
+       101,
+       "דנה",
+       "מוביל קבוצה"
+      ],
+      [
+       101,
+       "רון",
+       "שקט"
+      ],
+      [
+       102,
+       "דנה",
+       "חזק פיזית"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "דנה",
+       "מוביל קבוצה"
+      ],
+      [
+       "דיבייט",
+       1,
+       "",
+       "",
+       "אסרטיביות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "102",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "דנה",
+       "חזק פיזית"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — רון — גיבוש בדיקה#sheet-8": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — רון"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "רון",
+       "שקט"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "preexistingRows": {
+  "sync": [
+   {
+    "success": true,
+    "message": "Batch written",
+    "rows": 3,
+    "written": 3,
+    "warnings": []
+   }
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "ספרינטים",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       4,
+       105,
+       "",
+       "",
+       "חוסן וכושר הסתגלות",
+       2,
+       "",
+       "",
+       "מעריך אחר",
+       "נשאר"
+      ],
+      [
+       2,
+       1,
+       101,
+       "1:01",
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ],
+      [
+       3,
+       1,
+       101,
+       "1:05",
+       "",
+       "חוסן וכושר הסתגלות",
+       7,
+       "",
+       "",
+       "דנה",
+       "סבב אחר"
+      ]
+     ],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "זחילות",
+     "rows": [
+      [
+       "סבב",
+       "מקום",
+       "מועמד",
+       "זמן",
+       "מדידה",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       1,
+       1,
+       102,
+       "",
+       5,
+       "חוסן וכושר הסתגלות",
+       1,
+       "",
+       "",
+       "מישהו",
+       "קיים"
+      ],
+      [
+       1,
+       "",
+       102,
+       "",
+       3,
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "הערות כלליות",
+     "rows": [
+      [
+       "מועמד",
+       "מעריך",
+       "הערה"
+      ],
+      [
+       999,
+       "ישן",
+       "הערה ישנה"
+      ],
+      [
+       101,
+       "דנה",
+       "חדשה"
+      ]
+     ],
+     "frozen": 0,
+     "formats": {}
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    },
+    {
+     "name": "101",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "תחנה ישנה",
+       9,
+       "",
+       "",
+       "",
+       1,
+       "",
+       "",
+       "דנה",
+       "לא לגעת"
+      ],
+      [
+       "ספרינטים",
+       2,
+       1,
+       "",
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ],
+      [
+       "(הערה כללית)",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "",
+       "דנה",
+       "חדשה"
+      ]
+     ],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "102",
+     "rows": [
+      [
+       "תחנה",
+       "סבב",
+       "מקום",
+       "מספר",
+       "פרמטר א׳",
+       "ציון א׳",
+       "פרמטר ב׳",
+       "ציון ב׳",
+       "מעריך",
+       "הערות"
+      ],
+      [
+       "זחילות",
+       1,
+       "",
+       3,
+       "חוסן וכושר הסתגלות",
+       5,
+       "",
+       "",
+       "דנה"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,8": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,9": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      },
+      "1,10": {
+       "fontWeight": "bold",
+       "background": "#4a86e8",
+       "fontColor": "white"
+      }
+     }
+    }
+   ]
+  },
+  "emptyTabRowsAfter": 2
+ },
+ "ensureMix": {
+  "results": [
+   {
+    "success": true,
+    "message": "Team sheet exists",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+    "fileId": "sheet-3"
+   },
+   {
+    "success": true,
+    "message": "Team sheet created",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-10/edit",
+    "fileId": "sheet-10",
+    "warning": ""
+   },
+   {
+    "success": true,
+    "message": "Team sheet created",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-11/edit",
+    "fileId": "sheet-11",
+    "warning": ""
+   },
+   {
+    "success": false,
+    "message": "Error: quota exceeded"
+   },
+   {
+    "success": true,
+    "message": "Evaluator sheet exists",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-7/edit",
+    "fileId": "sheet-7"
+   },
+   {
+    "success": true,
+    "message": "Evaluator sheet exists",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-9/edit",
+    "fileId": "sheet-9"
+   },
+   {
+    "success": true,
+    "message": "Evaluator sheet created",
+    "url": "https://docs.google.com/spreadsheets/d/sheet-12/edit",
+    "fileId": "sheet-12",
+    "warning": ""
+   },
+   {
+    "success": false,
+    "message": "Error: quota exceeded"
+   }
+  ],
+  "state": {
+   "main#1MHJBLY5a7idjjQG783aYYf_lraHXmGmvivIZ1n0pqDE": [
+    {
+     "name": "Sheet1",
+     "rows": [],
+     "frozen": 0,
+     "formats": {}
+    },
+    {
+     "name": "קבצי צוותים",
+     "rows": [
+      [
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       1,
+       "sheet-3",
+       "https://docs.google.com/spreadsheets/d/sheet-3/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       2,
+       "sheet-6",
+       "https://docs.google.com/spreadsheets/d/sheet-6/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       2,
+       "sheet-10",
+       "https://docs.google.com/spreadsheets/d/sheet-10/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       3,
+       "sheet-11",
+       "https://docs.google.com/spreadsheets/d/sheet-11/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#0f766e",
+       "fontColor": "white"
+      }
+     }
+    },
+    {
+     "name": "קבצי מעריכים",
+     "rows": [
+      [
+       "UID",
+       "שם מעריך",
+       "צוות",
+       "File ID",
+       "קישור",
+       "נוצר",
+       "Event ID"
+      ],
+      [
+       "uid-a",
+       "דנה",
+       1,
+       "sheet-7",
+       "https://docs.google.com/spreadsheets/d/sheet-7/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       "uid-b",
+       "רון",
+       2,
+       "sheet-9",
+       "https://docs.google.com/spreadsheets/d/sheet-9/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ],
+      [
+       "uid-c",
+       "מיכל",
+       3,
+       "sheet-12",
+       "https://docs.google.com/spreadsheets/d/sheet-12/edit",
+       "2026-01-01 00:00:00",
+       "ev1"
+      ]
+     ],
+     "frozen": 1,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,2": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,3": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,4": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,5": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,6": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      },
+      "1,7": {
+       "fontWeight": "bold",
+       "background": "#9333ea",
+       "fontColor": "white"
+      }
+     }
+    }
+   ],
+   "צוות 1 — גיבוש בדיקה#sheet-3": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 1 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "צוות 2 — גיבוש בדיקה#sheet-6": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 2 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — דנה — גיבוש בדיקה#sheet-7": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — דנה"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — רון — גיבוש בדיקה#sheet-9": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — רון"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "צוות 2 — גיבוש בדיקה#sheet-10": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 2 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "צוות 3 — גיבוש בדיקה#sheet-11": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ צוות 3 — טאב לכל תחנה"
+      ],
+      [
+       "טאב לכל תחנה, ממוין לפי סבב ואז מקום. הערות כלליות בטאב \"הערות כלליות\"."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ],
+   "שיט מעריך — מיכל — גיבוש בדיקה#sheet-12": [
+    {
+     "name": "אודות",
+     "rows": [
+      [
+       "קובץ שיט אישי — מיכל"
+      ],
+      [
+       "טאב לכל מועמד שהערכת ייווצר אוטומטית עם הסנכרון."
+      ]
+     ],
+     "frozen": 0,
+     "formats": {
+      "1,1": {
+       "fontWeight": "bold"
+      },
+      "2,1": {
+       "fontWeight": "bold"
+      }
+     }
+    }
+   ]
+  }
+ }
+}

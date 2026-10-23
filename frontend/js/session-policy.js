@@ -14,6 +14,30 @@ export function timestampToMs(value) {
   return null;
 }
 
+// The commander's device records the tap itself (startTappedAt / endTappedAt).
+// The server stamps startedAt/endedAt when the save arrives — 0.2–2 s after the
+// tap on a mobile network — so the tap is the real moment. It is used only when
+// plausible: not after the server time and at most TAP_LEAD_MAX_MS before it. A
+// device with a wrong clock therefore falls back to the server time. While the
+// server time is still pending (just saved), the tap is used.
+export const TAP_LEAD_MAX_MS = 4000;
+
+function tapOrServerMs(tap, server) {
+  const tapMs = timestampToMs(tap);
+  const serverMs = timestampToMs(server);
+  if (serverMs == null) return tapMs;
+  if (tapMs != null && tapMs <= serverMs && serverMs - tapMs <= TAP_LEAD_MAX_MS) return tapMs;
+  return serverMs;
+}
+
+export function sessionStartMs(race) {
+  return tapOrServerMs(race?.startTappedAt, race?.startedAt);
+}
+
+export function sessionStoredEndMs(race) {
+  return tapOrServerMs(race?.endTappedAt, race?.endedAt);
+}
+
 export function sessionLimitMs(race) {
   const configured = Number(race?.timeLimitSeconds);
   const seconds = configured === DEFAULT_SESSION_LIMIT_SECONDS
@@ -23,7 +47,7 @@ export function sessionLimitMs(race) {
 }
 
 export function sessionDeadlineMs(race) {
-  const startedAt = timestampToMs(race?.startedAt);
+  const startedAt = sessionStartMs(race);
   return startedAt == null ? null : startedAt + sessionLimitMs(race);
 }
 
@@ -38,10 +62,10 @@ export function isSessionEffectivelyRunning(race, nowMs = Date.now()) {
 }
 
 export function effectiveSessionEndMs(race, nowMs = Date.now()) {
-  const startedAt = timestampToMs(race?.startedAt);
+  const startedAt = sessionStartMs(race);
   if (startedAt == null) return null;
   const deadline = startedAt + sessionLimitMs(race);
-  const storedEnd = timestampToMs(race?.endedAt);
+  const storedEnd = sessionStoredEndMs(race);
   const candidate = race?.status === 'running'
     ? Number(nowMs)
     : (storedEnd ?? Number(nowMs));
@@ -49,13 +73,13 @@ export function effectiveSessionEndMs(race, nowMs = Date.now()) {
 }
 
 export function effectiveSessionElapsedMs(race, nowMs = Date.now()) {
-  const startedAt = timestampToMs(race?.startedAt);
+  const startedAt = sessionStartMs(race);
   const endedAt = effectiveSessionEndMs(race, nowMs);
   return startedAt == null || endedAt == null ? null : endedAt - startedAt;
 }
 
 export function measuredElapsedMs(race, measuredAt) {
-  const startedAt = timestampToMs(race?.startedAt);
+  const startedAt = sessionStartMs(race);
   const measured = timestampToMs(measuredAt);
   if (startedAt == null || measured == null) return null;
   const elapsed = measured - startedAt;

@@ -1,7 +1,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js';
 import { getAuth, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js';
 import {
-  collection, doc, getDoc, getDocs, getFirestore
+  collection, doc, getDoc, getDocs
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
@@ -15,16 +15,19 @@ import {
   normalizeScheduleDraft, schedulePublicationLabel
 } from './schedule-publication-model.js';
 import {
-  ROLES, canManageSchedule, canViewSchedule, roleLabel
+  ROLES, canManageSchedule, canViewSchedule, destinationForRole, roleLabel
 } from './roles.js';
 import { resolveActiveUserContext } from './active-user-context.js';
 import { createForegroundGate, markLoad } from './load-priority.js';
+import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
+import { mountMessageCenter } from './message-center.js';
+import { activeEventIdFromPointer } from './messages-model.js';
 
 markLoad('script loaded');
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
-const db = getFirestore(firebaseApp);
+const db = openFirestore(firebaseApp);
 
 let currentUser = null;
 let activeEvent = null;
@@ -42,6 +45,7 @@ let saving = false;
 let conflict = false;
 let teamProjection = null;
 let stationTypesRead = Promise.resolve();
+let messageCenter = null;
 // הלו״ז הוא מה שהמשתמש פתח. היסטוריית הגרסאות נטענת אחריו.
 const foreground = createForegroundGate();
 
@@ -50,6 +54,7 @@ const escapeHtml = value => String(value ?? '')
 const pad2 = value => String(Number(value)).padStart(2, '0');
 
 function showBlocking(message) {
+  foreground.release();
   const element = document.getElementById('schedule-blocking');
   element.textContent = message;
   element.hidden = false;
@@ -612,6 +617,13 @@ function scheduleShown() {
 
 async function initializePage(pointerRead) {
   updateBackLink();
+  // הודעות פנימיות: הפעמון נבנה מיד, המאזינים מתחילים אחרי הצגת הלו״ז
+  messageCenter?.dispose();
+  messageCenter = mountMessageCenter({
+    db, user: { uid: currentUser.uid, name: currentUser.name }, role: currentUser.role,
+    anchor: document.querySelector('.navbar-actions'), gate: foreground,
+    resolveEventId: () => pointerRead.then(item => activeEventIdFromPointer(item.exists() ? item.data() : null))
+  });
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
   const [, event] = await Promise.all([stationTypesRead, loadEventAndTeams(pointerRead)]);
   activeEvent = event;
@@ -632,7 +644,7 @@ async function initializePage(pointerRead) {
   subscribeToSchedule();
 }
 
-window.logout = async () => { await signOut(auth); location.href = 'index.html'; };
+window.logout = async () => { await signOutAndClearCache(auth, db); location.href = 'index.html'; };
 window.addEventListener('beforeunload', event => {
   if (!dirty) return;
   event.preventDefault(); event.returnValue = '';
@@ -651,19 +663,23 @@ setInterval(() => {
 }, 30000);
 
 onAuthStateChanged(auth, async user => {
-  if (!user) { location.href = 'index.html'; return; }
+  if (!user) { messageCenter?.dispose(); messageCenter = null; location.href = 'index.html'; return; }
   markLoad('auth ready');
   try {
     // שלוש קריאות בלתי תלויות יוצאות יחד. ה-catch הריק רק מסמן את ההבטחה
     // כמטופלת; מי שממתין לה עדיין מקבל את השגיאה.
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
     stationTypesRead = loadStationTypes();
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    const snapshot = await getDocPatiently(doc(db, 'users', user.uid));
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile
       ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
+    // לשלישות אין לו״ז (אינה צריכה את מטריצת התנועה); מחזירים אותה למסך הקליטה
+    if (profile?.approved && profile.eventAccess !== false && profile.role === ROLES.ADJUTANT) {
+      location.href = destinationForRole(profile.role); return;
+    }
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canViewSchedule(profile.role)) {
       await signOut(auth); location.href = 'index.html'; return;
     }

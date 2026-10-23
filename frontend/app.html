@@ -3,8 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f1117">
+  <script src="js/pwa-register.js" defer></script>
   <title>מערכת גיבוש עוקץ</title>
-  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
+  <link rel="stylesheet" href="css/main.css?v=1.4-messages">
   <!-- defer: הגרפים משמשים רק את מסך המועמד, ואסור להם לעכב את הצגת התחנה.
        סקריפט defer רץ לפני ה-module שבסוף הדף, כך ש-Chart זמין כשצריך אותו. -->
   <script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -720,6 +723,9 @@
 </nav>
 
 <div class="container" id="arrival-save-status" role="status" aria-live="polite" hidden></div>
+<div class="container" id="stale-view-banner" role="status" aria-live="polite" hidden style="padding-top:12px">
+  <div class="alert alert-warning" style="margin:0">⚠️ אין עדכון מהשרת כרגע — ייתכן שהמסך אינו מעודכן (סבב חדש עלול לא להופיע). בדוק קליטה לפני שממשיכים לדרג.</div>
+</div>
 <div class="container" id="station-view" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
@@ -894,11 +900,15 @@
               title="שולח את תוצאות התחנה + ההערות של הצוות ל-Google Sheets">
         📊 סנכרן תחנה + הערות
       </button>
-      <button class="btn btn-primary admin-only" onclick="doSyncAllSheets()" style="padding:12px 20px"
-              title="מסנכרן את כל האירוע: כל הצוותים, כל התחנות וכל המעריכים">
-        🗂 סנכרן הכל
-      </button>
     </div>
+  </div>
+
+  <!-- סנכרון מלא של האירוע: מחוץ לפאנל הסבב כדי שיופיע גם לפני בחירת צוות -->
+  <div class="admin-only" style="display:flex; justify-content:center; margin-top:20px">
+    <button class="btn btn-primary admin-only" onclick="doSyncAllSheets()" style="padding:12px 20px"
+            title="מסנכרן את כל האירוע: כל הצוותים, כל התחנות וכל המעריכים">
+      🗂 סנכרן הכל
+    </button>
   </div>
 
   <!-- ══════════ General notes (station-independent) ══════════ -->
@@ -1152,18 +1162,21 @@
   import { resolveActiveUserContext } from "./js/active-user-context.js";
   import { staffAssignmentChange } from "./js/staff-assignment.js";
   import { createForegroundGate, markLoad } from "./js/load-priority.js";
+  import { openFirestore, signOutAndClearCache, getDocPatiently } from "./js/firestore-cache.js";
+  import { mountMessageCenter } from "./js/message-center.js";
+  import { activeEventIdFromPointer } from "./js/messages-model.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
   import {
-    getFirestore, doc, getDoc, setDoc, updateDoc, collection,
-    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction
+    doc, getDoc, setDoc, updateDoc, collection,
+    onSnapshot, query, where, getDocs, serverTimestamp, runTransaction, writeBatch, Timestamp
   } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
 
   const fbApp = initializeApp(FIREBASE_CONFIG);
   const auth  = getAuth(fbApp);
-  const db    = getFirestore(fbApp);
+  const db    = openFirestore(fbApp);
   markLoad('script loaded');
 
   // התחנה שהמשתמש פתח נטענת ראשונה. מנויים משלימים (תיוגים, מצב פרטיות,
@@ -1176,6 +1189,9 @@
   let teamsCache  = {};            // teamNumber → teamData
   let selectedTeam = null;         // "01"
   let selectedStation = null;      // "01"
+  // בחירה ידנית בזמן שהלו״ז עוד נטען: ההמלצה של הלו״ז לא דורסת אותה כשתגיע.
+  // קודם המפק״צ בחר תחנה, והטעינה החזירה את התחנה של הלו״ז — והסבב נפתח בה.
+  let stationChosenByUser = false;
   let racesForContext = [];        // all rounds for selected team+station, oldest first
   let latestRace = null;           // newest round; lifecycle actions always target this
   let currentRace = null;          // round currently viewed/evaluated
@@ -1186,6 +1202,15 @@
   let roundNavigationSignature = '';
   let roundNavigationSelectedId = null;
   let raceQueryUnsubscribe = null;
+  // הרשימה עלולה להגיע קודם מהמטמון המקומי ולהיות חלקית; "התחל סבב" מחשב
+  // את מספר הסבב הבא ממנה, ולכן ממתין עד שהשרת אישר אותה.
+  let raceListSnapshotSeen = false;
+  let raceListConfirmedByServer = false;
+  // עד שהשרת מאשר את רשימת הסבבים בפעם הראשונה, ובלי שהמעריך בחר סבב בעצמו,
+  // הסבב המוצג נקבע מחדש: מטמון שהציג סבב ישן לא נועל את המעריך עליו. בסימולציה
+  // מעריך דירג בטעות את הסבב הקודם (ולחיצות חוזרות אף מחקו בו ציונים).
+  let initialRoundConfirmed = false;
+  let roundChosenByUser = false;
   let evaluatorArrival = null;      // current evaluator's order for the viewed round
   let evaluatorArrivalRaceId = null;
   let evaluatorArrivalLoading = false;
@@ -1656,18 +1681,28 @@
   });
 
   // ═════════ Auth ═════════
+  let messageCenter = null;
   onAuthStateChanged(auth, async (user) => {
     if (!user || (currentUser && currentUser.uid !== user.uid)) {
       arrivalControllers.forEach(({ controller }) => controller.dispose());
       arrivalControllers.clear();
       detachRaceSubscription();
+      messageCenter?.dispose();
+      messageCenter = null;
     }
     if (!user) { window.location.href = 'index.html'; return; }
     markLoad('auth ready');
     // מצביע האירוע נקרא במקביל לפרופיל; ה-catch רק מסמן את ההבטחה כמטופלת
-    const pointerRead = getDoc(doc(db, 'settings', 'activeEvent'));
+    const pointerRead = getDocPatiently(doc(db, 'settings', 'activeEvent'));
     pointerRead.catch(() => {});
-    const snap = await getDoc(doc(db, 'users', user.uid));
+    let snap;
+    try {
+      snap = await getDocPatiently(doc(db, 'users', user.uid));
+    } catch (error) {
+      // קודם כשל כאן השאיר את המסך ריק בלי שום הודעה
+      showBlockingWarn('טעינת הפרופיל נכשלה: ' + error.message + ' — רענן את הדף.');
+      return;
+    }
     if (!snap.exists()) { await signOut(auth); window.location.href = 'index.html'; return; }
     const data = await resolveActiveUserContext(db, user.uid, snap.data(), { pointerRead });
     markLoad('profile resolved');
@@ -1685,6 +1720,11 @@
       window.location.href = 'commander.html';
       return;
     }
+    // השלישות אינה עובדת במסכי התחנה ואינה רואה נתוני הערכה
+    if (data.role === ROLES.ADJUTANT) {
+      window.location.href = 'intake.html';
+      return;
+    }
     if (![ROLES.ADMIN, ROLES.OPERATOR, ROLES.EVALUATOR].includes(data.role)) {
       await signOut(auth);
       window.location.href = 'index.html';
@@ -1692,6 +1732,13 @@
     }
     currentUser = { ...data, uid: user.uid };
     initApp();
+    // הודעות פנימיות: הפעמון נבנה מיד, המאזינים מתחילים אחרי הצגת הסבב
+    messageCenter?.dispose();
+    messageCenter = mountMessageCenter({
+      db, user: { uid: user.uid, name: data.name }, role: data.role,
+      anchor: document.querySelector('.navbar-actions'), gate: foreground,
+      resolveEventId: () => pointerRead.then(item => activeEventIdFromPointer(item.exists() ? item.data() : null))
+    });
     // השיבוץ יכול להשתנות בזמן שהאפליקציה פתוחה — האזנה ברקע, אחרי הסבב
     pointerRead.then(item => (item.exists() ? item.data() : null), () => null)
       .then(pointer => foreground.background(() => watchOwnStaffAssignment(pointer)));
@@ -1735,21 +1782,29 @@
   }
   window.logout = async () => {
     if (hasPendingArrivals()) { showToast('יש להמתין לשמירת סדר ההגעה לפני יציאה.', 'error'); return; }
-    await signOut(auth); window.location.href = 'index.html';
+    await signOutAndClearCache(auth, db); window.location.href = 'index.html';
   };
 
   // ═════════ Init ═════════
   async function initApp() {
     const teamLabel  = currentUser.team ? ` · צוות ${currentUser.team}` : '';
     setText('user-role-badge', roleLabel(currentUser.role) + teamLabel);
-    setConnectedFirebase(true);
+    // הנקודה נקבעה ל"מחובר" פעם אחת ונשארה ירוקה גם בלי קליטה
+    setConnectedFirebase(navigator.onLine !== false);
+    window.addEventListener('online', () => setConnectedFirebase(true));
+    window.addEventListener('offline', () => setConnectedFirebase(false));
 
     // רשת ביטחון: עבודת הרקע לא תחכה לנצח אם הסבב לא נטען (שגיאה, אין צוות)
     setTimeout(() => foreground.release(), 5000);
     // תיוגים משותפים + real-time refresh — משמשים רק את ההערות הכלליות
     foreground.background(subscribeToQuickTags);
-    evaluationRepository = createEvaluationRepository(db, currentUser);
-    arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace);
+    // שמירת הערכה לא ממתינה לשרת (עובדת גם בלי קליטה); כשל מאוחר מגיע לכאן
+    evaluationRepository = createEvaluationRepository(db, currentUser, {
+      onWriteError: error => showToast('שמירת ההערכה נכשלה: ' + errorText(error), 'error')
+    });
+    arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace, {
+      onWriteError: error => showToast('סדר ההגעה לא נשמר בשרת: ' + errorText(error) + ' — רענן את הדף.', 'error')
+    });
     privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
     formationRepository = createFormationOperationsRepository(db, currentUser);
     // סוגי תחנות (עריכות מנהל) — לפני טעינת הסבב כדי שהפרמטרים יהיו מעודכנים.
@@ -1765,7 +1820,7 @@
     initRoundNavigationKeyboard();
 
     if (!activeFormationEvent) {
-      showBlockingWarn('לא הוגדר אירוע גיבוש פעיל. מנהל המערכת צריך ליצור אירוע בפאנל המנהל.');
+      showBlockingWarn('האירוע עדיין לא הופעל. הסבבים ייפתחו אחרי שהמנהל יפעיל אירוע (אם עוד לא הוגדר אחד — המנהל יוצר אותו בפאנל המנהל).');
       return;
     }
 
@@ -1843,12 +1898,15 @@
       savedStation: localStorage.getItem('lite:lastStation') || '',
       availableStations
     });
-    selectedStation = initialStation.stationId || availableStations[0] || null;
-    stationSel.value = selectedStation || '';
-    if (selectedStation) localStorage.setItem('lite:lastStation', selectedStation);
+    if (!stationChosenByUser) {
+      selectedStation = initialStation.stationId || availableStations[0] || null;
+      stationSel.value = selectedStation || '';
+      if (selectedStation) localStorage.setItem('lite:lastStation', selectedStation);
+    }
 
     if (selectedTeam) {
-      await loadCurrentSession(); // משחרר את עבודת הרקע כשהסבב הראשון מוצג
+      // תחנה שנבחרה ידנית כבר נטענה ב-onStationChange
+      if (!stationChosenByUser) await loadCurrentSession(); // משחרר את עבודת הרקע כשהסבב הראשון מוצג
     } else {
       renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
       foreground.release();
@@ -1964,12 +2022,37 @@
     });
   }
 
+  // בסימולציה ערוץ העדכונים של Firestore נפל ברשת חלשה ("Could not reach Cloud
+  // Firestore backend"), והמסך המשיך להציג את הסבב הקודם מהמטמון: מעריך דירג את
+  // הסבב הלא נכון בלי לדעת. כשרשימת הסבבים לא מאושרת מול השרת יותר מכמה שניות,
+  // מוצגת אזהרה והנקודה העליונה מפסיקה להיות ירוקה.
+  let staleViewTimer = null;
+  function updateStaleViewBanner() {
+    const banner = document.getElementById('stale-view-banner');
+    if (!banner) return;
+    if (!raceListSnapshotSeen || raceListConfirmedByServer) {
+      clearTimeout(staleViewTimer);
+      staleViewTimer = null;
+      banner.hidden = true;
+      setConnectedFirebase(navigator.onLine !== false);
+      return;
+    }
+    if (staleViewTimer) return;
+    staleViewTimer = setTimeout(() => {
+      staleViewTimer = null;
+      if (raceListSnapshotSeen && !raceListConfirmedByServer) {
+        banner.hidden = false;
+        setConnectedFirebase(false);
+      }
+    }, 8000);
+  }
+
   function setConnectedFirebase(ok) {
     const dot   = document.getElementById('conn-dot');
     const label = document.getElementById('conn-label');
     if (!dot || !label) return;
     dot.className     = ok ? 'conn-dot connected' : 'conn-dot disconnected';
-    label.textContent = ok ? 'מחובר' : 'לא מחובר';
+    label.textContent = ok ? 'מחובר' : 'אין קליטה — נשמר במכשיר';
   }
 
   function showBlockingWarn(msg) {
@@ -2023,14 +2106,16 @@
     ), snapshot => {
       candidatesByTeam.set(teamNumber, snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
       if (candidateRoute() && candidateTeam() === teamNumber) renderCandidatePicker();
-    }, error => showToast('שגיאה בעדכון מצבי המועמדים: ' + error.message, 'error'));
+    }, error => showToast('שגיאה בעדכון מצבי המועמדים: ' + errorText(error), 'error'));
   }
 
   async function loadTeamData(teamNumber) {
     if (!teamNumber || !activeFormationEvent) return null;
     try {
+      // מסמך הצוות (רשימת המשתתפים) נקרא בסבלנות: בפתיחה ברשת חלשה Firestore עוד
+      // "לא מחובר" לכמה שניות, והקריאה נכשלה — ו"התחל סבב" אמר שאין משתתפים.
       const [snap, candidatesSnapshot] = await Promise.all([
-        getDoc(doc(db, 'events', activeFormationEvent.id, 'teams', teamNumber)),
+        getDocPatiently(doc(db, 'events', activeFormationEvent.id, 'teams', teamNumber)),
         getDocs(query(
           collection(db, 'events', activeFormationEvent.id, 'candidates'),
           where('team', '==', teamNumber)
@@ -2046,7 +2131,7 @@
       teamsCache[teamNumber] = data;
       return data;
     } catch (e) {
-      showToast('שגיאה בטעינת נתוני צוות: ' + e.message, 'error');
+      showToast('שגיאה בטעינת נתוני צוות: ' + errorText(e), 'error');
       return null;
     }
   }
@@ -2101,6 +2186,7 @@
   };
 
   window.onStationChange = async (v) => {
+    stationChosenByUser = true;
     await commitPendingReps();
     selectedStation = v;
     localStorage.setItem('lite:lastStation', v);
@@ -2150,6 +2236,27 @@
     return [...arrivalControllers.values()].some(({controller}) => controller.state().pendingCount > 0);
   }
 
+  // ציונים/הערות שנשמרו במכשיר ועוד לא הגיעו לשרת. מוצג רק אם ההמתנה נמשכת
+  // (עם קליטה האישור מגיע תוך שבריר שנייה, ואין טעם להבהב הודעה).
+  let evaluationPendingVisible = false;
+  let evaluationPendingTimer = null;
+  function setEvaluationPending(pending) {
+    if (!pending) {
+      clearTimeout(evaluationPendingTimer);
+      evaluationPendingTimer = null;
+      if (evaluationPendingVisible) { evaluationPendingVisible = false; renderArrivalSaveStatus(); }
+      return;
+    }
+    // כל לחיצה מעדכנת את המנוי; הטיימר לא מתאפס בכל אחת, אחרת ההודעה לא מופיעה
+    // אצל מעריך שממשיך לדרג בלי קליטה.
+    if (evaluationPendingVisible || evaluationPendingTimer) return;
+    evaluationPendingTimer = setTimeout(() => {
+      evaluationPendingTimer = null;
+      evaluationPendingVisible = true;
+      renderArrivalSaveStatus();
+    }, 2000);
+  }
+
   function renderArrivalSaveStatus() {
     const panel = document.getElementById('arrival-save-status');
     const entries = [...arrivalControllers.values()].filter(({controller, race}) => {
@@ -2157,8 +2264,10 @@
       return state.pendingCount || (state.error && (race.id === currentRaceId ||
         (candidateRoute() && candidateState.arrivalsByRace.has(race.id))));
     });
-    panel.hidden = !entries.length;
-    panel.innerHTML = entries.map(({controller, race}) => {
+    panel.hidden = !entries.length && !evaluationPendingVisible;
+    const evaluationLine = evaluationPendingVisible
+      ? '<div class="alert alert-info">⏳ ההערכה שמורה במכשיר ותישלח כשתחזור קליטה. אפשר להמשיך לעבוד.</div>' : '';
+    panel.innerHTML = evaluationLine + entries.map(({controller, race}) => {
       const state = controller.state();
       const label = 'צוות ' + Number(race.team) + ' · תחנה ' + Number(race.station) + ' · סבב ' + Number(race.round);
       return '<div class="alert ' + (state.error ? 'alert-danger' : 'alert-info') + '">' + escHtml(label) + ' — ' +
@@ -2202,6 +2311,7 @@
   }
 
   function detachCurrentAssessmentSubscription() {
+    setEvaluationPending(false);
     if (currentAssessmentUnsubscribe) currentAssessmentUnsubscribe();
     currentAssessmentUnsubscribe = null;
     currentAssessment = normalizeAssessment(null, currentUser?.uid || '');
@@ -2218,15 +2328,16 @@
     detachCurrentAssessmentSubscription();
     currentAssessmentRaceId = race.id;
     currentAssessmentLoading = true;
-    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, assessment => {
+    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, (assessment, meta = {}) => {
       if (currentRaceId !== race.id) return;
       currentAssessment = assessment;
       currentAssessmentLoading = false;
+      setEvaluationPending(meta.pending === true);
       renderRace();
     }, error => {
       if (currentRaceId !== race.id) return;
       currentAssessmentLoading = false;
-      showToast('שגיאה בטעינת ההערכה האישית: ' + error.message, 'error');
+      showToast('שגיאה בטעינת ההערכה האישית: ' + errorText(error), 'error');
       renderRace();
     });
   }
@@ -2243,6 +2354,7 @@
 
     const contextKey = JSON.stringify([activeFormationEvent.id, selectedTeam, selectedStation]);
     const preservedId = contextKey === raceContextKey ? currentRaceId : null;
+    if (contextKey !== raceContextKey) roundChosenByUser = false;
     localReps = {};
     detachRaceSubscription();
     raceContextKey = contextKey;
@@ -2259,8 +2371,16 @@
     }
     const q = query(collection(db, 'races'), ...constraints);
 
-    raceQueryUnsubscribe = onSnapshot(q, (snap) => {
+    raceQueryUnsubscribe = onSnapshot(q, { includeMetadataChanges:true }, (snap) => {
       if (generation !== raceQueryGeneration) return;
+      // אישור מהשרת בלי שינוי בנתונים מעדכן רק את הדגל — אין מה לרנדר מחדש.
+      const metadataOnly = raceListSnapshotSeen && snap.docChanges().length === 0;
+      raceListSnapshotSeen = true;
+      raceListConfirmedByServer = !snap.metadata.fromCache;
+      updateStaleViewBanner();
+      const followLatestUntilConfirmed = !roundChosenByUser && !initialRoundConfirmed;
+      if (!snap.metadata.fromCache) initialRoundConfirmed = true;
+      if (metadataOnly) return;
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
       const list = [];
@@ -2280,7 +2400,8 @@
         return;
       }
 
-      const targetId = viewedRoundId(list, previousViewedId, isOperator() || !supportsRoundTabs());
+      const targetId = viewedRoundId(list, previousViewedId,
+        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed);
       const target = list.find(r => r.id === targetId) || latestRace;
       const roundChanged = target.id !== previousViewedId;
 
@@ -2308,7 +2429,7 @@
         loadCurrentSession();
         return;
       }
-      showToast('שגיאה בהאזנה לסבבים: ' + err.message, 'error');
+      showToast('שגיאה בהאזנה לסבבים: ' + errorText(err), 'error');
       renderIdlePlaceholder('שגיאה. נסה לרענן.');
     });
   }
@@ -2323,6 +2444,10 @@
     clearArrivalDrag();
     raceQueryGeneration += 1;
     if (raceQueryUnsubscribe) { raceQueryUnsubscribe(); raceQueryUnsubscribe = null; }
+    raceListSnapshotSeen = false;
+    raceListConfirmedByServer = false;
+    initialRoundConfirmed = false;
+    updateStaleViewBanner();
     detachEvaluatorArrivalSubscription();
     detachCurrentAssessmentSubscription();
     racesForContext = [];
@@ -2335,6 +2460,7 @@
   window.selectViewedRound = async (raceId) => {
     if (!canEvaluate() || !supportsRoundTabs()) return;
     if (!racesForContext.some(r => r.id === raceId) || raceId === currentRaceId) return;
+    roundChosenByUser = true;
     const request = ++roundSelectionRequest;
     const generation = raceQueryGeneration;
     await commitPendingReps();
@@ -2639,8 +2765,8 @@
     observedLatestWasRunning = isSessionEffectivelyRunning(latestRace);
     updateSessionTimerDisplay();
     if (isSessionEffectivelyRunning(currentRace) || isSessionEffectivelyRunning(latestRace)) {
-      // ~50ms כדי שיהיה חלק ומאיות מתעדכנות בעין
-      timerInterval = setInterval(updateSessionTimerDisplay, 50);
+      // 100ms: המאיות עדיין זזות בעין, בחצי מהעבודה — חשוב בטלפונים חלשים
+      timerInterval = setInterval(updateSessionTimerDisplay, 100);
     }
   }
   function stopSessionTimer() {
@@ -2681,7 +2807,7 @@
   function queueExpiredSessionFinalization(race) {
     if (!canControlSession() || !race?.id || race.status !== 'running' || expiryFinalizationPromise) return;
     expiryFinalizationPromise = finalizeExpiredSession(race)
-      .catch(error => showToast('לא ניתן היה לסגור את הסבב שפג: ' + error.message, 'error'))
+      .catch(error => showToast('לא ניתן היה לסגור את הסבב שפג: ' + errorText(error), 'error'))
       .finally(() => { expiryFinalizationPromise = null; });
   }
 
@@ -2742,10 +2868,12 @@
 
   // ═════════ Session actions ═════════
   window.startSession = async () => {
+    const tappedAt = Date.now(); // רגע הלחיצה — זה הרגע שבו הסבב מתחיל (ראה session-policy)
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים להתחיל סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
-    const teamData = teamsCache[selectedTeam];
+    // נתוני הצוות עוד לא נטענו (פתיחה ברשת חלשה) — טוענים עכשיו במקום להודיע שאין משתתפים
+    const teamData = teamsCache[selectedTeam] || await loadTeamData(selectedTeam);
     if (!teamData || !(teamData.participants || []).length) {
       showToast('אין משתתפים לצוות זה', 'error'); return;
     }
@@ -2758,65 +2886,94 @@
     const raceId = raceIdFor(activeFormationEvent.id, selectedTeam, selectedStation, nextRound);
     const raceRef = doc(db, 'races', raceId);
     const previousRaceRef = expiredPreviousRace ? doc(db, 'races', expiredPreviousRace.id) : null;
-    const eventRef = doc(db, 'events', activeFormationEvent.id);
     const roster = uniqueParticipantIds(teamData.participants);
-    setControlActionBusy(true);
-    try {
-      await runTransaction(db, async (transaction) => {
-        // Do not read raceRef before creation. A missing race has no team field,
-        // so a least-privilege read rule cannot authorize that lookup. The
-        // deterministic id is still race-safe: if another device creates it
-        // first, this set becomes an update and the lifecycle rules reject it.
-        const reads = [transaction.get(eventRef)];
-        if (previousRaceRef) reads.push(transaction.get(previousRaceRef));
-        roster.forEach(participantId => reads.push(transaction.get(
-          formationRepository.candidateRef(activeFormationEvent.id, selectedTeam, participantId)
-        )));
-        const snapshots = await Promise.all(reads);
-        const eventSnapshot = snapshots[0];
-        const previous = previousRaceRef ? snapshots[1] : null;
-        const stateOffset = previousRaceRef ? 2 : 1;
-        const states = roster.map((participantId, index) => normalizeCandidateRecord(
-          snapshots[stateOffset + index]?.exists() ? snapshots[stateOffset + index].data() : null,
-          { team: selectedTeam, participantId }
-        ));
-        const participants = activeParticipantIds({
-          id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
-        }, states);
-        if (!eventSnapshot.exists() || eventSnapshot.data().status !== 'active') {
-          throw new Error('אירוע הגיבוש אינו פעיל');
-        }
-        if (participants.length === 0) throw new Error('אין מועמדים פעילים בצוות');
-        if (previous?.exists() && previous.data().status === 'running') {
-          if (!isSessionExpired(previous.data())) throw new Error('הסבב הקודם עדיין פעיל');
-          transaction.update(previousRaceRef, {
-            status: 'stopped',
-            endedAt: serverTimestamp(),
-            endedBy: currentUser.uid,
-            endedReason: 'time_limit'
-          });
-        }
-        transaction.set(raceRef, {
-          eventId:   activeFormationEvent.id,
-          team:      selectedTeam,
-          station:   selectedStation,
-          round:     nextRound,
-          status:    'running',
-          startedAt: serverTimestamp(),
-          startedBy: currentUser.uid,
-          timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
-          evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
-          participantIds: participants,
-          tags:      []
+    if (navigator.onLine === false) {
+      showToast('אין קליטה — לא ניתן להתחיל סבב. נסה שוב כשתחזור קליטה.', 'error');
+      return;
+    }
+    // השעון מתחיל כשהשרת מקבל את השמירה. קודם קדמה לה טרנזקציה שקראה מהשרת את
+    // האירוע, הסבב הקודם וכל המועמדים — השעון התחיל 0.7–3 שניות אחרי הלחיצה.
+    // עכשיו הבדיקה נעשית מהנתונים שכבר במכשיר והשמירה יוצאת מיד; השרת אוכף את
+    // השאר (אירוע פעיל, מזהה סבב שלא קיים), ובדיקת המועמדים המלאה רצה ברקע.
+    const knownCandidates = new Map((candidatesByTeam.get(selectedTeam) || [])
+      .map(candidate => [String(candidate.participantId), candidate]));
+    const participants = activeParticipantIds({
+      id: selectedTeam, teamNumber: selectedTeam, participantIds: roster
+    }, roster.map(participantId => normalizeCandidateRecord(
+      knownCandidates.get(String(participantId)) || null, { team: selectedTeam, participantId }
+    )));
+    if (participants.length === 0) { showToast('אין מועמדים פעילים בצוות', 'error'); return; }
+    const raceData = {
+      eventId:   activeFormationEvent.id,
+      team:      selectedTeam,
+      station:   selectedStation,
+      round:     nextRound,
+      status:    'running',
+      startedAt: serverTimestamp(),
+      startTappedAt: Timestamp.fromMillis(tappedAt),
+      startedBy: currentUser.uid,
+      timeLimitSeconds: DEFAULT_SESSION_LIMIT_SECONDS,
+      evaluationSchemaVersion: EVALUATION_SCHEMA_VERSION,
+      participantIds: participants,
+      tags:      []
+    };
+    const commitStart = includePrevious => {
+      const batch = writeBatch(db);
+      if (includePrevious && previousRaceRef) {
+        batch.update(previousRaceRef, {
+          status: 'stopped', endedAt: serverTimestamp(), endedBy: currentUser.uid, endedReason: 'time_limit'
         });
-      });
+      }
+      // מזהה הסבב דטרמיניסטי: אם מכשיר אחר פתח אותו ראשון, השמירה הופכת לעדכון והחוקים דוחים
+      batch.set(raceRef, raceData);
+      return batch.commit();
+    };
+    // אין חסימה כשהרשימה עוד לא אושרה מול השרת (ברשת חלשה זה חסם את ההתחלה):
+    // מזהה הסבב קבוע, ושרת שכבר מכיר את הסבב הזה דוחה את השמירה.
+    const listWasConfirmed = raceListConfirmedByServer;
+    setControlActionBusy(true);
+    const slowNotice = setTimeout(() => showToast('ההתחלה עדיין לא הגיעה לשרת — בדוק קליטה', 'info'), 8000);
+    try {
+      try {
+        await commitStart(true);
+      } catch (error) {
+        // הסבב הקודם שפג נסגר בינתיים במכשיר אחר — פותחים בלי לסגור אותו שוב
+        if (!previousRaceRef || !isPermissionDenied(error)) throw error;
+        await commitStart(false);
+      }
       showToast('סבב ' + nextRound + ' התחיל', 'success');
+      verifyStartedRoundInBackground(raceRef, activeFormationEvent.id, selectedTeam, participants);
     } catch (e) {
-      showToast('שגיאה בהתחלת סבב: ' + e.message, 'error');
+      showToast('שגיאה בהתחלת סבב: ' + (isPermissionDenied(e)
+        ? (listWasConfirmed
+          ? 'הסבב כבר נפתח במכשיר אחר, או שהאירוע אינו פעיל. רענן את הדף.'
+          : 'המסך עוד לא היה מעודכן מול השרת. המתן לעדכון ונסה שוב.')
+        : errorText(e)), 'error');
     } finally {
+      clearTimeout(slowNotice);
       setControlActionBusy(false);
     }
   };
+
+  function isPermissionDenied(error) {
+    return String(error?.code || '').replace('firestore/', '') === 'permission-denied';
+  }
+
+  // הבדיקה המלאה, אחרי שהסבב כבר רץ: מועמד שנשר והעדכון עוד לא הגיע למכשיר
+  // מוסר מהסבב (החוקים מתירים למפק״צ רק להוריד מועמדים מסבב פעיל, לא להוסיף).
+  async function verifyStartedRoundInBackground(raceRef, eventId, team, participants) {
+    try {
+      const snapshots = await Promise.all(participants.map(participantId =>
+        getDoc(formationRepository.candidateRef(eventId, team, participantId))));
+      const withdrawn = participants.filter((participantId, index) => snapshots[index].exists() &&
+        normalizeCandidateRecord(snapshots[index].data(), { team, participantId }).status === CANDIDATE_STATUSES.WITHDRAWN);
+      if (!withdrawn.length) return;
+      await updateDoc(raceRef, { participantIds: participants.filter(participantId => !withdrawn.includes(participantId)) });
+      showToast('הוסר מהסבב מועמד שנשר: ' + withdrawn.join(', '), 'info');
+    } catch (error) {
+      console.warn('[start] background candidate check failed', error);
+    }
+  }
 
   window.markFinished = (participantId, raceId = currentRaceId) => {
     if (!canEvaluate() || !currentRace || currentRace.id !== raceId || !supportsRoundTabs() ||
@@ -2825,7 +2982,7 @@
       if (!arrivalControllerFor(currentRace).append(participantId)) {
         showToast('הסימון לא התקבל. בדוק את מצב השמירה ונסה שוב.', 'error');
       }
-    } catch (error) { showToast('שגיאה בסימון: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בסימון: ' + errorText(error), 'error'); }
   };
 
   function arrivalRows(list) {
@@ -3056,6 +3213,7 @@
   };
 
   window.endSession = async () => {
+    const tappedAt = Date.now(); // הלחיצה על "עצור", לפני חלון האישור
     if (!canControlSession()) { showToast('רק מפק״צ או מנהל יכולים לסיים סבב', 'error'); return; }
     if (controlActionInProgress) return;
     if (!latestRace || latestRace.status !== 'running') return;
@@ -3064,24 +3222,29 @@
       return;
     }
     if (!confirm('לסיים את הסבב הנוכחי?')) return;
+    if (navigator.onLine === false) {
+      showToast('אין קליטה — לא ניתן לסיים סבב. נסה שוב כשתחזור קליטה.', 'error');
+      return;
+    }
     const raceRef = doc(db, 'races', latestRace.id);
     setControlActionBusy(true);
+    const slowNotice = setTimeout(() => showToast('הסיום עדיין לא הגיע לשרת — בדוק קליטה', 'info'), 8000);
     try {
-      await runTransaction(db, async (transaction) => {
-        const snap = await transaction.get(raceRef);
-        if (!snap.exists()) throw new Error('הסבב לא נמצא');
-        if (snap.data().status !== 'running') return;
-        transaction.update(raceRef, {
-          status:  'stopped',
-          endedAt: serverTimestamp(),
-          endedBy: currentUser.uid,
-          endedReason: 'manual'
-        });
+      // שמירה ישירה (כמו בהתחלה): זמן הסיום נקבע כשהשרת מקבל אותה. סבב שכבר
+      // הסתיים נדחה בחוקים (מעבר מ"רץ" ל"עצור" בלבד).
+      await updateDoc(raceRef, {
+        status:  'stopped',
+        endedAt: serverTimestamp(),
+        endTappedAt: Timestamp.fromMillis(tappedAt),
+        endedBy: currentUser.uid,
+        endedReason: 'manual'
       });
       showToast('הסבב הסתיים', 'info');
     } catch (e) {
-      showToast('שגיאה בסיום סבב: ' + e.message, 'error');
+      showToast('שגיאה בסיום סבב: ' + (isPermissionDenied(e)
+        ? 'הסבב כבר הסתיים במכשיר אחר.' : errorText(e)), 'error');
     } finally {
+      clearTimeout(slowNotice);
       setControlActionBusy(false);
     }
   };
@@ -3262,7 +3425,7 @@
           retry[pid] = Number(retry[pid] || 0) + Number(delta || 0);
         });
         pendingRepsByRace[raceId] = retry;
-        showToast('שגיאה בשמירת ספירה: ' + e.message, 'error');
+        showToast('שגיאה בשמירת ספירה: ' + errorText(e), 'error');
         return false;
       } finally {
         repsSavePromise = null;
@@ -3356,7 +3519,7 @@
         return entry;
       });
     }
-    catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
+    catch (e) { showToast('שגיאה בשמירת ציון: ' + errorText(e), 'error'); }
   };
 
   // קובע/מנקה את המדידה של המעריך הנוכחי בלבד.
@@ -3391,7 +3554,7 @@
       }
       showToast(`${st?.measureLabel || 'המדידה'} נשמרה`, 'success');
     }
-    catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
+    catch (e) { showToast('שגיאה בשמירת ערך: ' + errorText(e), 'error'); }
   };
 
   // הערה מהירה של פרמטר → נכנסת אל תוך ההערות המילוליות
@@ -3458,7 +3621,7 @@
       });
       showToast('הערה נוספה', 'success');
     } catch (e) {
-      showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
+      showToast('שגיאה בשמירת הערה: ' + errorText(e), 'error');
     }
   }
 
@@ -3477,7 +3640,7 @@
       });
       showToast('הערה נמחקה', 'info');
     } catch (e) {
-      showToast('שגיאה במחיקה: ' + e.message, 'error');
+      showToast('שגיאה במחיקה: ' + errorText(e), 'error');
     }
   };
 
@@ -3505,9 +3668,80 @@
     return { teams: [...teams], evaluators: [...evaluators.values()] };
   }
 
+  // מה ה-Apps Script הפרוס יודע לעשות. GET על כתובת ה-exec מחזיר { version, features }.
+  // נבדק פעם אחת לכל טעינת דף. חובה: סוג בקשה לא מוכר נופל בפריסה ישנה אל
+  // handleRaceRow_ (כותב שורת מירוץ), ולכן לעולם לא שולחים type שלא אושר כאן.
+  // כשל בבדיקה אינו נשמר — ננסה שוב בסנכרון הבא; בינתיים חוזרים לנתיב הישן.
+  let sheetsFeaturesPromise = null;
+  async function sheetsFeatures() {
+    if (!sheetsFeaturesPromise) {
+      sheetsFeaturesPromise = (async () => {
+        try {
+          const res = await fetch(APP_CONFIG.sheetsApiUrl);
+          if (!res.ok) return null;
+          const data = await res.json();
+          return Array.isArray(data.features) ? data.features : null;
+        } catch (e) {
+          return null;
+        }
+      })();
+    }
+    const features = await sheetsFeaturesPromise;
+    if (!features) sheetsFeaturesPromise = null;
+    return features || [];
+  }
+
+  // כל בדיקות הקבצים בבקשות מעטות במקום בקשה לכל צוות/מעריך. מקטעים כדי
+  // להישאר הרבה מתחת לתקרת 6 הדקות של Apps Script (יצירת קובץ אורכת שניות).
+  const ENSURE_FILES_CHUNK = 25;
+  async function ensureFilesBatched(teams, evaluators, onProgress) {
+    const eventId = activeFormationEvent?.id || '';
+    const eventName = activeFormationEvent?.name || '';
+    const items = [
+      ...teams.map(team => ({ kind:'team', team })),
+      ...evaluators.map(ev => ({ kind:'evaluator', ev }))
+    ];
+    const evByKey = new Map(evaluators.map(ev => [ev.uid || ev.name, ev]));
+    const problems = [];
+    let done = 0, requests = 0;
+
+    for (let i = 0; i < items.length; i += ENSURE_FILES_CHUNK) {
+      const chunk = items.slice(i, i + ENSURE_FILES_CHUNK);
+      requests++;
+      try {
+        const data = await postToSheets({
+          type:'ensure_files', eventId, eventName,
+          teams: chunk.filter(it => it.kind === 'team').map(it => it.team),
+          evaluators: chunk.filter(it => it.kind === 'evaluator').map(it => it.ev)
+        });
+        if (data.timings) console.info('[sync] ensure_files server ms:', data.timings);
+        const results = Array.isArray(data.results) ? data.results : [];
+        for (const r of results) {
+          if (r.ok) continue;
+          const label = r.kind === 'team'
+            ? `קובץ צוות ${r.key}`
+            : `קובץ מעריך ${evByKey.get(r.key)?.name || r.key}`;
+          problems.push(`${label}: ${r.error || 'הפעולה נכשלה'}`);
+        }
+        // תשובה חלקית היא כשל — לא נכתוב על בסיס בדיקה שלא הושלמה
+        if (results.length < chunk.length) {
+          problems.push(`בדיקת קבצים חלקית (${results.length}/${chunk.length})`);
+        }
+      } catch (e) {
+        problems.push(`בדיקת קבצים: ${e.message}`);
+      }
+      done += chunk.length;
+      onProgress?.(done, items.length);
+    }
+    return { checked: items.length, problems, requests };
+  }
+
   async function ensureFilesExist(rows, onProgress) {
     const { teams, evaluators } = filesNeededFor(rows);
     const total = teams.length + evaluators.length;
+    if (total > 0 && (await sheetsFeatures()).includes('ensure_files')) {
+      return ensureFilesBatched(teams, evaluators, onProgress);
+    }
     const problems = [];
     let done = 0;
 
@@ -3533,7 +3767,13 @@
       },
                  `קובץ מעריך ${ev.name || ev.uid}`);
     }
-    return { checked: total, problems };
+    return { checked: total, problems, requests: total };
+  }
+
+  // סיומת לטוסט הסיכום: כמה זמן לקח כל שלב (בדיקת קבצים / כתיבה).
+  function syncTimingSuffix(filesMs, writeMs) {
+    const sec = ms => (ms / 1000).toFixed(1);
+    return ` (קבצים ${sec(filesMs)}ש׳ · כתיבה ${sec(writeMs)}ש׳)`;
   }
 
   async function postToSheets(body) {
@@ -3574,6 +3814,7 @@
       onProgress?.(++done, byTeam.size);
       try {
         const data = await postToSheets({ type: 'sync_batch', rows: teamRows });
+        if (data.timings) console.info(`[sync] sync_batch team ${team} server ms:`, data.timings);
         ok += Number(data.written || 0);
         for (const warning of (data.warnings || [])) {
           problems.set(warning, (problems.get(warning) || 0) + 1);
@@ -3703,7 +3944,7 @@
     // שורות הסנכרון לוקחות את נתוני הצוות ממטמון הצוותים, שנטען ברקע
     await Promise.all([loadEvaluatorDirectory(), ensureAdminTeamsPreloaded()]);
     const [arrivalsByRace, assessmentsByRace] = await Promise.all([
-      gatherEvaluatorArrivalsForRaces(races),
+      gatherEvaluatorArrivalsForRaces(races, { allEvaluators:true }),
       gatherEvaluatorAssessmentsByUidForRaces(races)
     ]);
 
@@ -3738,13 +3979,14 @@
   }
 
   // מחזירה Map<raceId, Map<evaluatorUid, arrival>>.
-  // מנהל קורא את כל מסמכי סדר ההגעה של הסבב (החוקים מתירים לו),
-  // מעריך קורא את שלו בלבד.
-  async function gatherEvaluatorArrivalsForRaces(races) {
+  // כברירת מחדל נקרא רק המסמך של המשתמש עצמו — גם אצל מנהל, כי דף המועמד
+  // וגרף ההשוואה מציגים את המבט האישי בלבד. allEvaluators (סנכרון של מנהל)
+  // קורא את מסמכי כל המעריכים בכל סבב.
+  async function gatherEvaluatorArrivalsForRaces(races, { allEvaluators = false } = {}) {
     const result = new Map();
     const list = Array.isArray(races) ? races : [];
 
-    if (isAdmin()) {
+    if (allEvaluators && isAdmin()) {
       const snapshots = await Promise.all(list.map(race =>
         getDocs(collection(db, 'races', String(race.id), 'evaluatorArrivals'))));
       snapshots.forEach((snap, index) => {
@@ -3852,9 +4094,12 @@
 
       // ── שלב 1: ודא שכל הקבצים הדרושים קיימים ──
       if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const tFiles0 = performance.now();
       const prep = await ensureFilesExist(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
       });
+      const filesMs = performance.now() - tFiles0;
+      console.info(`[sync] stage 1 (files): ${Math.round(filesMs)}ms, ${prep.checked} files, ${prep.requests} requests`);
       // קובץ חסר פירושו שכל השורות אליו ייכשלו — עוצרים לפני שכותבים חלקית
       if (prep.problems.length) {
         showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
@@ -3864,23 +4109,27 @@
 
       // ── שלב 2: כתיבת הנתונים ──
       if (btn) btn.innerHTML = '⏳ מסנכרן…';
+      const tWrite0 = performance.now();
       const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
         if (btn) btn.innerHTML = total > 1 ? `⏳ מסנכרן ${done}/${total}…` : '⏳ מסנכרן…';
       });
+      const writeMs = performance.now() - tWrite0;
+      console.info(`[sync] stage 2 (write): ${Math.round(writeMs)}ms`);
+      const timing = syncTimingSuffix(filesMs, writeMs);
       const fail = allRows.length - ok;
       const summary = `תחנה ${stationRows.length} · הערות ${noteRows.length}`;
 
       if (fail === 0 && problems.length === 0) {
-        showToast(`✓ סונכרנו ${ok} רשומות (${summary})`, 'success');
+        showToast(`✓ סונכרנו ${ok} רשומות (${summary})${timing}`, 'success');
       } else {
         // מציג את הסיבה עצמה, לא רק מונה. תקלה חוזרת = שורה אחת עם מונה.
         const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
         const head = ok === 0 ? `הסנכרון נכשל (${fail})` : `סונכרנו ${ok}/${allRows.length}`;
-        showToast(`${head} — ${detail}`, ok === 0 ? 'error' : 'info');
+        showToast(`${head} — ${detail}${timing}`, ok === 0 ? 'error' : 'info');
         console.warn('[sync] problems:', problems);
       }
     } catch (e) {
-      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+      showToast('שגיאה בסנכרון: ' + errorText(e), 'error');
     } finally {
       sheetsSyncInProgress = false;
       if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
@@ -3914,29 +4163,36 @@
       if (allRows.length === 0) { showToast('אין נתונים לסנכרון', 'error'); return; }
 
       if (btn) btn.innerHTML = '⏳ בודק קבצים…';
+      const tFiles0 = performance.now();
       const prep = await ensureFilesExist(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ קבצים ${done}/${total}…`;
       });
+      const filesMs = performance.now() - tFiles0;
+      console.info(`[sync-all] stage 1 (files): ${Math.round(filesMs)}ms, ${prep.checked} files, ${prep.requests} requests`);
       if (prep.problems.length) {
         showToast(`הסנכרון לא בוצע — ${prep.problems.join(' · ')}`, 'error');
         console.warn('[sync-all] stage 1 failed:', prep.problems);
         return;
       }
 
+      const tWrite0 = performance.now();
       const { ok, problems } = await sendRowsBatched(allRows, (done, total) => {
         if (btn) btn.innerHTML = `⏳ מסנכרן צוות ${done}/${total}…`;
       });
+      const writeMs = performance.now() - tWrite0;
+      console.info(`[sync-all] stage 2 (write): ${Math.round(writeMs)}ms`);
+      const timing = syncTimingSuffix(filesMs, writeMs);
       const summary = `${teams.length} צוותים · ${races.length} סבבים · הערות ${noteRows.length}`;
 
       if (problems.length === 0 && ok === allRows.length) {
-        showToast(`✓ סונכרן האירוע כולו — ${ok} רשומות (${summary})`, 'success');
+        showToast(`✓ סונכרן האירוע כולו — ${ok} רשומות (${summary})${timing}`, 'success');
       } else {
         const detail = problems.map(p => `${p.message}${p.count > 1 ? ` (×${p.count})` : ''}`).join(' · ');
-        showToast(`סונכרנו ${ok}/${allRows.length} (${summary}) — ${detail}`, ok === 0 ? 'error' : 'info');
+        showToast(`סונכרנו ${ok}/${allRows.length} (${summary}) — ${detail}${timing}`, ok === 0 ? 'error' : 'info');
         console.warn('[sync-all] problems:', problems);
       }
     } catch (e) {
-      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+      showToast('שגיאה בסנכרון: ' + errorText(e), 'error');
     } finally {
       sheetsSyncInProgress = false;
       if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
@@ -4049,7 +4305,7 @@
       gnState.notes = notes;
       renderGeneralNotesList(notes);
     }, err => {
-      showToast('שגיאה בטעינת הערות: ' + err.message, 'error');
+      showToast('שגיאה בטעינת הערות: ' + errorText(err), 'error');
     });
   }
 
@@ -4152,7 +4408,7 @@
         notes => notes.filter(note => note.id !== String(noteId)));
       showToast('הערה נמחקה', 'info');
     } catch (e) {
-      showToast('שגיאה במחיקה: ' + e.message, 'error');
+      showToast('שגיאה במחיקה: ' + errorText(e), 'error');
     }
   };
 
@@ -4194,7 +4450,7 @@
   }
 
   function candidateRoute() {
-    const match = location.hash.match(/^#candidate(?:\/([^/]+))?$/);
+    const match = location.hash.match(/^#candidate(?:\/([^/?]+))?(?:\?.*)?$/); // סובל ?query אחרי ה-#
     return match ? { participantId: match[1] ? decodeURIComponent(match[1]) : null } : null;
   }
 
@@ -4306,7 +4562,7 @@
         renderCandidateOperations();
         renderCandidatePicker();
       },
-      error => showToast('שגיאה בעדכון מצב המועמד: ' + error.message, 'error')
+      error => showToast('שגיאה בעדכון מצב המועמד: ' + errorText(error), 'error')
     );
     if (isOperator()) {
       candidateState.recommendationUnsubscribe = formationRepository.subscribeRecommendation(
@@ -4316,7 +4572,7 @@
           candidateState.recommendation = recommendation;
           renderCandidateOperations();
         },
-        error => showToast('שגיאה בעדכון המלצת הנשירה: ' + error.message, 'error')
+        error => showToast('שגיאה בעדכון המלצת הנשירה: ' + errorText(error), 'error')
       );
     }
     renderCandidateOperations();
@@ -4340,7 +4596,7 @@
       document.getElementById('candidate-recommendation-details').value = '';
       showToast('ההמלצה נשלחה למפקד הגיבוש', 'success');
     } catch (error) {
-      showToast('שליחת ההמלצה נכשלה: ' + error.message, 'error');
+      showToast('שליחת ההמלצה נכשלה: ' + errorText(error), 'error');
     } finally {
       button.disabled = false;
     }
@@ -4354,7 +4610,7 @@
       await formationRepository.cancelRecommendation(activeFormationEvent.id, team, participantId);
       showToast('ההמלצה בוטלה', 'success');
     } catch (error) {
-      showToast('ביטול ההמלצה נכשל: ' + error.message, 'error');
+      showToast('ביטול ההמלצה נכשל: ' + errorText(error), 'error');
     }
   };
 
@@ -4494,7 +4750,7 @@
     } catch (error) {
       if (token !== candidateState.loadingToken) return;
       setText('candidate-loading', 'הטעינה נכשלה');
-      showToast('שגיאה בטעינת דשבורד מועמד: ' + error.message, 'error');
+      showToast('שגיאה בטעינת דשבורד מועמד: ' + errorText(error), 'error');
     }
   }
 
@@ -4675,7 +4931,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בשמירת ציון: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת ציון: ' + errorText(error), 'error'); }
   };
 
   window.setCandidateMeasurement = async (raceId, rawValue) => {
@@ -4693,7 +4949,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + errorText(error), 'error'); }
   };
 
   window.moveCandidatePlace = async (raceId, direction) => {
@@ -4712,7 +4968,7 @@
         if (order.join('|') === arrival.order.join('|')) return;
         await controller.reorder(order, arrival.revision);
       }
-    } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + errorText(error), 'error'); }
   };
 
   window.addCandidateStationNote = async raceId => {
@@ -4742,7 +4998,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + errorText(error), 'error'); }
   };
 
   window.editCandidateStationNote = async (raceId, noteId) => {
@@ -4764,7 +5020,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + errorText(error), 'error'); }
   };
 
   function subscribeToCandidateGeneralNotes(team, participantId) {
@@ -4772,7 +5028,7 @@
     candidateState.notesUnsubscribe = privateNotesRepository.subscribe(team, participantId, notes => {
       candidateState.notes = notes;
       renderCandidateGeneralNotes();
-    }, error => showToast('שגיאה בטעינת הערות כלליות: ' + error.message, 'error'));
+    }, error => showToast('שגיאה בטעינת הערות כלליות: ' + errorText(error), 'error'));
   }
 
   function renderCandidateGeneralNotes() {
@@ -4809,7 +5065,7 @@
     try {
       await privateNotesRepository.mutate(team, pid,
         notes => notes.filter(note => note.id !== String(noteId)));
-    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + errorText(error), 'error'); }
   };
 
   window.editCandidateGeneralNote = async noteId => {
@@ -4824,7 +5080,7 @@
     try {
       await privateNotesRepository.mutate(team, pid, notes => notes.map(note =>
         note.id === String(noteId) ? { ...note, text: clean, updatedAt: Date.now() } : note));
-    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + errorText(error), 'error'); }
   };
 
   // ═════════ Comparison chart ═════════
@@ -4843,7 +5099,7 @@
       compareChartAllRaces = await gatherRacesForCurrentContext();
       compareChartArrivalByRace = await gatherEvaluatorArrivalsForRaces(compareChartAllRaces);
     } catch (e) {
-      showToast('שגיאה בטעינת סבבים: ' + e.message, 'error');
+      showToast('שגיאה בטעינת סבבים: ' + errorText(e), 'error');
       compareChartAllRaces = [];
       compareChartArrivalByRace = new Map();
     }
@@ -4972,11 +5228,27 @@
   }
 
   // ═════════ Toast ═════════
+  // אותה הודעה שוב (שמירה אחרי שמירה) מאריכה את המוצגת במקום להיערם, ולא יותר
+  // משתיים על המסך — בסימולציה הודעות "נשמרה" כיסו את כרטיס הדירוג.
+  // שגיאות רשת של Firestore מגיעות באנגלית ("Connection failed", "client is offline").
+  // בשטח המשמעות היחידה שחשובה: אין קליטה, והפעולה לא בוצעה.
+  function errorText(error) {
+    const code = String(error?.code || '').replace('firestore/', '');
+    const text = String(error?.message || error || '');
+    if (['unavailable', 'deadline-exceeded'].includes(code) || /offline|connection failed|network|failed to fetch|failed to get document/i.test(text)) {
+      return 'אין קליטה — הפעולה לא בוצעה. נסה שוב כשתחזור קליטה.';
+    }
+    return text;
+  }
+
   window.showToast = (msg, type='info') => {
     const c = document.getElementById('toast-container');
+    const same = [...c.children].find(item => item.textContent === msg && item.classList.contains(type));
+    if (same) { clearTimeout(same.expiry); same.expiry = setTimeout(() => same.remove(), 3500); return; }
+    while (c.children.length >= 2) c.firstElementChild.remove();
     const el = document.createElement('div');
     el.className = `toast ${type}`; el.textContent = msg;
-    c.appendChild(el); setTimeout(() => el.remove(), 3500);
+    c.appendChild(el); el.expiry = setTimeout(() => el.remove(), 3500);
   };
 
 </script>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   ROLES, canControlSession, canEvaluate, canManageFormation,
   canManageSchedule, canRecommendDropout, canViewSchedule, destinationForRole, profileForActiveEvent,
-  roleNeedsTeam
+  roleNeedsTeam, roleLabel, isKnownRole, canManageIntake, EVENT_STAFF_ROLES
 } from '../frontend/js/roles.js';
 
 test('formation commander is global and routes only to the operational dashboard', () => {
@@ -61,4 +61,33 @@ test('an administrator can both evaluate and run a station round', () => {
   assert.equal(canEvaluate(ROLES.ADMIN), true);
   assert.equal(roleNeedsTeam(ROLES.ADMIN), false);
   assert.equal(canRecommendDropout(ROLES.ADMIN), false);
+});
+
+test('adjutancy is a global intake role without evaluation or schedule access', () => {
+  assert.equal(ROLES.ADJUTANT, 'adjutant');
+  assert.equal(roleLabel(ROLES.ADJUTANT), 'שלישות');
+  assert.equal(isKnownRole(ROLES.ADJUTANT), true);
+  assert.equal(roleNeedsTeam(ROLES.ADJUTANT), false);
+  assert.equal(destinationForRole(ROLES.ADJUTANT), 'intake.html');
+  assert.equal(canManageIntake(ROLES.ADJUTANT), true);
+  assert.equal(canManageIntake(ROLES.FORMATION_COMMANDER), true);
+  assert.equal(canManageIntake(ROLES.ADMIN), true);
+  assert.equal(canManageIntake(ROLES.OPERATOR), false);
+  assert.equal(canManageIntake(ROLES.EVALUATOR), false);
+  assert.equal(canEvaluate(ROLES.ADJUTANT), false);
+  assert.equal(canControlSession(ROLES.ADJUTANT), false);
+  assert.equal(canRecommendDropout(ROLES.ADJUTANT), false);
+  assert.equal(canManageFormation(ROLES.ADJUTANT), false);
+  assert.equal(canViewSchedule(ROLES.ADJUTANT), false);
+  assert.equal(canManageSchedule(ROLES.ADJUTANT), false);
+  assert.ok(EVENT_STAFF_ROLES.includes(ROLES.ADJUTANT));
+});
+
+test('an adjutant staffed in the active event resolves without a team', () => {
+  const profile = { role:ROLES.ADJUTANT, team:null, approved:true };
+  const pointer = { status:'active', eventId:'event-2', eventStaffingSchemaVersion:1 };
+  assert.deepEqual(profileForActiveEvent(profile, pointer, { active:true, role:ROLES.ADJUTANT, team:'' }), {
+    ...profile, role:ROLES.ADJUTANT, team:null, activeEventId:'event-2', eventAccess:true
+  });
+  assert.equal(profileForActiveEvent(profile, pointer, { active:false, role:ROLES.ADJUTANT, team:'' }).eventAccess, false);
 });

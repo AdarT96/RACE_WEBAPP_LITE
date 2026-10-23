@@ -3,9 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f1117">
+  <script src="js/pwa-register.js" defer></script>
   <title>הגדרת אירוע גיבוש</title>
-  <link rel="stylesheet" href="css/main.css?v=1.3-event-setup">
-  <link rel="stylesheet" href="css/event-setup.css?v=1.5-qa-fixes">
+  <link rel="stylesheet" href="css/main.css?v=1.4-messages">
+  <link rel="stylesheet" href="css/event-setup.css?v=1.6-mobile-steps">
 </head>
 <body>
   <nav class="navbar">
@@ -35,7 +38,7 @@
       </summary>
       <div class="setup-inline-form">
         <input id="new-event-name" class="form-input" maxlength="120" placeholder="למשל: גיבוש ספטמבר 2026">
-        <button id="create-event-button" class="btn btn-success" type="button">צור טיוטה</button>
+        <button id="create-event-button" class="btn btn-success" type="button" disabled>צור טיוטה</button>
       </div>
       <div id="existing-events-wrap" hidden>
         <label for="existing-events">או המשך אירוע קיים</label>
@@ -92,6 +95,7 @@
           <label>צוות<select id="candidate-team" class="form-select"></select></label>
           <button id="add-candidate-button" class="btn btn-ghost" type="button">+ הוסף מועמד</button>
           <button id="save-candidates-button" class="btn btn-primary" type="button">שמור צוות</button>
+          <a class="btn btn-ghost" href="intake.html">קליטת מועמדים (שלישות)</a>
         </div>
         <div id="candidate-table" class="candidate-setup-table"></div>
         <details class="setup-import-panel">
