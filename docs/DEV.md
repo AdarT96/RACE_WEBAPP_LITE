@@ -72,13 +72,13 @@ docs/
 
 ## PWA ומצב לא מקוון
 
--  +  — התקנה למסך הבית (עברית, RTL, ). כל דף מכיל  ו־, שרושם את  בנתיב יחסי (עובד תחת  וב־localhost).
--  +  (קלאסיים, ללא build): **רשת קודם** לכל בקשת GET מאותו מקור ולשלושת מודולי ה־SDK של Firebase (gstatic 10.7.0); המטמון () משמש רק כשהרשת נכשלת (התאמה בלי ). בהתקנה נטענת מראש כל המעטפת (). Firestore, Auth ו־Apps Script (googleapis, firebaseio, identitytoolkit, securetoken, script.google.com) והכתיבות אינם עוברים ב־SW כלל.  +  ומחיקת מטמונים ישנים בהפעלה — גרסה חדשה מגיעה בטעינה הבאה עם קליטה.
-- **מוסיפים קובץ JS/CSS/דף?** יש להוסיף אותו ל־ ב־ (בדיקת  נכשלת אחרת). שינוי באסטרטגיה/רשימה: להעלות  באותו קובץ.
-- בסימולציה (Playwright) ה־SW עוקף את ניתוב ה־SDK; יש להשתמש ב־ כשבודקים מול האמולטור.
+- `frontend/manifest.webmanifest` + `frontend/icons/` — התקנה למסך הבית (עברית, RTL, `start_url: app.html`). כל דף מכיל `<link rel="manifest">` ו־`js/pwa-register.js`, שרושם את `frontend/sw.js` בנתיב יחסי (עובד תחת `/RACE_WEBAPP_LITE/frontend/` וב־localhost).
+- `sw.js` + `sw-policy.js` (קלאסיים, ללא build): **רשת קודם** לכל בקשת GET מאותו מקור ולשלושת מודולי ה־SDK של Firebase (gstatic 10.7.0); המטמון (`gibush-shell-vN`) משמש רק כשהרשת נכשלת (התאמה בלי `?v=`). בהתקנה נטענת מראש כל המעטפת (`SHELL_FILES`). Firestore, Auth ו־Apps Script (googleapis, firebaseio, identitytoolkit, securetoken, script.google.com) וכל כתיבה אינם עוברים ב־SW כלל. `skipWaiting` + `clients.claim` ומחיקת מטמונים ישנים בהפעלה — גרסה חדשה מגיעה בטעינה הבאה עם קליטה.
+- **מוסיפים קובץ JS/CSS/דף?** יש להוסיף אותו ל־`SHELL_FILES` ב־`sw-policy.js` (`tests/sw-policy.unit.test.js` נכשל אחרת). שינוי באסטרטגיה או ברשימה: להעלות `CACHE_VERSION` באותו קובץ.
+- בסימולציה (Playwright) ה־SW מביא את ה־SDK האמיתי ועוקף את ניתוב האמולטור; כשבודקים מול האמולטור יש להשתמש ב־`Network.setBypassServiceWorker`.
 
 ### נתיבי app.html
- ו־ — מסך המועמד (פתיחה ישירה וגם ;  אחרי ה־# נסבל),  — סנכרון מלא (מנהל בלבד),  — פתיחת תחנה.
+`#candidate` ו־`#candidate/<מספר>` — מסך המועמד (פתיחה ישירה וגם `hashchange`; `?query` אחרי ה־# נסבל). `#sync-all` — סנכרון מלא (מנהל בלבד). `?team=&station=` — פתיחת תחנה.
 
 ## מודל הנתונים (Firestore)
 - `users/{uid}` — `name, email, role` (`admin|operator|evaluator|formation_commander|adjutant`), `approved`, `team`, `sheetUrl`/`sheetFileId` (קובץ המעריך). ל־`formation_commander` ול־`adjutant` (שלישות) אין צוות (`team: null`; בסגל האירוע `team: ''`).
