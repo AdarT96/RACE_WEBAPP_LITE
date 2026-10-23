@@ -1785,7 +1785,7 @@
     foreground.background(subscribeToQuickTags);
     // שמירת הערכה לא ממתינה לשרת (עובדת גם בלי קליטה); כשל מאוחר מגיע לכאן
     evaluationRepository = createEvaluationRepository(db, currentUser, {
-      onWriteError: error => showToast('שמירת ההערכה נכשלה: ' + error.message, 'error')
+      onWriteError: error => showToast('שמירת ההערכה נכשלה: ' + errorText(error), 'error')
     });
     arrivalRepository = createArrivalRepository(db, currentUser, evaluatorArrivalStateForRace);
     privateNotesRepository = createPrivateNotesRepository(db, currentUser, () => activeFormationEvent?.id);
@@ -2064,7 +2064,7 @@
     ), snapshot => {
       candidatesByTeam.set(teamNumber, snapshot.docs.map(item => ({ id: item.id, ...item.data() })));
       if (candidateRoute() && candidateTeam() === teamNumber) renderCandidatePicker();
-    }, error => showToast('שגיאה בעדכון מצבי המועמדים: ' + error.message, 'error'));
+    }, error => showToast('שגיאה בעדכון מצבי המועמדים: ' + errorText(error), 'error'));
   }
 
   async function loadTeamData(teamNumber) {
@@ -2087,7 +2087,7 @@
       teamsCache[teamNumber] = data;
       return data;
     } catch (e) {
-      showToast('שגיאה בטעינת נתוני צוות: ' + e.message, 'error');
+      showToast('שגיאה בטעינת נתוני צוות: ' + errorText(e), 'error');
       return null;
     }
   }
@@ -2293,7 +2293,7 @@
     }, error => {
       if (currentRaceId !== race.id) return;
       currentAssessmentLoading = false;
-      showToast('שגיאה בטעינת ההערכה האישית: ' + error.message, 'error');
+      showToast('שגיאה בטעינת ההערכה האישית: ' + errorText(error), 'error');
       renderRace();
     });
   }
@@ -2380,7 +2380,7 @@
         loadCurrentSession();
         return;
       }
-      showToast('שגיאה בהאזנה לסבבים: ' + err.message, 'error');
+      showToast('שגיאה בהאזנה לסבבים: ' + errorText(err), 'error');
       renderIdlePlaceholder('שגיאה. נסה לרענן.');
     });
   }
@@ -2755,7 +2755,7 @@
   function queueExpiredSessionFinalization(race) {
     if (!canControlSession() || !race?.id || race.status !== 'running' || expiryFinalizationPromise) return;
     expiryFinalizationPromise = finalizeExpiredSession(race)
-      .catch(error => showToast('לא ניתן היה לסגור את הסבב שפג: ' + error.message, 'error'))
+      .catch(error => showToast('לא ניתן היה לסגור את הסבב שפג: ' + errorText(error), 'error'))
       .finally(() => { expiryFinalizationPromise = null; });
   }
 
@@ -2887,7 +2887,7 @@
       });
       showToast('סבב ' + nextRound + ' התחיל', 'success');
     } catch (e) {
-      showToast('שגיאה בהתחלת סבב: ' + e.message, 'error');
+      showToast('שגיאה בהתחלת סבב: ' + errorText(e), 'error');
     } finally {
       setControlActionBusy(false);
     }
@@ -2900,7 +2900,7 @@
       if (!arrivalControllerFor(currentRace).append(participantId)) {
         showToast('הסימון לא התקבל. בדוק את מצב השמירה ונסה שוב.', 'error');
       }
-    } catch (error) { showToast('שגיאה בסימון: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בסימון: ' + errorText(error), 'error'); }
   };
 
   function arrivalRows(list) {
@@ -3155,7 +3155,7 @@
       });
       showToast('הסבב הסתיים', 'info');
     } catch (e) {
-      showToast('שגיאה בסיום סבב: ' + e.message, 'error');
+      showToast('שגיאה בסיום סבב: ' + errorText(e), 'error');
     } finally {
       setControlActionBusy(false);
     }
@@ -3337,7 +3337,7 @@
           retry[pid] = Number(retry[pid] || 0) + Number(delta || 0);
         });
         pendingRepsByRace[raceId] = retry;
-        showToast('שגיאה בשמירת ספירה: ' + e.message, 'error');
+        showToast('שגיאה בשמירת ספירה: ' + errorText(e), 'error');
         return false;
       } finally {
         repsSavePromise = null;
@@ -3431,7 +3431,7 @@
         return entry;
       });
     }
-    catch (e) { showToast('שגיאה בשמירת ציון: ' + e.message, 'error'); }
+    catch (e) { showToast('שגיאה בשמירת ציון: ' + errorText(e), 'error'); }
   };
 
   // קובע/מנקה את המדידה של המעריך הנוכחי בלבד.
@@ -3466,7 +3466,7 @@
       }
       showToast(`${st?.measureLabel || 'המדידה'} נשמרה`, 'success');
     }
-    catch (e) { showToast('שגיאה בשמירת ערך: ' + e.message, 'error'); }
+    catch (e) { showToast('שגיאה בשמירת ערך: ' + errorText(e), 'error'); }
   };
 
   // הערה מהירה של פרמטר → נכנסת אל תוך ההערות המילוליות
@@ -3533,7 +3533,7 @@
       });
       showToast('הערה נוספה', 'success');
     } catch (e) {
-      showToast('שגיאה בשמירת הערה: ' + e.message, 'error');
+      showToast('שגיאה בשמירת הערה: ' + errorText(e), 'error');
     }
   }
 
@@ -3552,7 +3552,7 @@
       });
       showToast('הערה נמחקה', 'info');
     } catch (e) {
-      showToast('שגיאה במחיקה: ' + e.message, 'error');
+      showToast('שגיאה במחיקה: ' + errorText(e), 'error');
     }
   };
 
@@ -4041,7 +4041,7 @@
         console.warn('[sync] problems:', problems);
       }
     } catch (e) {
-      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+      showToast('שגיאה בסנכרון: ' + errorText(e), 'error');
     } finally {
       sheetsSyncInProgress = false;
       if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
@@ -4104,7 +4104,7 @@
         console.warn('[sync-all] problems:', problems);
       }
     } catch (e) {
-      showToast('שגיאה בסנכרון: ' + e.message, 'error');
+      showToast('שגיאה בסנכרון: ' + errorText(e), 'error');
     } finally {
       sheetsSyncInProgress = false;
       if (btn) { btn.disabled = false; if (origHtml) btn.innerHTML = origHtml; }
@@ -4217,7 +4217,7 @@
       gnState.notes = notes;
       renderGeneralNotesList(notes);
     }, err => {
-      showToast('שגיאה בטעינת הערות: ' + err.message, 'error');
+      showToast('שגיאה בטעינת הערות: ' + errorText(err), 'error');
     });
   }
 
@@ -4320,7 +4320,7 @@
         notes => notes.filter(note => note.id !== String(noteId)));
       showToast('הערה נמחקה', 'info');
     } catch (e) {
-      showToast('שגיאה במחיקה: ' + e.message, 'error');
+      showToast('שגיאה במחיקה: ' + errorText(e), 'error');
     }
   };
 
@@ -4474,7 +4474,7 @@
         renderCandidateOperations();
         renderCandidatePicker();
       },
-      error => showToast('שגיאה בעדכון מצב המועמד: ' + error.message, 'error')
+      error => showToast('שגיאה בעדכון מצב המועמד: ' + errorText(error), 'error')
     );
     if (isOperator()) {
       candidateState.recommendationUnsubscribe = formationRepository.subscribeRecommendation(
@@ -4484,7 +4484,7 @@
           candidateState.recommendation = recommendation;
           renderCandidateOperations();
         },
-        error => showToast('שגיאה בעדכון המלצת הנשירה: ' + error.message, 'error')
+        error => showToast('שגיאה בעדכון המלצת הנשירה: ' + errorText(error), 'error')
       );
     }
     renderCandidateOperations();
@@ -4508,7 +4508,7 @@
       document.getElementById('candidate-recommendation-details').value = '';
       showToast('ההמלצה נשלחה למפקד הגיבוש', 'success');
     } catch (error) {
-      showToast('שליחת ההמלצה נכשלה: ' + error.message, 'error');
+      showToast('שליחת ההמלצה נכשלה: ' + errorText(error), 'error');
     } finally {
       button.disabled = false;
     }
@@ -4522,7 +4522,7 @@
       await formationRepository.cancelRecommendation(activeFormationEvent.id, team, participantId);
       showToast('ההמלצה בוטלה', 'success');
     } catch (error) {
-      showToast('ביטול ההמלצה נכשל: ' + error.message, 'error');
+      showToast('ביטול ההמלצה נכשל: ' + errorText(error), 'error');
     }
   };
 
@@ -4662,7 +4662,7 @@
     } catch (error) {
       if (token !== candidateState.loadingToken) return;
       setText('candidate-loading', 'הטעינה נכשלה');
-      showToast('שגיאה בטעינת דשבורד מועמד: ' + error.message, 'error');
+      showToast('שגיאה בטעינת דשבורד מועמד: ' + errorText(error), 'error');
     }
   }
 
@@ -4843,7 +4843,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בשמירת ציון: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת ציון: ' + errorText(error), 'error'); }
   };
 
   window.setCandidateMeasurement = async (raceId, rawValue) => {
@@ -4861,7 +4861,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + errorText(error), 'error'); }
   };
 
   window.moveCandidatePlace = async (raceId, direction) => {
@@ -4880,7 +4880,7 @@
         if (order.join('|') === arrival.order.join('|')) return;
         await controller.reorder(order, arrival.revision);
       }
-    } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בשמירת סדר הגעה: ' + errorText(error), 'error'); }
   };
 
   window.addCandidateStationNote = async raceId => {
@@ -4910,7 +4910,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + errorText(error), 'error'); }
   };
 
   window.editCandidateStationNote = async (raceId, noteId) => {
@@ -4932,7 +4932,7 @@
       });
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
-    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + errorText(error), 'error'); }
   };
 
   function subscribeToCandidateGeneralNotes(team, participantId) {
@@ -4940,7 +4940,7 @@
     candidateState.notesUnsubscribe = privateNotesRepository.subscribe(team, participantId, notes => {
       candidateState.notes = notes;
       renderCandidateGeneralNotes();
-    }, error => showToast('שגיאה בטעינת הערות כלליות: ' + error.message, 'error'));
+    }, error => showToast('שגיאה בטעינת הערות כלליות: ' + errorText(error), 'error'));
   }
 
   function renderCandidateGeneralNotes() {
@@ -4977,7 +4977,7 @@
     try {
       await privateNotesRepository.mutate(team, pid,
         notes => notes.filter(note => note.id !== String(noteId)));
-    } catch (error) { showToast('שגיאה במחיקת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה במחיקת הערה: ' + errorText(error), 'error'); }
   };
 
   window.editCandidateGeneralNote = async noteId => {
@@ -4992,7 +4992,7 @@
     try {
       await privateNotesRepository.mutate(team, pid, notes => notes.map(note =>
         note.id === String(noteId) ? { ...note, text: clean, updatedAt: Date.now() } : note));
-    } catch (error) { showToast('שגיאה בעריכת הערה: ' + error.message, 'error'); }
+    } catch (error) { showToast('שגיאה בעריכת הערה: ' + errorText(error), 'error'); }
   };
 
   // ═════════ Comparison chart ═════════
@@ -5011,7 +5011,7 @@
       compareChartAllRaces = await gatherRacesForCurrentContext();
       compareChartArrivalByRace = await gatherEvaluatorArrivalsForRaces(compareChartAllRaces);
     } catch (e) {
-      showToast('שגיאה בטעינת סבבים: ' + e.message, 'error');
+      showToast('שגיאה בטעינת סבבים: ' + errorText(e), 'error');
       compareChartAllRaces = [];
       compareChartArrivalByRace = new Map();
     }
@@ -5142,6 +5142,17 @@
   // ═════════ Toast ═════════
   // אותה הודעה שוב (שמירה אחרי שמירה) מאריכה את המוצגת במקום להיערם, ולא יותר
   // משתיים על המסך — בסימולציה הודעות "נשמרה" כיסו את כרטיס הדירוג.
+  // שגיאות רשת של Firestore מגיעות באנגלית ("Connection failed", "client is offline").
+  // בשטח המשמעות היחידה שחשובה: אין קליטה, והפעולה לא בוצעה.
+  function errorText(error) {
+    const code = String(error?.code || '').replace('firestore/', '');
+    const text = String(error?.message || error || '');
+    if (['unavailable', 'deadline-exceeded'].includes(code) || /offline|connection failed|network|failed to fetch|failed to get document/i.test(text)) {
+      return 'אין קליטה — הפעולה לא בוצעה. נסה שוב כשתחזור קליטה.';
+    }
+    return text;
+  }
+
   window.showToast = (msg, type='info') => {
     const c = document.getElementById('toast-container');
     const same = [...c.children].find(item => item.textContent === msg && item.classList.contains(type));
