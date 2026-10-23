@@ -320,6 +320,10 @@ export function mountMessageCenter({
 
   function renderToasts() {
     toasts.textContent = '';
+    // מתחת לסרגל העליון של הדף. בטלפון הוא נשבר לכמה שורות, וגובה קבוע ב-CSS
+    // הניח את ההתראה על "התנתק" ו"פאנל מנהל".
+    const navbar = anchor?.closest?.('.navbar') || document.querySelector('.navbar');
+    if (navbar) toasts.style.top = `${Math.max(8, Math.round(navbar.getBoundingClientRect().bottom) + 8)}px`;
     const summary = state.toastItems.find(item => item.kind === 'summary');
     const messageItems = state.toastItems.filter(item => item.kind === 'message');
     if (summary) {

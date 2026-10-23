@@ -80,7 +80,7 @@ test('a batch never shortens a tab: unrelated pre-existing rows survive', () => 
 const normalizePerItem = (responses, kinds) => responses.map((r, i) => ({
   kind: kinds[i].kind, key: kinds[i].key, ok: r.success,
   created: r.success ? /created$/.test(r.message) : false,
-  ...(r.success ? { url: r.url } : { error: r.message.replace(/^Error: /, '') }),
+  ...(r.success ? { url: r.url, fileId: r.fileId } : { error: r.message.replace(/^Error: /, '') }),
   ...(r.warning ? { warning: r.warning } : {})
 }));
 

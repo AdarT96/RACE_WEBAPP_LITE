@@ -630,6 +630,7 @@
       document.getElementById('pending-badge').textContent  = pending.length;
 
       renderPendingList(pending);
+      if (pending.length) document.getElementById('pending-list').closest('details').open = true;
       renderUsersList(allUsers);
     } catch(e) { showToast('שגיאה בטעינת משתמשים: ' + e.message, 'error'); }
   };

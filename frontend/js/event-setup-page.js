@@ -366,6 +366,7 @@ async function postToSheets(body) {
   return data;
 }
 
+// מחזירה את היכולות של הפריסה, כדי לבחור בין בקשה אחת לכל הקבצים לבין בקשה לכל קובץ.
 async function verifyEventDriveApi() {
   const response = await fetch(window.APP_CONFIG.sheetsApiUrl);
   if (!response.ok) throw new Error('לא ניתן לבדוק את פריסת Google Apps Script.');
@@ -373,6 +374,36 @@ async function verifyEventDriveApi() {
   if (!Array.isArray(data.features) || !data.features.includes('event_scoped_files')) {
     throw new Error('גרסת Google Apps Script הפעילה עדיין אינה תומכת בקבצים לפי אירוע. יש לפרוס את Code.gs החדש לפני יצירת קבצים.');
   }
+  return data.features;
+}
+
+// כל קבצי הצוותים והמעריכים בבקשות מעטות (ensure_files) במקום בקשה לכל קובץ —
+// כל בקשה ל-Apps Script עולה שנייה ומעלה. מחזירה Map: מזהה יעד → תוצאה.
+const ENSURE_FILES_CHUNK = 25;
+async function ensureDriveTargetsBatched(targets, progress) {
+  const outcomes = new Map();
+  for (let start = 0; start < targets.length; start += ENSURE_FILES_CHUNK) {
+    const chunk = targets.slice(start, start + ENSURE_FILES_CHUNK);
+    progress.textContent = `יוצר קבצים ${start + 1}–${start + chunk.length} מתוך ${targets.length}…`;
+    let results = [];
+    let chunkError = '';
+    try {
+      const data = await postToSheets({
+        type:'ensure_files', eventId:currentEventId, eventName:bundle.event.name,
+        teams:chunk.filter(target => target.kind === 'team').map(target => target.team),
+        evaluators:chunk.filter(target => target.kind === 'evaluator')
+          .map(target => ({ uid:target.uid, name:target.name, team:target.team }))
+      });
+      results = Array.isArray(data.results) ? data.results : [];
+    } catch (error) { chunkError = error.message; }
+    for (const target of chunk) {
+      const result = results.find(item => item.kind === target.kind && item.key === target.key);
+      outcomes.set(target.id, result?.ok
+        ? { ok:true, data:{ fileId:result.fileId || '', url:result.url || '', warning:result.warning || '' } }
+        : { ok:false, message:result?.error || chunkError || 'לא התקבלה תשובה עבור הקובץ.' });
+    }
+  }
+  return outcomes;
 }
 
 document.getElementById('create-event-button').addEventListener('click', async event => {
@@ -605,19 +636,31 @@ document.getElementById('create-drive-files-button').addEventListener('click', a
   setBusy(button, true, 'בודק פריסה…');
   const progress = document.getElementById('drive-progress');
   try {
-    await verifyEventDriveApi();
+    const features = await verifyEventDriveApi();
     const targets = [
-      ...teamIds().map(team => ({ id:`team-${team}`, type:'ensure_team_sheet', team })),
+      ...teamIds().map(team => ({ id:`team-${team}`, type:'ensure_team_sheet', kind:'team', key:String(team), team })),
       ...activeStaff().filter(member => member.role === ROLES.EVALUATOR).map(member => ({
-        id:`evaluator-${member.uid}`, type:'ensure_evaluator_sheet', uid:member.uid,
-        name:member.displayName, team:member.team
+        id:`evaluator-${member.uid}`, type:'ensure_evaluator_sheet', kind:'evaluator', key:String(member.uid),
+        uid:member.uid, name:member.displayName, team:member.team
       }))
     ];
     let completed = 0;
-    for (const target of targets) {
+    if (features.includes('ensure_files')) {
+      const outcomes = await ensureDriveTargetsBatched(targets, progress);
+      progress.textContent = 'שומר את מצב הקבצים…';
+      await Promise.all(targets.map(target => {
+        const outcome = outcomes.get(target.id);
+        return repository.saveArtifact(currentEventId, target.id, outcome.ok
+          ? { status:ARTIFACT_STATUSES.READY, fileId:outcome.data.fileId, url:outcome.data.url, message:outcome.data.warning }
+          : { status:ARTIFACT_STATUSES.FAILED, message:outcome.message });
+      }));
+      completed = targets.length;
+    }
+    for (const target of features.includes('ensure_files') ? [] : targets) {
       progress.textContent = `יוצר קובץ ${completed + 1} מתוך ${targets.length}…`;
       try {
-        const data = await postToSheets({ ...target, eventId:currentEventId, eventName:bundle.event.name });
+        const { id, kind, key, ...body } = target;
+        const data = await postToSheets({ ...body, id, eventId:currentEventId, eventName:bundle.event.name });
         await repository.saveArtifact(currentEventId, target.id, {
           status:ARTIFACT_STATUSES.READY, fileId:data.fileId, url:data.url, message:data.warning || ''
         });
@@ -683,6 +726,8 @@ onAuthStateChanged(auth, async user => {
     document.getElementById('setup-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
     repository = createEventSetupRepository(db, currentUser, { stationMapFactory:defaultStationMap });
     scheduleRepository = createScheduleRepository(db, currentUser);
+    // לחיצה לפני שהמאגר נוצר נכשלה בשגיאה טכנית באנגלית — הכפתור נפתח רק עכשיו
+    document.getElementById('create-event-button').disabled = false;
     // שלוש קריאות בלתי תלויות — יוצאות יחד
     const [events] = await Promise.all([repository.listEvents(), loadStationTypes(), loadUsers()]);
     renderEventPicker(events);

@@ -51,6 +51,29 @@ function firebaseErrMsg(code) {
   })[code] || `שגיאה (${code})`;
 }
 
+// פעולה שמתעכבת (קליטה חלשה) לא נשארת ספינר שקט: אחרי כמה שניות מסבירים מה קורה.
+const SLOW_NOTICE_MS = 8000;
+function slowNotice(msgId, text) {
+  const timer = setTimeout(() => showMsg(msgId, text, 'warning'), SLOW_NOTICE_MS);
+  return () => clearTimeout(timer);
+}
+
+// הרשמה שנקטעה אחרי יצירת החשבון ולפני שמירת הפרופיל השאירה חשבון בלי פרופיל:
+// "אימייל זה כבר רשום" בהרשמה ו"רשומה לא נמצאה" בכניסה, בלי דרך החוצה. אותו
+// אימייל וסיסמה משלימים עכשיו את ההרשמה; חשבון שיש לו פרופיל נשאר "כבר רשום".
+async function createOrResumeAccount(email, pass) {
+  try {
+    return await createUserWithEmailAndPassword(auth, email, pass);
+  } catch (err) {
+    if (err.code !== 'auth/email-already-in-use') throw err;
+    let cred;
+    try { cred = await signInWithEmailAndPassword(auth, email, pass); } catch (_) { throw err; }
+    const existing = await getDoc(doc(db, 'users', cred.user.uid));
+    if (existing.exists()) { await signOut(auth); throw err; }
+    return cred;
+  }
+}
+
 // ── Registration ──────────────────────────────────────
 async function registerUser() {
   const name  = val('reg-name');
@@ -74,8 +97,9 @@ async function registerUser() {
     return showMsg('reg-msg', `מספר צוות חייב להיות בין 1 ל-${SCHEDULE_MAX_TEAMS}.`);
 
   setLoading('reg-btn', true);
+  const stopSlowNotice = slowNotice('reg-msg', 'השמירה מתעכבת — כנראה קליטה חלשה. נא לא לסגור את הדף.');
   try {
-    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const cred = await createOrResumeAccount(email, pass);
     await setDoc(doc(db, 'users', cred.user.uid), {
       uid:       cred.user.uid,
       name,
@@ -91,6 +115,7 @@ async function registerUser() {
   } catch(err) {
     showMsg('reg-msg', firebaseErrMsg(err.code));
   } finally {
+    stopSlowNotice();
     setLoading('reg-btn', false);
   }
 }
@@ -102,13 +127,14 @@ async function loginUser() {
   if (!email || !pass) return showMsg('login-msg', 'יש להזין אימייל וסיסמה.');
 
   setLoading('login-btn', true);
+  const stopSlowNotice = slowNotice('login-msg', 'הכניסה מתעכבת — כנראה קליטה חלשה. נא להמתין.');
   try {
     const cred = await signInWithEmailAndPassword(auth, email, pass);
     const snap = await getDoc(doc(db, 'users', cred.user.uid));
 
     if (!snap.exists()) {
       await signOut(auth);
-      return showMsg('login-msg', 'רשומת משתמש לא נמצאה. פנה למנהל.');
+      return showMsg('login-msg', 'ההרשמה לא הושלמה. עברו ללשונית "הרשמה" ומלאו שוב את הפרטים עם אותו אימייל וסיסמה.');
     }
 
     const data = snap.data();
@@ -126,6 +152,7 @@ async function loginUser() {
   } catch(err) {
     showMsg('login-msg', firebaseErrMsg(err.code));
   } finally {
+    stopSlowNotice();
     setLoading('login-btn', false);
   }
 }

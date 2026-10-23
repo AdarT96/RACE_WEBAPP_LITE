@@ -730,7 +730,7 @@ function handleEnsureFiles_(ss, payload) {
       if (!r.ok) {
         results.push({ kind: kind, key: key, ok: false, created: false, error: r.message });
       } else {
-        var item = { kind: kind, key: key, ok: true, created: !!r.created, url: r.url };
+        var item = { kind: kind, key: key, ok: true, created: !!r.created, url: r.url, fileId: r.fileId };
         if (r.warning) item.warning = r.warning;
         results.push(item);
       }
