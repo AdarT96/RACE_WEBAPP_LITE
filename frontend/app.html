@@ -1179,6 +1179,9 @@
   let teamsCache  = {};            // teamNumber → teamData
   let selectedTeam = null;         // "01"
   let selectedStation = null;      // "01"
+  // בחירה ידנית בזמן שהלו״ז עוד נטען: ההמלצה של הלו״ז לא דורסת אותה כשתגיע.
+  // קודם המפק״צ בחר תחנה, והטעינה החזירה את התחנה של הלו״ז — והסבב נפתח בה.
+  let stationChosenByUser = false;
   let racesForContext = [];        // all rounds for selected team+station, oldest first
   let latestRace = null;           // newest round; lifecycle actions always target this
   let currentRace = null;          // round currently viewed/evaluated
@@ -1865,12 +1868,15 @@
       savedStation: localStorage.getItem('lite:lastStation') || '',
       availableStations
     });
-    selectedStation = initialStation.stationId || availableStations[0] || null;
-    stationSel.value = selectedStation || '';
-    if (selectedStation) localStorage.setItem('lite:lastStation', selectedStation);
+    if (!stationChosenByUser) {
+      selectedStation = initialStation.stationId || availableStations[0] || null;
+      stationSel.value = selectedStation || '';
+      if (selectedStation) localStorage.setItem('lite:lastStation', selectedStation);
+    }
 
     if (selectedTeam) {
-      await loadCurrentSession(); // משחרר את עבודת הרקע כשהסבב הראשון מוצג
+      // תחנה שנבחרה ידנית כבר נטענה ב-onStationChange
+      if (!stationChosenByUser) await loadCurrentSession(); // משחרר את עבודת הרקע כשהסבב הראשון מוצג
     } else {
       renderIdlePlaceholder('בחר צוות ותחנה כדי להתחיל.');
       foreground.release();
@@ -2123,6 +2129,7 @@
   };
 
   window.onStationChange = async (v) => {
+    stationChosenByUser = true;
     await commitPendingReps();
     selectedStation = v;
     localStorage.setItem('lite:lastStation', v);
