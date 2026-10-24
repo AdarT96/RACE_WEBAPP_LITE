@@ -984,7 +984,21 @@
         container.innerHTML = '<div class="empty-state"><div class="icon">✅</div>אין דיווחי תקלות.</div>';
         return;
       }
+      // דיווח אחד פגום לא מסתיר את כל השאר
       container.innerHTML = reports.map(report => {
+        try { return issueReportCard(report); }
+        catch (error) {
+          return `<article class="issue-report-card"><strong>דיווח שלא ניתן להציג</strong>
+            <div class="issue-report-meta">${escHtml(report.id)} · ${escHtml(error.message)}</div></article>`;
+        }
+      }).join('');
+    } catch (error) {
+      document.getElementById('count-issues-open').textContent = '—';
+      container.innerHTML = `<div class="alert alert-danger">שגיאה בטעינת דיווחים: ${escHtml(error.message)}</div>`;
+    }
+  };
+
+  function issueReportCard(report) {
         const context = report.context || {};
         const environment = report.environment || {};
         const status = ISSUE_STATUS_LABELS[report.status] ? report.status : 'open';
@@ -1036,12 +1050,7 @@
                       style="padding:8px 14px">שמור טיפול</button>
             </div>
           </article>`;
-      }).join('');
-    } catch (error) {
-      document.getElementById('count-issues-open').textContent = '—';
-      container.innerHTML = `<div class="alert alert-danger">שגיאה בטעינת דיווחים: ${escHtml(error.message)}</div>`;
-    }
-  };
+  }
 
   window.saveIssueReport = async card => {
     const reportId = card?.dataset?.issueId;
@@ -1759,8 +1768,9 @@
     if (el) el.textContent = msg || '';
   }
 
+  // מקבל כל ערך: מסמכים ישנים שומרים לפעמים מספר (צוות, תחנה) במקום טקסט.
   function escHtml(s) {
-    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    return (s == null || s === false ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   window.showToast = (msg, type='info') => {
