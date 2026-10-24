@@ -42,9 +42,15 @@ const readDocs = reference => getDocsFromServer(reference).catch(error => {
 const RACE_SCHEMA_VERSION = 2;
 // כל קליטה כותבת את אותו מונה, ולכן עד 10 קולטים במקביל מתחרים עליו. כל
 // התנגשות מנסה שוב מההתחלה (קריאה מחדש מהשרת); ברירת המחדל של 5 קצרה מדי.
-const CREATE_MAX_ATTEMPTS = 15;
-const CREATE_MAX_ROUNDS = 15;
+// שתי קליטות באותו רגע מתנגשות על המונה. ה-SDK מנסה שוב טרנזקציה שהתנגשה
+// בהמתנה שגדלה (1, 1.5, 2.25, 3.4 שניות...), ובשער עם שני אנשי שלישות שמירה
+// אחת מכל כמה לקחה 12-14 שניות. לכן הטרנזקציה רצה פעם אחת, וכל ניסיון חוזר
+// נעשה כאן אחרי הפסקה קצרה ואקראית. הייחודיות נשמרת: היא נבדקת בתוך הטרנזקציה
+// ובחוקים.
+const CREATE_MAX_ATTEMPTS = 1;
+const CREATE_MAX_ROUNDS = 40;
 const isPermissionDenied = error => String(error?.code || '').endsWith('permission-denied');
+const isContention = error => /(aborted|failed-precondition|already-exists)$/.test(String(error?.code || ''));
 const pause = () => new Promise(resolve => setTimeout(resolve, 40 + Math.floor(Math.random() * 160)));
 
 export class IntakeMoveBlockedError extends Error {
@@ -272,6 +278,10 @@ export function createIntakeRepository(db, user) {
           // דוחה אותה כהרשאה ולא כהתנגשות. אם המונה זז — זו התנגשות: מנסים שוב
           // מההתחלה עם מספר חדש. אחרת זו דחייה אמיתית ומחזירים אותה.
           if (isPermissionDenied(error) && observedCounter !== null && await counterMovedFrom(eventId, observedCounter)) {
+            await pause();
+            continue;
+          }
+          if (isContention(error)) {
             await pause();
             continue;
           }
