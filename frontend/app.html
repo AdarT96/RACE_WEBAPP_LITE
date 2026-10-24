@@ -2380,7 +2380,11 @@
       updateStaleViewBanner();
       const followLatestUntilConfirmed = !roundChosenByUser && !initialRoundConfirmed;
       if (!snap.metadata.fromCache) initialRoundConfirmed = true;
-      if (metadataOnly) return;
+      if (metadataOnly) {
+        // השרת אישר שאין סבבים — מחליפים את "טוען" ב"ממתין למפק״צ".
+        if (!latestRace && !snap.metadata.fromCache) renderIdleForNextRound(1);
+        return;
+      }
       const previousLatestId = latestRace?.id || null;
       const previousViewedId = currentRaceId;
       const list = [];
@@ -2396,6 +2400,9 @@
         currentRaceId = null;
         renderRoundNavigation();
         renderIdleForNextRound(1);
+        // רשימה ריקה מהמטמון בתחנה שלא נפתחה במכשיר הזה אינה "עוד לא התחיל": בקליטה חלשה
+        // הסבב יכול כבר לרוץ. עד שהשרת עונה, מעריך רואה "טוען" ולא "ממתין למפק״צ".
+        if (snap.metadata.fromCache && !canControlSession()) setText('idle-hint', 'טוען את מצב התחנה…');
         roundShown();
         return;
       }

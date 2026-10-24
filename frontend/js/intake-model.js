@@ -192,7 +192,7 @@ export function candidateDataReasons({ candidate, races = [], hasRecommendation 
 export function moveBlockedMessage(reasons = []) {
   const list = (Array.isArray(reasons) ? reasons : []).filter(Boolean);
   return `לא ניתן להעביר את המועמד כי כבר יש לו נתונים${list.length ? ` (${list.join('; ')})` : ''}. ` +
-    'העברה של מועמד עם נתונים תתאפשר למנהל בגרסה הבאה.';
+    'אם צריך להעביר אותו בכל זאת, פנה למנהל המערכת.';
 }
 
 // הודעת שגיאה ברורה לשגיאות Firestore נפוצות. כתיבה שנכשלה לא נשמרה.
