@@ -5,7 +5,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
-  localScheduleClock, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
+  localScheduleClock, nextScheduleEntry, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
 } from './schedule-model.js';
 import {
   INTENSITY_LABELS, stationIntensityFor
@@ -514,6 +514,13 @@ window.closeSchedulePreview = () => {
   document.getElementById('schedule-preview-modal').hidden = true;
 };
 
+// מספר התחנה (כמו בבורר התחנות באפליקציה) לצד מספר המסלול בשטח
+function entryPlace(entry) {
+  const station = entry.stationId ? `תחנה ${escapeHtml(entry.stationId)}` : '';
+  const route = entry.routeNumber ? `מסלול ${entry.routeNumber}` : 'ללא מספר מסלול';
+  return station ? `${station} · ${route}` : route;
+}
+
 function renderTeamSchedule() {
   const list = document.getElementById('team-schedule-list');
   const empty = document.getElementById('team-schedule-empty');
@@ -527,16 +534,25 @@ function renderTeamSchedule() {
   }
   const team = String(teamProjection.team || pad2(currentUser.team));
   const current = scheduleEntryAt(entries, new Date(), teamProjection.timeZone);
+  const upcoming = nextScheduleEntry(entries, new Date(), teamProjection.timeZone);
+  const next = upcoming?.entry || null;
   const currentCard = document.getElementById('team-current-card');
+  const entryText = entry => entry.kind === SCHEDULE_ROW_KINDS.GLOBAL ? entry.label : stationName(team, entry.stationId);
+  // "עכשיו" ו"הבא" בראש הדף: לאן הולכים ומתי, בלי לחפש ברשימה
+  const parts = [];
   if (current) {
-    const stationText = current.kind === SCHEDULE_ROW_KINDS.GLOBAL
-      ? current.label : stationName(team, current.stationId);
-    currentCard.innerHTML = `<h2>עכשיו: ${escapeHtml(stationText)}</h2>
-      <p>${formatScheduleTime(current.startMinute)}${current.routeNumber ? ` · מסלול ${escapeHtml(current.routeNumber)}` : ''}</p>
+    parts.push(`<h2>עכשיו: ${escapeHtml(entryText(current))}</h2>
+      <p>${formatScheduleTime(current.startMinute)} · ${escapeHtml(entryPlace(current))}</p>
       ${current.kind === SCHEDULE_ROW_KINDS.ROTATION && current.stationId
-        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`;
-    currentCard.hidden = false;
-  } else currentCard.hidden = true;
+        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`);
+  }
+  if (next) {
+    const when = upcoming.minutesUntil != null ? ` · בעוד ${upcoming.minutesUntil} דק׳` : '';
+    parts.push(`<p class="team-next-line"><strong>הבא:</strong> ${escapeHtml(entryText(next))} · ${formatScheduleTime(next.startMinute)}${when}${
+      next.kind === SCHEDULE_ROW_KINDS.ROTATION ? ` · ${escapeHtml(entryPlace(next))}` : ''}</p>`);
+  }
+  currentCard.innerHTML = parts.join('');
+  currentCard.hidden = !parts.length;
   const byDate = entries.reduce((map, entry) => {
     (map[entry.date] ||= []).push(entry); return map;
   }, {});
@@ -544,16 +560,17 @@ function renderTeamSchedule() {
     <h2 class="team-day-title">${escapeHtml(dateLabel(date))}</h2>
     ${dayEntries.map(entry => {
       const isCurrent = entry.id === current?.id;
+      const nextBadge = entry.id === next?.id ? '<em class="team-entry-badge">הבא</em>' : '';
       if (entry.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
         return `<div class="team-entry global ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}">
           <strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
-          <div class="team-entry-main"><strong>${escapeHtml(entry.label)}</strong><span>פעילות משותפת</span></div>
+          <div class="team-entry-main"><strong>${escapeHtml(entry.label)}${nextBadge}</strong><span>פעילות משותפת</span></div>
         </div>`;
       }
       const intensity = stationIntensity(team, entry.stationId);
       const content = `<strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
-        <div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}</strong>
-          <span>${entry.routeNumber ? `מסלול ${escapeHtml(entry.routeNumber)}` : 'ללא מספר מסלול'}</span></div>
+        <div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}${nextBadge}</strong>
+          <span>${escapeHtml(entryPlace(entry))}</span></div>
         <span class="team-entry-intensity"><i class="intensity-dot intensity-${intensity}"></i>${INTENSITY_LABELS[intensity]}</span>`;
       return entry.stationId
         ? `<a class="team-entry ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}" href="${evaluationUrl(team, entry.stationId)}">${content}</a>`

@@ -21,6 +21,9 @@ import { createForegroundGate, markLoad } from './load-priority.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
+import { initCollapsibleCards } from './collapsible-cards.js';
+
+initCollapsibleCards();
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -134,7 +137,9 @@ function showFormError(message) {
 
 function duplicateIdMessage(profile, exceptKey = '') {
   const owner = nationalIdOwner(roster, profile.nationalId, exceptKey);
-  return owner ? `תעודת הזהות כבר רשומה למועמד ${owner.participantId} (${intakeTeamLabel(owner.team)}).` : '';
+  if (!owner) return '';
+  const name = owner.fullName ? ` — ${owner.fullName}` : '';
+  return `תעודת הזהות כבר רשומה למועמד ${owner.participantId}${name} (${intakeTeamLabel(owner.team)}). בדקו את המספר, או חפשו אותו ברשימה למטה.`;
 }
 
 // בודק לפני שליחה: אותם כללים כמו בייבוא, ותעודת זהות שכבר רשומה באירוע.
@@ -150,6 +155,7 @@ let duplicateIdShown = false;
 function checkDuplicateIdWhileTyping() {
   const { profile, errors } = prepareIntakeProfile({ ...formValues(), fullName: 'x' });
   const message = errors.length ? '' : duplicateIdMessage(profile);
+  $('field-nationalId').setAttribute('aria-invalid', message ? 'true' : 'false');
   if (message) { duplicateIdShown = true; showFormError(message); }
   else if (duplicateIdShown) { duplicateIdShown = false; showFormError(''); }
 }
@@ -177,6 +183,9 @@ async function saveNewCandidate(event) {
     $('result-caption').textContent = `${values.fullName.trim().replace(/\s+/g, ' ')} · ${intakeTeamLabel(result.team)}`;
     $('result').hidden = false;
     resetForm();
+    $('field-nationalId').setAttribute('aria-invalid', 'false');
+    // המספר החדש (מעל הטופס) צריך להיות על המסך, לא רק שדה השם
+    $('result').scrollIntoView({ block: 'start', behavior: 'smooth' });
   } catch (error) {
     showFormError(intakeErrorMessage(error));
   } finally {

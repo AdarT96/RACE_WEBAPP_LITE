@@ -476,7 +476,7 @@
   } from "./js/evaluation-model.js";
   import { FORMATION_EVENT_SCHEMA_VERSION } from "./js/formation-operations-model.js";
   import {
-    EVENT_STAFFING_SCHEMA_VERSION, ROLES, roleLabel as sharedRoleLabel, roleNeedsTeam
+    EVENT_STAFFING_SCHEMA_VERSION, ROLES, destinationForRole, roleLabel as sharedRoleLabel, roleNeedsTeam
   } from "./js/roles.js";
   import { staffPatchForUserChange } from "./js/staff-assignment.js";
   import { createForegroundGate, markLoad } from "./js/load-priority.js";
@@ -500,6 +500,12 @@
   onAuthStateChanged(auth, async (user) => {
     if (!user) { messageCenter?.dispose(); messageCenter = null; window.location.href = 'index.html'; return; }
     const snap = await getDocPatiently(doc(db, 'users', user.uid));
+    // משתמש מאושר שאינו מנהל — לדף שלו מיד, בלי לנתק אותו
+    if (snap.exists() && snap.data().role !== 'admin' && snap.data().approved === true &&
+        destinationForRole(snap.data().role) !== 'index.html') {
+      location.replace(destinationForRole(snap.data().role));
+      return;
+    }
     if (!snap.exists() || snap.data().role !== 'admin') {
       showToast('גישת מנהל בלבד', 'error');
       setTimeout(() => { signOut(auth); window.location.href = 'index.html'; }, 1500);

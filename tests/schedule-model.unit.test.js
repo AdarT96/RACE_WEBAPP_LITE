@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SCHEDULE_MAX_TEAMS, SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, normalizeSchedule,
-  recommendedStationFromProjection, scheduleEntryAt, scheduleIssues
+  nextScheduleEntry, recommendedStationFromProjection, scheduleEntryAt, scheduleIssues
 } from '../frontend/js/schedule-model.js';
 import { stationIntensityFor } from '../frontend/js/station-intensity.js';
-import { evaluationTargetFromSearch, resolveInitialStation } from '../frontend/js/app-navigation-model.js';
+import { evaluationTargetFromSearch, resolveInitialStation, stationOutsideSchedule } from '../frontend/js/app-navigation-model.js';
 
 function masterSchedule() {
   return normalizeSchedule({
@@ -74,6 +74,26 @@ test('current and recommended entries respect the Israel-local schedule', () => 
   const duringBreak = new Date('2026-08-23T23:05:00.000Z'); // 02:05, before the first row
   assert.equal(recommendedStationFromProjection(projection, duringBreak)?.stationId, '04');
   assert.equal(recommendedStationFromProjection(projection, duringBreak)?.source, 'next');
+});
+
+test('the next row and the minutes until it starts', () => {
+  const projection = buildTeamScheduleProjection(masterSchedule(), '01');
+  const duringFirst = new Date('2026-08-24T00:20:00.000Z'); // 03:20 — "first" runs, "second" at 04:00
+  assert.deepEqual(nextScheduleEntry(projection.entries, duringFirst),
+    { entry: projection.entries[2], minutesUntil: 40 });
+  const dayBefore = new Date('2026-08-23T10:00:00.000Z'); // another date: no minute count
+  assert.equal(nextScheduleEntry(projection.entries, dayBefore).minutesUntil, null);
+  const afterAll = new Date('2026-08-25T10:00:00.000Z');
+  assert.equal(nextScheduleEntry(projection.entries, afterAll), null);
+});
+
+test('a station outside the team schedule is flagged; no schedule flags nothing', () => {
+  const projection = buildTeamScheduleProjection(masterSchedule(), '01');
+  assert.equal(stationOutsideSchedule(projection, '04'), false);
+  assert.equal(stationOutsideSchedule(projection, '07'), true);
+  assert.equal(stationOutsideSchedule(null, '07'), false);
+  assert.equal(stationOutsideSchedule({ entries: [] }, '07'), false);
+  assert.equal(stationOutsideSchedule(projection, ''), false);
 });
 
 test('station intensity remains descriptive metadata without a load policy', () => {

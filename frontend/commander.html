@@ -115,6 +115,9 @@
       .formation-table tr.team-details-row { padding:0; border:0; background:transparent; }
       .formation-table td.team-details-cell { display:block; padding:0 0 14px !important; border:0; }
       .formation-table td.team-details-cell::before { display:none; }
+      .formation-table tr.team-summary-row { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px 10px; }
+      .formation-table tr.team-summary-row td { display:flex; flex-direction:column; align-items:flex-start; justify-content:flex-start; gap:1px; padding:3px 0; border-bottom:0; text-align:right; }
+      .formation-table tr.team-summary-row td::before { font-size:10px; }
       .team-candidate-row { grid-template-columns:1fr 1fr; }
       .team-candidate-row .candidate-action { grid-column:1 / -1; }
     }
@@ -130,10 +133,10 @@
     <div class="navbar-actions">
       <span id="commander-user" class="user-name"></span>
       <span class="badge badge-info">תפעול</span>
-      <a href="schedule.html" class="btn btn-ghost" style="padding:6px 10px">לו״ז</a>
-      <a href="intake.html" class="btn btn-ghost" style="padding:6px 10px">קליטה</a>
-      <a id="admin-link" href="admin.html" class="btn btn-ghost" style="display:none; padding:6px 10px">ניהול</a>
-      <button class="btn btn-ghost" style="padding:6px 10px" onclick="logout()">התנתק</button>
+      <a href="schedule.html" class="btn btn-ghost nav-btn">לו״ז</a>
+      <a href="intake.html" class="btn btn-ghost nav-btn">קליטה</a>
+      <a id="admin-link" href="admin.html" class="btn btn-ghost nav-btn" style="display:none">ניהול</a>
+      <button class="btn btn-ghost nav-btn" onclick="logout()">התנתק</button>
     </div>
   </nav>
 
@@ -148,13 +151,16 @@
 
     <div id="blocking-message" class="formation-alert" hidden></div>
     <div id="dashboard-content" hidden>
-      <section class="formation-kpis" aria-label="תמונת מצב">
+      <section class="formation-card formation-kpis-card" data-collapsible="kpis">
+        <h2>תמונת מצב</h2>
+        <div class="formation-kpis" aria-label="תמונת מצב">
         <div class="formation-kpi"><strong id="kpi-candidates">0</strong><span>מועמדים בגיבוש</span></div>
         <div class="formation-kpi"><strong id="kpi-active">0</strong><span>פעילים</span></div>
         <div class="formation-kpi"><strong id="kpi-withdrawn">0</strong><span>נשרו</span></div>
         <div class="formation-kpi"><strong id="kpi-teams">0</strong><span>צוותים</span></div>
         <div class="formation-kpi"><strong id="kpi-running">0</strong><span>צוותים בתחנה פעילה</span></div>
         <a class="formation-kpi" href="intake.html" style="color:inherit; text-decoration:none"><strong id="kpi-unassigned">0</strong><span>כלליים (ללא צוות) · לקליטה</span></a>
+        </div>
       </section>
 
       <section class="formation-card candidate-search-card">
@@ -165,14 +171,14 @@
         <div id="candidate-search-results" class="candidate-search-results" hidden></div>
       </section>
 
-      <section class="formation-card formation-alert-center">
+      <section class="formation-card formation-alert-center" data-collapsible="alerts">
         <div class="formation-alert-head"><div><h2>מרכז חריגות</h2><p class="formation-card-help">תקלות ומצבים שדורשים תשומת לב תפעולית.</p></div><span id="alert-count" class="formation-alert-count">0</span></div>
         <div id="anomalies" class="anomaly-list"></div>
       </section>
 
       <div class="formation-grid">
         <div class="formation-stack">
-          <section class="formation-card">
+          <section class="formation-card" data-collapsible="teams">
             <h2>מצב הצוותים</h2>
             <p class="formation-card-help">לחץ על צוות כדי לפתוח את רשימת המועמדים שלו. הנתונים מתעדכנים בזמן אמת.</p>
             <div class="formation-table-wrap">
@@ -186,12 +192,12 @@
         </div>
 
         <aside class="formation-stack">
-          <section class="formation-card">
+          <section class="formation-card" data-collapsible="recommendations">
             <h2>המלצות מפק״צים</h2>
             <p class="formation-card-help">רק המלצות שעדיין ממתינות להחלטה.</p>
             <div id="recommendations" class="recommendation-list"></div>
           </section>
-          <section class="formation-card">
+          <section class="formation-card" data-collapsible="reasons">
             <h2>סיבות נשירה</h2>
             <div id="reason-bars" class="reason-bars"></div>
           </section>
