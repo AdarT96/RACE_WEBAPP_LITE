@@ -9,6 +9,8 @@
 //     <div data-collapsible-keep>…</div>           ← נשאר גלוי גם כשהכרטיס מכווץ
 //     …                                             ← מוסתר כשהכרטיס מכווץ
 //   </section>
+//
+// data-collapsed-default="1" — מכווץ כל עוד המשתמש לא בחר אחרת.
 
 const STORAGE_PREFIX = 'lite:card:';
 
@@ -17,8 +19,12 @@ function storageKey(id) {
   return `${STORAGE_PREFIX}${page}:${id}`;
 }
 
-function readCollapsed(id) {
-  try { return localStorage.getItem(storageKey(id)) === '1'; } catch (error) { return false; }
+// בלי בחירה שמורה — ברירת המחדל של הכרטיס (data-collapsed-default="1" = מכווץ)
+function readCollapsed(id, fallback = false) {
+  try {
+    const saved = localStorage.getItem(storageKey(id));
+    return saved == null ? fallback : saved === '1';
+  } catch (error) { return fallback; }
 }
 
 function writeCollapsed(id, collapsed) {
@@ -46,7 +52,7 @@ export function initCollapsibleCards(root = document) {
       button.setAttribute('aria-label', title ? `${label}: ${title}` : label);
       button.title = collapsed ? 'הצג את הכרטיס' : 'כווץ את הכרטיס';
     };
-    apply(readCollapsed(id));
+    apply(readCollapsed(id, card.dataset.collapsedDefault === '1'));
     button.addEventListener('click', event => {
       event.stopPropagation();
       const collapsed = !card.classList.contains('is-collapsed');

@@ -67,6 +67,12 @@
 .team-current-card a { margin-top:11px; }
 .team-schedule-list { display:grid; gap:16px; }
 .team-day { display:grid; gap:8px; }
+.team-day.is-collapsed { gap:0; }
+.team-day > .card-collapse-btn { top:0; }
+.team-day > .team-day-title { display:flex; align-items:center; }
+.day-hidden { display:none; }
+.day-header-row td { padding:6px 0 !important; background:transparent; }
+.day-toggle { display:flex; align-items:center; gap:8px; width:100%; min-height:44px; padding:8px 12px; border:1px solid var(--border); border-radius:9px; background:var(--surface); color:var(--text); font:inherit; font-weight:800; text-align:right; cursor:pointer; }
 .team-day-title { position:sticky; top:65px; z-index:3; padding:8px 11px; border-radius:9px; background:var(--surface); border:1px solid var(--border); font-size:14px; }
 .team-entry { display:grid; grid-template-columns:72px 1fr auto; gap:12px; align-items:center; padding:13px 14px; color:var(--text); text-decoration:none; border:1px solid var(--border); border-radius:12px; background:var(--card); box-shadow:var(--shadow); }
 .team-entry:hover { border-color:var(--accent); }

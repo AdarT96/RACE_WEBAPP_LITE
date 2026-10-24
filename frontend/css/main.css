@@ -920,7 +920,8 @@ body.app-menu-open .mc-toasts { display: none; }
 [data-collapsible] > [data-collapsible-head] { padding-inline-end: 52px; min-height: 44px; }
 [data-collapsible].is-collapsed > :not([data-collapsible-head]):not([data-collapsible-keep]):not(.card-collapse-btn) { display: none !important; }
 .card-collapse-btn {
-  position: absolute; top: 8px; inset-inline-end: 8px; z-index: 2;
+  /* מעל כותרות דביקות בתוך הכרטיס (z-index 3), מתחת לסרגל העליון */
+  position: absolute; top: 8px; inset-inline-end: 8px; z-index: 5;
   width: 44px; height: 44px; display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border); border-radius: 12px; background: var(--surface);
   color: var(--text-muted); font-size: 18px; line-height: 1; cursor: pointer;
