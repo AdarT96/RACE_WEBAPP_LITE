@@ -1781,7 +1781,9 @@
     'candidates', 'candidateStatusEvents', 'dropoutRecommendations',
     'teams', 'schedule', 'teamSchedules', 'scheduleRevisions', 'staff', 'artifacts', 'rosterImports',
     // קליטת מועמדים: מועמדים כלליים (ללא צוות), רישום המספרים והמונה
-    'unassignedCandidates', 'candidateNumbers', 'intake'
+    'unassignedCandidates', 'candidateNumbers', 'intake',
+    // הודעות פנימיות ומצב הקריאה של כל משתמש
+    'messages', 'messageReads'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 
@@ -1869,8 +1871,10 @@
       const staffUids = (await getDocs(collection(db, 'events', eventId, 'staff'))).docs.map(d => d.id);
 
       // 2. סבבים ותת-האוספים שלהם. סבב ישן ללא eventId אינו משויך לגיבוש
-      //    ולכן אינו נמחק — הוא מדווח בסיכום.
-      setPurgeStatus('מוחק סבבים והערכות…');
+      //    ולכן אינו נמחק — הוא מדווח בסיכום. הם נמחקים רק אחרי ההערות (שלב 4),
+      //    כי רשימות המשתתפים שבהם הן המפתח להערות; מחיקה שנעצרה באמצע ורצה
+      //    שוב עדיין מוצאת אותן.
+      setPurgeStatus('קורא סבבים…');
       const races = await getDocs(query(collection(db, 'races'), where('eventId', '==', eventId)));
       const raceRefs = [];
       for (const race of races.docs) {
@@ -1879,7 +1883,6 @@
         }
         raceRefs.push(race.ref);
       }
-      counts['סבבים והערכות'] = await deleteRefsInBatches(raceRefs);
 
       // 3. דיווחי תקלות של הגיבוש.
       setPurgeStatus('מוחק דיווחי תקלות…');
@@ -1887,14 +1890,32 @@
       counts['דיווחי תקלות'] = await deleteRefsInBatches(issues.docs.map(d => d.ref));
 
       // 4. הערות הגיבוש. הערות חדשות יושבות תחת האירוע, ולכן נמחקות במדויק
-      //    ובלי שאלות. כל טאב הערות מחזיק תת-אוסף authors שיש למחוק לפניו.
+      //    ובלי שאלות: generalNotes/{צוות}_{מספר}/authors/{מעריך}. מסמך האב
+      //    generalNotes/{צוות}_{מספר} לא נוצר אף פעם, ולכן רשימת generalNotes
+      //    ריקה — המפתחות נבנים מהמועמדים (הצוות הנוכחי) ומהסבבים (כל צוות
+      //    שבו מועמד השתתף, גם אם הועבר אחר כך).
       setPurgeStatus('מוחק את הערות הגיבוש…');
-      const eventNoteRefs = [];
-      for (const noteDoc of (await getDocs(collection(db, 'events', eventId, 'generalNotes'))).docs) {
-        eventNoteRefs.push(...await refsIn(['events', eventId, 'generalNotes', noteDoc.id, 'authors']));
-        eventNoteRefs.push(noteDoc.ref);
+      const eventNoteKeys = new Set(noteKeys);
+      for (const race of races.docs) {
+        const data = race.data();
+        for (const participantId of (data.participantIds || [])) {
+          eventNoteKeys.add(noteKeyFor({ team: data.team, participantId }));
+        }
       }
+      const existingNoteDocs = (await getDocs(collection(db, 'events', eventId, 'generalNotes'))).docs;
+      existingNoteDocs.forEach(noteDoc => eventNoteKeys.add(noteDoc.id));
+      const eventNoteRefs = [];
+      const keys = [...eventNoteKeys];
+      for (let index = 0; index < keys.length; index += 20) {
+        const chunk = await Promise.all(keys.slice(index, index + 20)
+          .map(key => refsIn(['events', eventId, 'generalNotes', key, 'authors'])));
+        chunk.forEach(refs => eventNoteRefs.push(...refs));
+      }
+      eventNoteRefs.push(...existingNoteDocs.map(noteDoc => noteDoc.ref));
       counts['הערות הגיבוש'] = await deleteRefsInBatches(eventNoteRefs);
+
+      setPurgeStatus('מוחק סבבים והערכות…');
+      counts['סבבים והערכות'] = await deleteRefsInBatches(raceRefs);
 
       // 5. הערות ישנות שטרם הוסבו. האוסף הגלובלי general_notes ממופתח
       //    {צוות}_{מספר מועמד} בלי אירוע, ולכן זוג שקיים גם בגיבוש הפעיל
