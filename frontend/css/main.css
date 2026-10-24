@@ -501,7 +501,7 @@ input[type=range] {
   justify-content: space-between;
   margin-bottom: 20px;
 }
-.modal-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 4px; }
+.modal-close { background: none; border: none; color: var(--text-muted); font-size: 20px; cursor: pointer; padding: 4px; min-width: 44px; min-height: 44px; }
 .modal-close:hover { color: var(--text); }
 
 /* ── View Switcher ── */
