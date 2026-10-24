@@ -1586,6 +1586,16 @@
   window.openIssueReport = () => {
     issueReportPreviousFocus = document.getElementById('app-menu-button');
     closeAppMenu();
+    // דיווח נשמר תחת הגיבוש הפעיל ועם צוות המדווח (כך גם בחוקים). בלי אחד מהם
+    // אומרים זאת מיד, במקום לתת למלא טופס שהשליחה שלו תיכשל.
+    if (!activeFormationEvent?.id) {
+      showToast('דיווח תקלה זמין רק כשיש גיבוש פעיל', 'info');
+      return;
+    }
+    if (!Number(currentUser?.team || selectedTeam)) {
+      showToast('בחר צוות לפני דיווח תקלה', 'info');
+      return;
+    }
     const draft = readIssueReportDraft();
     const modal = document.getElementById('issue-report-modal');
     const category = document.getElementById('issue-category');
