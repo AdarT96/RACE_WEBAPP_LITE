@@ -20,6 +20,9 @@ import { createForegroundGate, markLoad } from './load-priority.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
+import { initCollapsibleCards } from './collapsible-cards.js';
+
+initCollapsibleCards();
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -198,7 +201,7 @@ function renderTeams(snapshot) {
     <tr class="team-summary-row">
       <td data-label="צוות"><button class="team-toggle" type="button" aria-expanded="${expanded}"
           onclick="toggleTeam('${escapeHtml(team.team)}')"><span aria-hidden="true">${expanded ? '▾' : '◂'}</span> צוות ${Number(team.team)}</button></td>
-      <td data-label="פעילים">${team.active} / ${team.total}</td>
+      <td data-label="פעילים">${team.active} מתוך ${team.total}</td>
       <td data-label="נשרו">${team.withdrawn}</td>
       <td data-label="תחנה">${team.station
         ? `<button type="button" class="team-station-open" onclick="openTeamStationDetails('${escapeHtml(team.team)}')">${escapeHtml(stationName(team))}<small>פרטי תחנה</small></button>`
@@ -507,8 +510,10 @@ onAuthStateChanged(auth, async user => {
     const rawProfile = snapshot.exists() ? snapshot.data() : null;
     const profile = rawProfile ? await resolveActiveUserContext(db, user.uid, rawProfile, { pointerRead }) : null;
     markLoad('profile resolved');
-    if (profile?.approved && profile.eventAccess !== false && profile.role === ROLES.ADJUTANT) {
-      location.href = destinationForRole(profile.role);
+    // מאושר בלי גישה לדשבורד (שלישות, מפק״צ, מעריך) — לדף שלו, בלי לנתק אותו
+    if (profile?.approved && profile.eventAccess !== false && !canManageFormation(profile.role) &&
+        destinationForRole(profile.role) !== 'index.html') {
+      location.replace(destinationForRole(profile.role));
       return;
     }
     if (!profile || (!profile.approved && profile.role !== ROLES.ADMIN) || !canManageFormation(profile.role)) {

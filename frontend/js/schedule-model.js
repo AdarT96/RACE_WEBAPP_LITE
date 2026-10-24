@@ -212,6 +212,15 @@ export function scheduleEntryAt(entries, now = new Date(), timeZone = SCHEDULE_T
   return null;
 }
 
+// השורה הבאה שעוד לא התחילה, ובכמה דקות היא מתחילה (רק כשהיא היום).
+export function nextScheduleEntry(entries, now = new Date(), timeZone = SCHEDULE_TIME_ZONE) {
+  const clock = localScheduleClock(now, timeZone);
+  const nowKey = scheduleMinuteKey(clock.date, clock.startMinute);
+  const next = sortScheduleRows(entries).find(entry => scheduleMinuteKey(entry.date, entry.startMinute) > nowKey);
+  if (!next) return null;
+  return { entry: next, minutesUntil: next.date === clock.date ? next.startMinute - clock.startMinute : null };
+}
+
 export function recommendedStationFromProjection(projection, now = new Date()) {
   const entries = sortScheduleRows(projection?.entries);
   if (!entries.length) return null;

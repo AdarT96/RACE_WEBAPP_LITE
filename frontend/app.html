@@ -21,6 +21,7 @@
       display: flex; align-items: center; gap: 8px;
     }
     .station-header select {
+      min-height: 44px;
       padding: 8px 12px; background: var(--surface);
       border: 1px solid var(--border); border-radius: 8px;
       color: var(--text); font-size: 15px; min-width: 120px;
@@ -42,6 +43,7 @@
       font-size: 22px; font-weight: 800; color: var(--accent); direction: ltr;
     }
     .status-cell .lbl { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    #hdr-progress { direction: rtl; }
 
     /* ── Round navigation (sprints + stretcher only) ──────── */
     .round-nav { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
@@ -66,7 +68,7 @@
     }
     .round-tab.running .round-state { color: var(--success); }
     .round-nav-btn {
-      flex: 0 0 auto; width: 42px; height: 42px; padding: 0; border-radius: 50%;
+      flex: 0 0 auto; width: 44px; height: 44px; padding: 0; border-radius: 50%;
       border: 1px solid var(--border); background: var(--card); color: var(--text);
       font-size: 20px; cursor: pointer;
     }
@@ -283,7 +285,7 @@
     .arrival-drop-start { color: var(--text-muted); font-size: 11px; padding: 8px; }
     .arrival-drag-handle, .arrival-move-btn {
       display: inline-flex; align-items: center; justify-content: center;
-      width: 32px; height: 32px; padding: 0; border: 1px solid var(--border);
+      width: 44px; height: 44px; padding: 0; border: 1px solid var(--border);
       border-radius: 8px; background: var(--surface); color: var(--text-muted);
     }
     .arrival-drag-handle { cursor: grab; touch-action: none; font-size: 20px; line-height: 1; }
@@ -334,10 +336,10 @@
 
     @media (max-width: 430px) {
       .arrival-row, .arrival-row.pending {
-        grid-template-columns: 32px 28px minmax(32px, 1fr) auto;
+        grid-template-columns: 44px 28px minmax(32px, 1fr) auto;
         gap: 4px; padding: 5px 6px;
       }
-      .arrival-drag-handle, .arrival-move-btn { width: 32px; height: 36px; }
+      .arrival-drag-handle, .arrival-move-btn { width: 40px; height: 44px; }
       .arrival-actions { gap: 2px; }
       .arrival-pid { font-size: 16px; }
     }
@@ -437,8 +439,15 @@
 
     /* ── App menu + issue report ───────────────────────── */
     .app-menu-wrap { position: relative; }
+    .offline-banner {
+      margin: 12px auto 0; padding: 10px 14px; border-radius: 10px;
+      background: #7f1d1d; color: #fff; font-weight: 700; font-size: 14px; line-height: 1.4;
+    }
+    body.is-offline .session-control-only { opacity: .55; }
+    .sn-next-row { display: flex; justify-content: flex-start; margin: 0 0 12px; }
+    .sn-next-btn { min-height: 44px; padding: 8px 14px; }
     .app-menu-button {
-      width: 40px; height: 40px; padding: 0; border-radius: 10px;
+      width: 44px; height: 44px; padding: 0; border-radius: 10px;
       font-size: 22px; line-height: 1;
     }
     .app-menu {
@@ -630,9 +639,10 @@
     .sn-param-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .sn-param-name { font-size: 16px; font-weight: 800; }
     .sn-param-hint { font-size: 11px; color: var(--text-dim); }
-    .sn-score-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+    /* כל הציונים בשורה אחת — 7 לא נשבר לשורה נפרדת */
+    .sn-score-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 10px; }
     .sn-score-btn {
-      flex: 1 1 auto; min-width: 40px; padding: 10px 0;
+      min-width: 0; min-height: 44px; padding: 10px 0;
       background: var(--surface); border: 2px solid var(--border); border-radius: 10px;
       color: var(--text); font-size: 18px; font-weight: 800; font-family: 'Courier New', monospace;
       cursor: pointer; direction: ltr; user-select: none;
@@ -712,16 +722,19 @@
               onclick="toggleAppMenu()" aria-haspopup="menu" aria-expanded="false"
               aria-controls="app-menu" aria-label="פתח תפריט">☰</button>
       <div class="app-menu" id="app-menu" role="menu" hidden>
-        <button type="button" class="app-menu-item" role="menuitem" onclick="openCandidateDashboard()">👤 מועמדים</button>
+        <button type="button" class="app-menu-item" role="menuitem" onclick="openCandidateDashboard()">👤 כרטיס מועמד</button>
         <a class="app-menu-item" role="menuitem" href="schedule.html">🗓️ לו״ז צוותי</a>
         <button type="button" class="app-menu-item" role="menuitem" onclick="openIssueReport()">⚠️ דיווח תקלה</button>
-        <button type="button" class="app-menu-item" role="menuitem" id="outdoor-btn" onclick="toggleOutdoorMode(); closeAppMenu()">☀️ מצב חוץ</button>
+        <button type="button" class="app-menu-item" role="menuitem" id="outdoor-btn" onclick="toggleOutdoorMode(); closeAppMenu()">☀️ מצב חוץ: כבוי</button>
         <button type="button" class="app-menu-item" role="menuitem" onclick="logout()">↪ התנתק</button>
       </div>
     </div>
   </div>
 </nav>
 
+<div class="container" id="offline-banner" role="status" aria-live="polite" hidden>
+  <div class="offline-banner">📵 אין קליטה. ציונים וסדר הגעה נשמרים במכשיר ויישלחו כשהקליטה תחזור. התחלה וסיום סבב יתאפשרו רק עם קליטה.</div>
+</div>
 <div class="container" id="arrival-save-status" role="status" aria-live="polite" hidden></div>
 <div class="container" id="stale-view-banner" role="status" aria-live="polite" hidden style="padding-top:12px">
   <div class="alert alert-warning" style="margin:0">⚠️ אין עדכון מהשרת כרגע — ייתכן שהמסך אינו מעודכן (סבב חדש עלול לא להופיע). בדוק קליטה לפני שממשיכים לדרג.</div>
@@ -729,7 +742,7 @@
 <div class="container" id="station-view" style="padding-top:16px; padding-bottom:80px">
 
   <!-- ══════════ Station header ══════════ -->
-  <div class="section app-section section--overview" id="station-header-section">
+  <div class="section app-section section--overview" id="station-header-section" data-collapsible="station">
     <div class="station-header">
       <div class="picker">
         <span>צוות:</span>
@@ -752,7 +765,7 @@
     <div class="status-strip">
       <div class="status-cell">
         <div class="val" id="hdr-round">—</div>
-        <div class="lbl">סבב</div>
+        <div class="lbl">סבב בתחנה</div>
       </div>
       <div class="status-cell">
         <div class="val" id="hdr-status">—</div>
@@ -767,17 +780,17 @@
         <div class="lbl">זמן מתחילת הסבב</div>
       </div>
     </div>
-    <div id="round-nav" class="round-nav" style="display:none" aria-label="ניווט בין סבבים">
+    <div id="round-nav" class="round-nav" style="display:none" aria-label="ניווט בין סבבים" data-collapsible-keep>
       <button id="round-older-btn" class="round-nav-btn" onclick="moveViewedRound(-1)"
               aria-label="סבב קודם" title="סבב קודם">→</button>
       <div id="round-tabs" class="round-tabs" role="tablist" aria-label="סבבים"></div>
       <button id="round-newer-btn" class="round-nav-btn" onclick="moveViewedRound(1)"
               aria-label="סבב הבא" title="סבב הבא">←</button>
     </div>
-    <div id="live-round-banner" class="live-round-banner" style="display:none">
+    <div id="live-round-banner" class="live-round-banner" style="display:none" data-collapsible-keep>
       <strong id="live-round-label"></strong>
       <span id="live-round-time">00:00.00</span>
-      <button class="btn btn-success" onclick="returnToLiveRound()" style="padding:5px 10px; font-size:12px">
+      <button class="btn btn-success" onclick="returnToLiveRound()" style="padding:8px 12px; font-size:13px; min-height:44px">
         עבור לסבב החדש
       </button>
     </div>
@@ -802,7 +815,7 @@
   <div id="race-panel" style="display:none">
 
     <!-- Participants to finish -->
-    <div class="section app-section section--action evaluator-only" id="grid-section">
+    <div class="section app-section section--action evaluator-only" id="grid-section" data-collapsible="grid">
       <div class="section-title-row">
         <div class="section-title-group">
           <span class="section-kicker" id="grid-kicker">פעולה בזמן אמת</span>
@@ -859,6 +872,9 @@
         </div>
 
         <div id="sn-selected-area" style="margin-top:16px; display:none">
+          <div class="sn-next-row">
+            <button type="button" class="btn btn-ghost sn-next-btn" onclick="selectNextUnscored()">המשתתף הבא בלי נתונים ←</button>
+          </div>
           <div style="font-size:13px; margin-bottom:12px">
             נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
             <span id="sn-station-type" style="color:var(--text-muted)"></span>
@@ -1154,7 +1170,8 @@
     activeParticipantIds, clearanceStatusLabel, dropoutReasonLabel, normalizeCandidateRecord
   } from "./js/formation-operations-model.js";
   import { createFormationOperationsRepository } from "./js/formation-operations-repository.js";
-  import { evaluationTargetFromSearch, resolveInitialStation } from "./js/app-navigation-model.js";
+  import { evaluationTargetFromSearch, resolveInitialStation, stationOutsideSchedule } from "./js/app-navigation-model.js";
+  import { initCollapsibleCards } from "./js/collapsible-cards.js";
   import {
     arrivalEntriesInOrder, moveParticipantInOrder
   } from "./js/arrival-order-model.js";
@@ -1192,6 +1209,7 @@
   // בחירה ידנית בזמן שהלו״ז עוד נטען: ההמלצה של הלו״ז לא דורסת אותה כשתגיע.
   // קודם המפק״צ בחר תחנה, והטעינה החזירה את התחנה של הלו״ז — והסבב נפתח בה.
   let stationChosenByUser = false;
+  let teamScheduleProjection = null;   // הלו״ז של הצוות, להתראה על תחנה שאינה בו
   let racesForContext = [];        // all rounds for selected team+station, oldest first
   let latestRace = null;           // newest round; lifecycle actions always target this
   let currentRace = null;          // round currently viewed/evaluated
@@ -1497,14 +1515,21 @@
   }
 
   // ═════════ Outdoor mode ═════════
+  function renderOutdoorLabel() {
+    const on = document.body.classList.contains('outdoor-mode');
+    setText('outdoor-btn', on ? '☀️ מצב חוץ: פעיל' : '☀️ מצב חוץ: כבוי');
+  }
   (function() {
     if (localStorage.getItem('outdoorMode') !== '0') {
       document.body.classList.add('outdoor-mode');
     }
+    renderOutdoorLabel();
+    initCollapsibleCards();
   })();
   window.toggleOutdoorMode = () => {
     const on = document.body.classList.toggle('outdoor-mode');
     localStorage.setItem('outdoorMode', on ? '1' : '0');
+    renderOutdoorLabel();
     showToast(on ? '☀️ מצב חוץ פעיל' : '🌙 מצב רגיל', 'info');
   };
 
@@ -1517,6 +1542,7 @@
     const open = menu.hidden;
     menu.hidden = !open;
     button.setAttribute('aria-expanded', String(open));
+    document.body.classList.toggle('app-menu-open', open);
     if (open) menu.querySelector('[role="menuitem"]')?.focus();
   };
 
@@ -1525,6 +1551,7 @@
     const button = document.getElementById('app-menu-button');
     if (!menu || menu.hidden) return;
     menu.hidden = true;
+    document.body.classList.remove('app-menu-open');
     button?.setAttribute('aria-expanded', 'false');
   };
 
@@ -1896,6 +1923,7 @@
       ])
       : [null, null, ''];
     markLoad('team data loaded');
+    teamScheduleProjection = scheduleProjection;
 
     // Update station labels using teamData if loaded
     refreshStationDropdownLabels();
@@ -2063,6 +2091,9 @@
     if (!dot || !label) return;
     dot.className     = ok ? 'conn-dot connected' : 'conn-dot disconnected';
     label.textContent = ok ? 'מחובר' : 'אין קליטה — נשמר במכשיר';
+    document.body.classList.toggle('is-offline', !ok);
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.hidden = ok;
   }
 
   function showBlockingWarn(msg) {
@@ -2197,6 +2228,9 @@
 
   window.onStationChange = async (v) => {
     stationChosenByUser = true;
+    if (stationOutsideSchedule(teamScheduleProjection, v)) {
+      showToast(`תחנה ${v} אינה בלו״ז של הצוות — ודא שזו התחנה הנכונה`, 'info');
+    }
     await commitPendingReps();
     selectedStation = v;
     localStorage.setItem('lite:lastStation', v);
@@ -2622,7 +2656,7 @@
     list.dataset.revision = String(state?.confirmed.revision || 0);
     list.setAttribute('role', 'list');
     list.setAttribute('aria-label', 'סדר הגעה ומשתתפים שטרם הגיעו');
-    count.textContent = `${state?.confirmed.order.length || 0} / ${participants.length}${savingIds.size ? ` · ${savingIds.size} בשמירה` : ''}`;
+    count.textContent = `${state?.confirmed.order.length || 0} מתוך ${participants.length}${savingIds.size ? ` · ${savingIds.size} בשמירה` : ''}`;
     empty.style.display = placed.length === 0 && pending.length === 0 ? '' : 'none';
     list.style.display = placed.length === 0 && pending.length === 0 ? 'none' : '';
     if (!arrivalOrderSaving) {
@@ -2686,8 +2720,8 @@
     renderStickyRound(currentRace.round || 1, statusLabel);
     setText('hdr-progress',
       !canEvaluate() ? '—'
-      : measure === 'place' ? ((currentArrivalState()?.confirmed.order.length || 0) + ' / ' + participants.length)
-      : measure === 'reps' ? (Object.keys(repsByPid).length + ' / ' + participants.length)
+      : measure === 'place' ? ((currentArrivalState()?.confirmed.order.length || 0) + ' מתוך ' + participants.length)
+      : measure === 'reps' ? (Object.keys(repsByPid).length + ' מתוך ' + participants.length)
       : '—');
 
     // Hide idle
@@ -2854,7 +2888,7 @@
     setText('hdr-round', '#' + nextRound);
     setText('hdr-status', '— טרם התחיל');
     renderStickyRound(nextRound, 'טרם התחיל');
-    setText('hdr-progress', '0 / ' + participants.length);
+    setText('hdr-progress', '0 מתוך ' + participants.length);
     setText('hdr-time', '00:00.00');
     setText('sticky-time', '00:00.00');
 
@@ -3299,7 +3333,7 @@
     const participants = participantIdsForRace(currentRace, evaluatorArrival);
     const myArrivalIds = new Set(evaluatorArrivalStateForRace(currentRace, evaluatorArrival).order);
     sizeParticipantGrid(picker, participants.length);
-    info.textContent = `#${currentRace.round || 1} · ${participants.length}`;
+    info.textContent = '';
     const st = currentStationType();
     setText('sn-help', usesManualMeasure(st)
       ? `בחר משתתף והזן ${st.measureLabel || 'את התוצאה'} בסיום התחנה. אפשר להשלים או לתקן גם אחרי עצירת הסבב.`
@@ -3323,6 +3357,8 @@
     };
 
     const sorted = participants.slice().sort((a, b) => Number(a) - Number(b));
+    const withData = sorted.filter(hasData).length;
+    info.textContent = `${withData} מתוך ${sorted.length} עם נתונים`;
     picker.innerHTML = sorted.map(pid => {
       const selected = stationNoteSelectedPid === pid;
       const dataCls = hasData(pid) ? ' has-data' : '';
@@ -3339,6 +3375,16 @@
       selectedArea.style.display = 'none';
     }
   }
+
+  // הבא בתור אחרי הנבחר (מעגלי), לפי הנקודה הירוקה שבבורר
+  window.selectNextUnscored = () => {
+    const pids = [...document.querySelectorAll('#sn-picker .note-picker-btn')]
+      .map(button => ({ pid: button.textContent.trim(), done: button.classList.contains('has-data') }));
+    const start = pids.findIndex(item => item.pid === stationNoteSelectedPid);
+    const next = [...pids.slice(start + 1), ...pids.slice(0, Math.max(start, 0))].find(item => !item.done);
+    if (!next) { showToast('לכל המשתתפים כבר יש נתונים ✓', 'success'); return; }
+    window.selectStationNoteParticipant(next.pid, true);
+  };
 
   window.selectStationNoteParticipant = (pid, scroll = false) => {
     openCollapsibleSection('station-notes-section');

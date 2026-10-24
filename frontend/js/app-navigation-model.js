@@ -11,6 +11,13 @@ export function evaluationTargetFromSearch(search = '') {
   };
 }
 
+// תחנה שהלו״ז של הצוות לא כולל. בלי לו״ז (או בלי תחנות בו) — אין מה להשוות.
+export function stationOutsideSchedule(projection, stationId) {
+  const scheduled = new Set((Array.isArray(projection?.entries) ? projection.entries : [])
+    .map(entry => String(entry?.stationId || '')).filter(Boolean));
+  return scheduled.size > 0 && Boolean(stationId) && !scheduled.has(String(stationId));
+}
+
 export function resolveInitialStation({
   explicitStation = '', runningStation = '', scheduleProjection = null,
   savedStation = '', availableStations = [], now = new Date()

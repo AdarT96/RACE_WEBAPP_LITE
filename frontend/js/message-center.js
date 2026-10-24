@@ -17,7 +17,9 @@ import {
 // הכרטיסים הקופצים אינם חוסמים: המכל קבוע, בלי אירועי מצביע, ורק הכרטיס
 // עצמו מקבל לחיצות. הם חיים 12 שניות, ולחיצה על כרטיס פותחת את ההיסטוריה.
 
-const TOAST_LIFETIME_MS = 12000;
+// ההתראה יושבת מתחת לסרגל העליון; קצרה, כדי שלא תסתיר את המסך זמן רב.
+const TOAST_LIFETIME_MS = 7000;
+const SUMMARY_SEEN_PREFIX = 'lite:mc-summary:';
 const MARK_READ_THROTTLE_MS = 2000;
 const SENT_NOTICE_MS = 4000;
 
@@ -244,7 +246,7 @@ export function mountMessageCenter({
       // המגירה פתוחה: מה שמגיע נקרא מיד ואינו קופץ.
       markReadNow();
     } else {
-      if (result.summaryCount > 0) pushSummary(result.summaryCount);
+      if (result.summaryCount > 0 && summaryIsNew(result.summaryCount)) pushSummary(result.summaryCount);
       if (result.toasts.length) pushToasts(result.toasts);
     }
     render();
@@ -261,6 +263,17 @@ export function mountMessageCenter({
   // ───── כרטיסים קופצים ─────
   function vibrate() {
     try { if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(120); } catch (error) { /* לא נתמך */ }
+  }
+
+  // "יש לך N הודעות שלא נקראו" עולה בכל פתיחת דף. מציגים אותו פעם אחת בכל
+  // שימוש (לשונית), ושוב רק אם נוספו הודעות שלא נקראו מאז.
+  function summaryIsNew(count) {
+    const key = `${SUMMARY_SEEN_PREFIX}${user.uid}:${state.eventId || ''}`;
+    try {
+      if (Number(sessionStorage.getItem(key) || 0) >= count) return false;
+      sessionStorage.setItem(key, String(count));
+    } catch (error) { /* בלי אחסון — מציגים */ }
+    return true;
   }
 
   function pushSummary(count) {

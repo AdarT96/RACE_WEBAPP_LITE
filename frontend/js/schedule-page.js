@@ -5,7 +5,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
-  localScheduleClock, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
+  localScheduleClock, nextScheduleEntry, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
 } from './schedule-model.js';
 import {
   INTENSITY_LABELS, stationIntensityFor
@@ -22,6 +22,7 @@ import { createForegroundGate, markLoad } from './load-priority.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
+import { initCollapsibleCards } from './collapsible-cards.js';
 
 markLoad('script loaded');
 
@@ -236,6 +237,30 @@ function stationOptions(team, selected) {
   )].join('');
 }
 
+// ימים בטבלת העריכה: כל יום נפתח ונסגר בנפרד, והבחירה נשמרת במכשיר
+const MATRIX_DAY_PREFIX = 'lite:schedule-day:';
+function matrixDayCollapsed(date) {
+  try { return localStorage.getItem(MATRIX_DAY_PREFIX + date) === '1'; } catch (error) { return false; }
+}
+function dayHeaderRow(date, count, span, collapsed) {
+  return `<tr class="day-header-row"><td colspan="${span}">
+    <button type="button" class="day-toggle" data-day-toggle="${escapeHtml(date)}" aria-expanded="${!collapsed}"
+            onclick="toggleScheduleDay('${escapeHtml(date)}')">
+      <span aria-hidden="true">${collapsed ? '▸' : '▾'}</span> ${escapeHtml(dateLabel(date))} · ${count} שורות
+    </button></td></tr>`;
+}
+window.toggleScheduleDay = date => {
+  const collapsed = !matrixDayCollapsed(date);
+  try { localStorage.setItem(MATRIX_DAY_PREFIX + date, collapsed ? '1' : '0'); } catch (error) { /* לא נשמר */ }
+  document.querySelectorAll(`#schedule-matrix-body tr[data-day="${CSS.escape(date)}"]`)
+    .forEach(row => row.classList.toggle('day-hidden', collapsed));
+  const button = document.querySelector(`[data-day-toggle="${CSS.escape(date)}"]`);
+  if (button) {
+    button.setAttribute('aria-expanded', String(!collapsed));
+    button.querySelector('span').textContent = collapsed ? '▸' : '▾';
+  }
+};
+
 function renderManagerSchedule() {
   if (!draftSchedule) return;
   const ids = draftSchedule.teamIds;
@@ -249,9 +274,13 @@ function renderManagerSchedule() {
              oninput="updateCommanderName('${team}',this.value)" placeholder="שם מפקד הצוות">
     </label></th>`).join('')}
   </tr>`;
+  const rowsPerDay = draftSchedule.rows.reduce((map, row) => { map[row.date] = (map[row.date] || 0) + 1; return map; }, {});
   document.getElementById('schedule-matrix-body').innerHTML = draftSchedule.rows.map((row, index) => {
     // פס דגש בתחילת כל יום — השורות ממוינות לפי תאריך ושעה
-    const dayStart = index > 0 && row.date !== draftSchedule.rows[index - 1].date ? ' class="day-start"' : '';
+    const newDay = index === 0 || row.date !== draftSchedule.rows[index - 1].date;
+    const collapsedDay = matrixDayCollapsed(row.date);
+    const dayHeader = newDay ? dayHeaderRow(row.date, rowsPerDay[row.date], ids.length + 1, collapsedDay) : '';
+    const dayStart = ` data-day="${escapeHtml(row.date)}" class="${index > 0 && newDay ? 'day-start' : ''}${collapsedDay ? ' day-hidden' : ''}"`;
     const rowTypeOptions = `<select class="form-select" onchange="updateRowKind('${escapeHtml(row.id)}',this.value)">
       <option value="rotation" ${row.kind === 'rotation' ? 'selected' : ''}>תחנות</option>
       <option value="global" ${row.kind === 'global' ? 'selected' : ''}>משותף</option>
@@ -264,13 +293,13 @@ function renderManagerSchedule() {
       <div class="schedule-row-actions">${rowTypeOptions}<button type="button" class="btn btn-ghost" onclick="removeScheduleRow('${escapeHtml(row.id)}')">מחק</button></div>
     </td>`;
     if (row.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
-      return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}
+      return `${dayHeader}<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}
         <td class="global-row-cell" colspan="${Math.max(1, ids.length)}">
           <input class="form-input" maxlength="160" value="${escapeHtml(row.label)}"
                  oninput="updateGlobalLabel('${escapeHtml(row.id)}',this.value)" placeholder="שם הפעילות המשותפת">
         </td></tr>`;
     }
-    return `<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}${ids.map(team => {
+    return `${dayHeader}<tr data-schedule-row="${escapeHtml(row.id)}"${dayStart}>${timeCell}${ids.map(team => {
       const assignment = row.assignments[team] || { stationId:'', routeNumber:'' };
       const intensity = stationIntensity(team, assignment.stationId);
       return `<td class="schedule-station-cell intensity-${intensity}">
@@ -514,6 +543,13 @@ window.closeSchedulePreview = () => {
   document.getElementById('schedule-preview-modal').hidden = true;
 };
 
+// מספר התחנה (כמו בבורר התחנות באפליקציה) לצד מספר המסלול בשטח
+function entryPlace(entry) {
+  const station = entry.stationId ? `תחנה ${escapeHtml(entry.stationId)}` : '';
+  const route = entry.routeNumber ? `מסלול ${entry.routeNumber}` : 'ללא מספר מסלול';
+  return station ? `${station} · ${route}` : route;
+}
+
 function renderTeamSchedule() {
   const list = document.getElementById('team-schedule-list');
   const empty = document.getElementById('team-schedule-empty');
@@ -527,33 +563,46 @@ function renderTeamSchedule() {
   }
   const team = String(teamProjection.team || pad2(currentUser.team));
   const current = scheduleEntryAt(entries, new Date(), teamProjection.timeZone);
+  const upcoming = nextScheduleEntry(entries, new Date(), teamProjection.timeZone);
+  const next = upcoming?.entry || null;
   const currentCard = document.getElementById('team-current-card');
+  const entryText = entry => entry.kind === SCHEDULE_ROW_KINDS.GLOBAL ? entry.label : stationName(team, entry.stationId);
+  // "עכשיו" ו"הבא" בראש הדף: לאן הולכים ומתי, בלי לחפש ברשימה
+  const parts = [];
   if (current) {
-    const stationText = current.kind === SCHEDULE_ROW_KINDS.GLOBAL
-      ? current.label : stationName(team, current.stationId);
-    currentCard.innerHTML = `<h2>עכשיו: ${escapeHtml(stationText)}</h2>
-      <p>${formatScheduleTime(current.startMinute)}${current.routeNumber ? ` · מסלול ${escapeHtml(current.routeNumber)}` : ''}</p>
+    parts.push(`<h2>עכשיו: ${escapeHtml(entryText(current))}</h2>
+      <p>${formatScheduleTime(current.startMinute)} · ${escapeHtml(entryPlace(current))}</p>
       ${current.kind === SCHEDULE_ROW_KINDS.ROTATION && current.stationId
-        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`;
-    currentCard.hidden = false;
-  } else currentCard.hidden = true;
+        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`);
+  }
+  if (next) {
+    const when = upcoming.minutesUntil != null ? ` · בעוד ${upcoming.minutesUntil} דק׳` : '';
+    parts.push(`<p class="team-next-line"><strong>הבא:</strong> ${escapeHtml(entryText(next))} · ${formatScheduleTime(next.startMinute)}${when}${
+      next.kind === SCHEDULE_ROW_KINDS.ROTATION ? ` · ${escapeHtml(entryPlace(next))}` : ''}</p>`);
+  }
+  currentCard.innerHTML = parts.join('');
+  currentCard.hidden = !parts.length;
   const byDate = entries.reduce((map, entry) => {
     (map[entry.date] ||= []).push(entry); return map;
   }, {});
-  list.innerHTML = Object.entries(byDate).map(([date, dayEntries]) => `<section class="team-day">
-    <h2 class="team-day-title">${escapeHtml(dateLabel(date))}</h2>
+  const today = localScheduleClock(new Date(), teamProjection.timeZone).date;
+  const hasToday = Object.prototype.hasOwnProperty.call(byDate, today);
+  list.innerHTML = Object.entries(byDate).map(([date, dayEntries]) => `<section class="team-day"
+      data-collapsible="day-${escapeHtml(date)}"${hasToday && date !== today ? ' data-collapsed-default="1"' : ''}>
+    <h2 class="team-day-title">${escapeHtml(dateLabel(date))}${date === today ? ' · היום' : ''}</h2>
     ${dayEntries.map(entry => {
       const isCurrent = entry.id === current?.id;
+      const nextBadge = entry.id === next?.id ? '<em class="team-entry-badge">הבא</em>' : '';
       if (entry.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
         return `<div class="team-entry global ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}">
           <strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
-          <div class="team-entry-main"><strong>${escapeHtml(entry.label)}</strong><span>פעילות משותפת</span></div>
+          <div class="team-entry-main"><strong>${escapeHtml(entry.label)}${nextBadge}</strong><span>פעילות משותפת</span></div>
         </div>`;
       }
       const intensity = stationIntensity(team, entry.stationId);
       const content = `<strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
-        <div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}</strong>
-          <span>${entry.routeNumber ? `מסלול ${escapeHtml(entry.routeNumber)}` : 'ללא מספר מסלול'}</span></div>
+        <div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}${nextBadge}</strong>
+          <span>${escapeHtml(entryPlace(entry))}</span></div>
         <span class="team-entry-intensity"><i class="intensity-dot intensity-${intensity}"></i>${INTENSITY_LABELS[intensity]}</span>`;
       return entry.stationId
         ? `<a class="team-entry ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}" href="${evaluationUrl(team, entry.stationId)}">${content}</a>`
@@ -561,6 +610,7 @@ function renderTeamSchedule() {
     }).join('')}
   </section>`).join('');
   const commander = teamProjection.commanderName ? ` · מפקד: ${teamProjection.commanderName}` : '';
+  initCollapsibleCards(list);
   document.getElementById('schedule-subtitle').textContent = `צוות ${Number(team)}${commander}`;
   document.getElementById('schedule-revision').textContent = `גרסה ${teamProjection.sourceRevision || 0}`;
   applyCurrentRowHighlight();
