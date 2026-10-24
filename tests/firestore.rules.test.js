@@ -1202,6 +1202,66 @@ test('purging a formation takes its notes with it', async () => {
   await assertSucceeds(deleteDoc(doc(admin, 'events', 'event-old', 'generalNotes', '01_100')));
 });
 
+// האפליקציה לא יוצרת את מסמך האב generalNotes/{צוות}_{מספר}, ולכן רשימת
+// generalNotes ריקה; המחיקה מגיעה להערות לפי המפתח, ישירות לתת-האוסף authors.
+test('purging a formation reaches notes whose parent document was never created', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-old', 'generalNotes', '01_100', 'authors', 'evaluator1'),
+      { ...privateNotesPayload(), createdAt: Timestamp.now(), updatedAt: Timestamp.now() });
+  });
+  const admin = userDb('admin1');
+  assert.equal((await getDocs(collection(admin, 'events', 'event-old', 'generalNotes'))).size, 0);
+  const authors = await assertSucceeds(getDocs(collection(admin, 'events', 'event-old', 'generalNotes', '01_100', 'authors')));
+  assert.equal(authors.size, 1);
+  await assertSucceeds(deleteDoc(authors.docs[0].ref));
+});
+
+test('purging a formation takes its messages and read markers with it', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'events', 'event-old', 'messages', 'm1'), {
+      text: 'שלום', targetRoles: ['evaluator'], senderUid: 'formation1', senderName: 'מפקד',
+      senderRole: 'formation_commander', createdAt: Timestamp.now(), schemaVersion: 1
+    });
+    await setDoc(doc(db, 'events', 'event-old', 'messageReads', 'evaluator1'), { lastReadAt: Timestamp.now(), schemaVersion: 1 });
+    await setDoc(doc(db, 'events', 'event-1', 'messageReads', 'evaluator1'), { lastReadAt: Timestamp.now(), schemaVersion: 1 });
+  });
+  const admin = userDb('admin1');
+  const reads = await assertSucceeds(getDocs(collection(admin, 'events', 'event-old', 'messageReads')));
+  assert.equal(reads.size, 1);
+  await assertFails(deleteDoc(doc(userDb('evaluator1'), 'events', 'event-old', 'messageReads', 'evaluator1')));
+  await assertSucceeds(deleteDoc(reads.docs[0].ref));
+  const messages = await assertSucceeds(getDocs(collection(admin, 'events', 'event-old', 'messages')));
+  await assertSucceeds(deleteDoc(messages.docs[0].ref));
+  // הגיבוש הפעיל אינו ניתן למחיקה, ולכן מצבי הקריאה בו נשארים פרטיים.
+  await assertFails(getDocs(collection(admin, 'events', 'event-1', 'messageReads')));
+  await assertFails(deleteDoc(doc(admin, 'events', 'event-1', 'messageReads', 'evaluator1')));
+});
+
+// המחיקה רושמת כל תת-אוסף. לו״ז (קריאה לפי מזהה בלבד) ונתוני קליטה (רק בזמן
+// קליטה פתוחה) חסמו את הרשימה, והמחיקה נעצרה באמצע בכל גיבוש שהיה לו לו״ז.
+test('purging a closed formation can list its schedule and intake data', async () => {
+  await seedFormationEvent('event-old', 'closed');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'events', 'event-old', 'schedule', 'master'), { revision: 1 });
+    await setDoc(doc(db, 'events', 'event-old', 'unassignedCandidates', '9'), { participantId: '9' });
+    await setDoc(doc(db, 'events', 'event-old', 'candidateNumbers', '9'), { participantId: '9' });
+    await setDoc(doc(db, 'events', 'event-old', 'intake', 'counter'), { next: 10 });
+  });
+  const admin = userDb('admin1');
+  for (const sub of ['schedule', 'unassignedCandidates', 'candidateNumbers', 'intake']) {
+    const listed = await assertSucceeds(getDocs(collection(admin, 'events', 'event-old', sub)));
+    assert.ok(listed.size >= 1, sub);
+    for (const item of listed.docs) await assertSucceeds(deleteDoc(item.ref));
+  }
+  // רק מנהל, ורק גיבוש שאפשר למחוק
+  await assertFails(getDocs(collection(userDb('formation1'), 'events', 'event-old', 'schedule')));
+  await assertFails(getDocs(collection(admin, 'events', 'event-1', 'schedule')));
+});
+
 test('staff accounts are deletable by an administrator and by nobody else', async () => {
   await assertFails(deleteDoc(doc(userDb('evaluator1'), 'users', 'evaluator2')));
   await assertFails(deleteDoc(doc(userDb('formation1'), 'users', 'evaluator1')));

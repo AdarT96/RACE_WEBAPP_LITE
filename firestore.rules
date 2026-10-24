@@ -473,7 +473,7 @@ service cloud.firestore {
             candidate.schemaVersion == 1;
         }
 
-        allow read: if mayIntake(eventId);
+        allow read: if mayIntake(eventId) || purgeableEvent(eventId);
         allow create: if mayIntake(eventId) && validUnassignedRecord() &&
           request.resource.data.profileRevision == 0 &&
           request.resource.data.createdAt == request.time &&
@@ -518,7 +518,7 @@ service cloud.firestore {
             entry.schemaVersion == 1;
         }
 
-        allow read: if mayIntake(eventId);
+        allow read: if mayIntake(eventId) || purgeableEvent(eventId);
         allow create: if mayIntake(eventId) && validNumberEntry() &&
           request.resource.data.claimedAt == request.time &&
           request.resource.data.claimedBy == request.auth.uid &&
@@ -548,7 +548,7 @@ service cloud.firestore {
             getAfter(numberRegistryPath(string(request.resource.data.lastNumber))).data.claimedAt == request.time;
         }
 
-        allow read: if mayIntake(eventId);
+        allow read: if mayIntake(eventId) || purgeableEvent(eventId);
         allow create: if docId == 'counter' && mayIntake(eventId) && validIntakeCounter();
         allow update: if docId == 'counter' && mayIntake(eventId) && validIntakeCounter() &&
           request.resource.data.lastNumber > resource.data.lastNumber;
@@ -655,7 +655,9 @@ service cloud.firestore {
       }
 
       match /schedule/{scheduleId} {
-        allow read: if scheduleId in ['master', 'draft'] && (isAdmin() || isFormationCommander());
+        // מחיקת גיבוש רושמת את האוסף (scheduleId לא ידוע ברשימה), ולכן purgeableEvent קודם.
+        allow read: if purgeableEvent(eventId) ||
+          (scheduleId in ['master', 'draft'] && (isAdmin() || isFormationCommander()));
         allow create: if scheduleId == 'master' && mayManageSchedule() &&
           validMasterSchedule() && request.resource.data.revision == 1 &&
           request.resource.data.createdAt == request.time &&
@@ -1032,7 +1034,9 @@ service cloud.firestore {
             caller().get('approved', false) == true;
         }
 
-        allow read: if ownApprovedReader();
+        // מחיקת גיבוש סגור: המנהל צריך לרשום את מצבי הקריאה כדי למחוק אותם.
+        allow read: if ownApprovedReader() || purgeableEvent(eventId);
+        allow delete: if purgeableEvent(eventId);
         allow create, update: if ownApprovedReader() &&
           request.resource.data.keys().hasAll(['lastReadAt', 'schemaVersion']) &&
           request.resource.data.keys().hasOnly(['lastReadAt', 'schemaVersion']) &&
