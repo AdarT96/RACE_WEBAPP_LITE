@@ -717,6 +717,7 @@
       <span id="conn-label">מתחבר…</span>
     </div>
     <div class="badge badge-info" id="user-role-badge"></div>
+    <a href="schedule.html" class="btn btn-ghost nav-btn" aria-label="פתח לו״ז">🗓️ לו״ז</a>
     <div class="app-menu-wrap" id="app-menu-wrap">
       <button type="button" class="btn btn-ghost app-menu-button" id="app-menu-button"
               onclick="toggleAppMenu()" aria-haspopup="menu" aria-expanded="false"
@@ -2327,13 +2328,38 @@
     if (!hasPendingArrivals()) return;
     event.preventDefault(); event.returnValue = '';
   });
-  document.addEventListener('click', event => {
+  let scheduleNavigationPending = false;
+  document.addEventListener('click', async event => {
     const link = event.target.closest('a[href]');
-    if (!link || !hasPendingArrivals()) return;
+    if (!link) return;
     const target = new URL(link.href, location.href);
     if (target.origin === location.origin && target.pathname === location.pathname && target.search === location.search) return;
+    if (hasPendingArrivals()) {
+      event.preventDefault();
+      showToast('יש להמתין לשמירת סדר ההגעה לפני מעבר לעמוד אחר.', 'error');
+      return;
+    }
+    // A quick tap on the schedule must not discard the last reps still waiting
+    // for the 450ms debounce. Reuse the existing save path; ordinary navigation
+    // remains immediate when nothing is pending, with no new server reads.
+    if (target.href !== new URL('schedule.html', location.href).href ||
+        event.defaultPrevented || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey ||
+        link.target === '_blank' || (!repsSavePromise && !Object.keys(pendingRepsByRace).length)) return;
     event.preventDefault();
-    showToast('יש להמתין לשמירת סדר ההגעה לפני מעבר לעמוד אחר.', 'error');
+    if (scheduleNavigationPending) return;
+    scheduleNavigationPending = true;
+    try {
+      if (!await commitPendingReps()) return;
+      if (hasPendingArrivals()) {
+        showToast('יש להמתין לשמירת סדר ההגעה לפני מעבר לעמוד אחר.', 'error');
+        return;
+      }
+      window.location.href = target.href;
+    } catch (error) {
+      showToast('שמירת הספירה לא הושלמה. נסה שוב לפני המעבר ללו״ז.', 'error');
+    } finally {
+      scheduleNavigationPending = false;
+    }
   });
 
   function detachEvaluatorArrivalSubscription() {

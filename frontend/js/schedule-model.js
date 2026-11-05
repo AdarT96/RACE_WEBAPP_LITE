@@ -212,6 +212,21 @@ export function scheduleEntryAt(entries, now = new Date(), timeZone = SCHEDULE_T
   return null;
 }
 
+// Opening position only — does not change station recommendations or evaluation.
+// Rows specify starts, not durations: the explicit window is first..last listed
+// minute (inclusive). Between rows, including overnight, use the preceding row.
+// Outside that window return to the beginning, never to an arbitrary saved day.
+export function scheduleOpeningEntry(entries, now = new Date(), timeZone = SCHEDULE_TIME_ZONE) {
+  const rows = sortScheduleRows(entries).filter(row => isValidScheduleDate(row.date) &&
+    Number.isInteger(row.startMinute) && row.startMinute >= 0 && row.startMinute < 1440);
+  if (!rows.length) return null;
+  const clock = localScheduleClock(now, timeZone);
+  const nowKey = scheduleMinuteKey(clock.date, clock.startMinute);
+  const key = row => scheduleMinuteKey(row.date, row.startMinute);
+  if (nowKey < key(rows[0]) || nowKey > key(rows[rows.length - 1])) return rows[0];
+  return rows.slice().reverse().find(row => key(row) <= nowKey) || rows[0];
+}
+
 // השורה הבאה שעוד לא התחילה, ובכמה דקות היא מתחילה (רק כשהיא היום).
 export function nextScheduleEntry(entries, now = new Date(), timeZone = SCHEDULE_TIME_ZONE) {
   const clock = localScheduleClock(now, timeZone);
