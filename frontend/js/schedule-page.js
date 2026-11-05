@@ -5,7 +5,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, formatScheduleTime,
-  localScheduleClock, nextScheduleEntry, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues
+  localScheduleClock, nextScheduleEntry, normalizeSchedule, parseScheduleTime, scheduleEntryAt, scheduleIssues,
+  scheduleOpeningEntry
 } from './schedule-model.js';
 import {
   INTENSITY_LABELS, stationIntensityFor
@@ -22,7 +23,7 @@ import { createForegroundGate, markLoad } from './load-priority.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
-import { initCollapsibleCards } from './collapsible-cards.js';
+import { initCollapsibleCards, setCardCollapsed } from './collapsible-cards.js';
 
 markLoad('script loaded');
 
@@ -47,6 +48,17 @@ let conflict = false;
 let teamProjection = null;
 let stationTypesRead = Promise.resolve();
 let messageCenter = null;
+let eventTeamsRead = Promise.resolve({ value:{} });
+let scheduleMetadataReady = false;
+let latestWorkspace = null;
+let openingPositionApplied = false;
+let pageInteracted = false;
+let pageBlocked = false;
+// Initial positioning is a suggestion, never a scroll lock. A user who starts
+// navigating/editing while data loads keeps control of the page.
+for (const type of ['pointerdown', 'touchstart', 'wheel', 'keydown']) {
+  document.addEventListener(type, () => { pageInteracted = true; }, { passive:true, capture:true });
+}
 // הלו״ז הוא מה שהמשתמש פתח. היסטוריית הגרסאות נטענת אחריו.
 const foreground = createForegroundGate();
 
@@ -55,6 +67,9 @@ const escapeHtml = value => String(value ?? '')
 const pad2 = value => String(Number(value)).padStart(2, '0');
 
 function showBlocking(message) {
+  pageBlocked = true;
+  unsubscribeSchedule?.();
+  unsubscribeRevisions?.();
   foreground.release();
   const element = document.getElementById('schedule-blocking');
   element.textContent = message;
@@ -99,14 +114,16 @@ async function loadStationTypes() {
     ])].map(typeId => [typeId, {
       ...(window.DEFAULT_STATION_TYPES?.[typeId] || {}), ...(saved[typeId] || {})
     }]));
+    return true;
   } catch (error) {
     stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
+    return false;
   }
 }
 
-// מזהה האירוע ידוע מיד (מהכתובת או ממצביע האירוע הפעיל), ולכן מסמך האירוע
-// והצוותים נקראים במקביל ולא בזה אחר זה. הצוותים מוצגים רק אם האירוע תקף.
-async function loadEventAndTeams(pointerRead) {
+// Validate the event, but do not make the team's schedule wait for metadata.
+// Team/station details enrich the read-only view later; editing waits for them.
+async function loadEvent(pointerRead) {
   const requestedEventId = new URLSearchParams(location.search).get('eventId');
   let eventId = '';
   let allowedStatuses = ['active'];
@@ -122,12 +139,9 @@ async function loadEventAndTeams(pointerRead) {
     eventId = String(pointer.eventId);
   }
   // כשל בקריאת הצוותים של אירוע לא תקף אינו רלוונטי — נבדק רק אחרי האירוע
-  const teamsResult = readEventTeams(eventId).then(value => ({ value }), error => ({ error }));
-  const snapshot = await getDoc(doc(db, 'events', eventId));
+  eventTeamsRead = readEventTeams(eventId).then(value => ({ value }), error => ({ error }));
+  const snapshot = await getDocPatiently(doc(db, 'events', eventId));
   if (!snapshot.exists() || !allowedStatuses.includes(snapshot.data().status)) return null;
-  const teams = await teamsResult;
-  if (teams.error) throw teams.error;
-  eventTeams = teams.value;
   return { id: snapshot.id, ...snapshot.data() };
 }
 
@@ -166,6 +180,7 @@ function stationTypeId(team, stationId) {
 }
 
 function stationName(team, stationId) {
+  if (!scheduleMetadataReady) return stationId ? `תחנה ${Number(stationId)}` : 'ללא שיבוץ';
   const typeId = stationTypeId(team, stationId);
   return stationTypes[typeId]?.name || (stationId ? `תחנה ${Number(stationId)}` : 'ללא שיבוץ');
 }
@@ -218,16 +233,33 @@ function hasUnpublishedDraft() {
   return Boolean(remoteDraft && scheduleContentSignature(remoteDraft) !== scheduleContentSignature(publishedSchedule));
 }
 
-function currentRowId(entries) {
-  return scheduleEntryAt(entries, new Date())?.id || '';
-}
-
-function applyCurrentRowHighlight() {
-  const entries = canManageSchedule(currentUser?.role) ? draftSchedule?.rows : teamProjection?.entries;
-  const id = currentRowId(entries);
+function applyCurrentRowHighlight(now = new Date()) {
+  const manager = canManageSchedule(currentUser?.role);
+  const source = manager ? draftSchedule : teamProjection;
+  const id = scheduleEntryAt(manager ? source?.rows : source?.entries, now, source?.timeZone)?.id || '';
   document.querySelectorAll('[data-schedule-row]').forEach(row => {
     row.classList.toggle('current-row', row.dataset.scheduleRow === id);
     row.classList.toggle('current', row.dataset.scheduleRow === id);
+  });
+}
+
+function positionScheduleOnOpen(entries, timeZone) {
+  if (openingPositionApplied || pageInteracted) return;
+  const entry = scheduleOpeningEntry(entries, new Date(), timeZone);
+  if (!entry) return; // An empty cached snapshot must not consume positioning.
+  openingPositionApplied = true;
+  requestAnimationFrame(() => {
+    if (pageInteracted || pageBlocked) return;
+    const row = document.querySelector(`[data-schedule-row="${CSS.escape(entry.id)}"]`);
+    if (!row) return;
+    if (canManageSchedule(currentUser.role)) {
+      // Expand only in this page session, leaving the stored preference intact.
+      setMatrixDayCollapsed(entry.date, false);
+    } else {
+      const day = row.closest('[data-collapsible]');
+      if (day) setCardCollapsed(day, false);
+    }
+    row.scrollIntoView({ block:'center', inline:'nearest', behavior:'instant' });
   });
 }
 
@@ -239,7 +271,9 @@ function stationOptions(team, selected) {
 
 // ימים בטבלת העריכה: כל יום נפתח ונסגר בנפרד, והבחירה נשמרת במכשיר
 const MATRIX_DAY_PREFIX = 'lite:schedule-day:';
+const matrixDayState = new Map();
 function matrixDayCollapsed(date) {
+  if (matrixDayState.has(date)) return matrixDayState.get(date);
   try { return localStorage.getItem(MATRIX_DAY_PREFIX + date) === '1'; } catch (error) { return false; }
 }
 function dayHeaderRow(date, count, span, collapsed) {
@@ -249,9 +283,8 @@ function dayHeaderRow(date, count, span, collapsed) {
       <span aria-hidden="true">${collapsed ? '▸' : '▾'}</span> ${escapeHtml(dateLabel(date))} · ${count} שורות
     </button></td></tr>`;
 }
-window.toggleScheduleDay = date => {
-  const collapsed = !matrixDayCollapsed(date);
-  try { localStorage.setItem(MATRIX_DAY_PREFIX + date, collapsed ? '1' : '0'); } catch (error) { /* לא נשמר */ }
+function setMatrixDayCollapsed(date, collapsed) {
+  matrixDayState.set(date, collapsed);
   document.querySelectorAll(`#schedule-matrix-body tr[data-day="${CSS.escape(date)}"]`)
     .forEach(row => row.classList.toggle('day-hidden', collapsed));
   const button = document.querySelector(`[data-day-toggle="${CSS.escape(date)}"]`);
@@ -259,6 +292,11 @@ window.toggleScheduleDay = date => {
     button.setAttribute('aria-expanded', String(!collapsed));
     button.querySelector('span').textContent = collapsed ? '▸' : '▾';
   }
+}
+window.toggleScheduleDay = date => {
+  const collapsed = !matrixDayCollapsed(date);
+  setMatrixDayCollapsed(date, collapsed);
+  try { localStorage.setItem(MATRIX_DAY_PREFIX + date, collapsed ? '1' : '0'); } catch (error) { /* לא נשמר */ }
 };
 
 function renderManagerSchedule() {
@@ -319,6 +357,7 @@ function renderManagerSchedule() {
   document.getElementById('schedule-revision').textContent =
     `פורסם: ${publishedRevision || 'טרם'} · טיוטה: ${draftRevision || 'חדשה'}`;
   setSaveStatus(dirty ? 'יש שינויים שלא נשמרו' : 'הלו״ז מעודכן');
+  positionScheduleOnOpen(draftSchedule.rows, draftSchedule.timeZone);
 }
 
 function findRow(rowId) {
@@ -554,6 +593,8 @@ function renderTeamSchedule() {
   const list = document.getElementById('team-schedule-list');
   const empty = document.getElementById('team-schedule-empty');
   const entries = Array.isArray(teamProjection?.entries) ? teamProjection.entries : [];
+  const dayState = new Map(Array.from(list.querySelectorAll('[data-collapsible]'))
+    .map(card => [card.dataset.collapsible, card.classList.contains('is-collapsed')]));
   empty.hidden = entries.length > 0;
   list.innerHTML = '';
   if (!entries.length) {
@@ -562,26 +603,6 @@ function renderTeamSchedule() {
     return;
   }
   const team = String(teamProjection.team || pad2(currentUser.team));
-  const current = scheduleEntryAt(entries, new Date(), teamProjection.timeZone);
-  const upcoming = nextScheduleEntry(entries, new Date(), teamProjection.timeZone);
-  const next = upcoming?.entry || null;
-  const currentCard = document.getElementById('team-current-card');
-  const entryText = entry => entry.kind === SCHEDULE_ROW_KINDS.GLOBAL ? entry.label : stationName(team, entry.stationId);
-  // "עכשיו" ו"הבא" בראש הדף: לאן הולכים ומתי, בלי לחפש ברשימה
-  const parts = [];
-  if (current) {
-    parts.push(`<h2>עכשיו: ${escapeHtml(entryText(current))}</h2>
-      <p>${formatScheduleTime(current.startMinute)} · ${escapeHtml(entryPlace(current))}</p>
-      ${current.kind === SCHEDULE_ROW_KINDS.ROTATION && current.stationId
-        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`);
-  }
-  if (next) {
-    const when = upcoming.minutesUntil != null ? ` · בעוד ${upcoming.minutesUntil} דק׳` : '';
-    parts.push(`<p class="team-next-line"><strong>הבא:</strong> ${escapeHtml(entryText(next))} · ${formatScheduleTime(next.startMinute)}${when}${
-      next.kind === SCHEDULE_ROW_KINDS.ROTATION ? ` · ${escapeHtml(entryPlace(next))}` : ''}</p>`);
-  }
-  currentCard.innerHTML = parts.join('');
-  currentCard.hidden = !parts.length;
   const byDate = entries.reduce((map, entry) => {
     (map[entry.date] ||= []).push(entry); return map;
   }, {});
@@ -591,57 +612,118 @@ function renderTeamSchedule() {
       data-collapsible="day-${escapeHtml(date)}"${hasToday && date !== today ? ' data-collapsed-default="1"' : ''}>
     <h2 class="team-day-title">${escapeHtml(dateLabel(date))}${date === today ? ' · היום' : ''}</h2>
     ${dayEntries.map(entry => {
-      const isCurrent = entry.id === current?.id;
-      const nextBadge = entry.id === next?.id ? '<em class="team-entry-badge">הבא</em>' : '';
+      const nextBadge = '<em class="team-entry-badge" hidden>הבא</em>';
       if (entry.kind === SCHEDULE_ROW_KINDS.GLOBAL) {
-        return `<div class="team-entry global ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}">
+        return `<div class="team-entry global" data-schedule-row="${escapeHtml(entry.id)}">
           <strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
           <div class="team-entry-main"><strong>${escapeHtml(entry.label)}${nextBadge}</strong><span>פעילות משותפת</span></div>
         </div>`;
       }
-      const intensity = stationIntensity(team, entry.stationId);
       const content = `<strong class="team-entry-time">${formatScheduleTime(entry.startMinute)}</strong>
-        <div class="team-entry-main"><strong>${escapeHtml(stationName(team, entry.stationId))}${nextBadge}</strong>
+        <div class="team-entry-main"><strong><span data-station-name="${escapeHtml(entry.stationId)}">${escapeHtml(stationName(team, entry.stationId))}</span>${nextBadge}</strong>
           <span>${escapeHtml(entryPlace(entry))}</span></div>
-        <span class="team-entry-intensity"><i class="intensity-dot intensity-${intensity}"></i>${INTENSITY_LABELS[intensity]}</span>`;
+        <span class="team-entry-intensity station-details-pending" data-station-intensity="${escapeHtml(entry.stationId)}" aria-hidden="true"></span>`;
       return entry.stationId
-        ? `<a class="team-entry ${isCurrent ? 'current' : ''}" data-schedule-row="${escapeHtml(entry.id)}" href="${evaluationUrl(team, entry.stationId)}">${content}</a>`
+        ? `<a class="team-entry" data-schedule-row="${escapeHtml(entry.id)}" href="${evaluationUrl(team, entry.stationId)}">${content}</a>`
         : `<div class="team-entry" data-schedule-row="${escapeHtml(entry.id)}">${content}</div>`;
     }).join('')}
   </section>`).join('');
   const commander = teamProjection.commanderName ? ` · מפקד: ${teamProjection.commanderName}` : '';
   initCollapsibleCards(list);
+  list.querySelectorAll('[data-collapsible]').forEach(card => {
+    if (dayState.has(card.dataset.collapsible)) setCardCollapsed(card, dayState.get(card.dataset.collapsible));
+  });
   document.getElementById('schedule-subtitle').textContent = `צוות ${Number(team)}${commander}`;
   document.getElementById('schedule-revision').textContent = `גרסה ${teamProjection.sourceRevision || 0}`;
-  applyCurrentRowHighlight();
+  refreshTeamStationDetails();
+  updateTeamClock();
+  positionScheduleOnOpen(entries, teamProjection.timeZone);
+}
+
+function refreshTeamStationDetails() {
+  if (!scheduleMetadataReady || !teamProjection) return;
+  const team = String(teamProjection.team || pad2(currentUser.team));
+  const list = document.getElementById('team-schedule-list');
+  list.querySelectorAll('[data-station-name]').forEach(label => {
+    label.textContent = stationName(team, label.dataset.stationName);
+  });
+  list.querySelectorAll('[data-station-intensity]').forEach(label => {
+    const intensity = stationIntensity(team, label.dataset.stationIntensity);
+    label.innerHTML = `<i class="intensity-dot intensity-${intensity}"></i>${INTENSITY_LABELS[intensity]}`;
+    label.classList.remove('station-details-pending');
+    label.removeAttribute('aria-hidden');
+  });
+}
+
+// Clock ticks change only the time-dependent summary/badges. Never replace the
+// list a person is reading, its focused link or the day they opened/collapsed.
+function updateTeamClock(now = new Date()) {
+  const entries = teamProjection?.entries || [];
+  const team = String(teamProjection?.team || pad2(currentUser?.team));
+  const current = scheduleEntryAt(entries, now, teamProjection?.timeZone);
+  const upcoming = nextScheduleEntry(entries, now, teamProjection?.timeZone);
+  const next = upcoming?.entry || null;
+  const entryText = entry => entry.kind === SCHEDULE_ROW_KINDS.GLOBAL ? entry.label : stationName(team, entry.stationId);
+  const parts = [];
+  if (current) {
+    parts.push(`<h2>עכשיו: ${escapeHtml(entryText(current))}</h2>
+      <p>${formatScheduleTime(current.startMinute)}${current.kind === SCHEDULE_ROW_KINDS.ROTATION ? ` · ${escapeHtml(entryPlace(current))}` : ''}</p>
+      ${current.kind === SCHEDULE_ROW_KINDS.ROTATION && current.stationId
+        ? `<a class="btn btn-primary" href="${evaluationUrl(team, current.stationId)}">פתח הערכה</a>` : ''}`);
+  }
+  if (next) {
+    const when = upcoming.minutesUntil != null ? ` · בעוד ${upcoming.minutesUntil} דק׳` : '';
+    parts.push(`<p class="team-next-line"><strong>הבא:</strong> ${escapeHtml(entryText(next))} · ${formatScheduleTime(next.startMinute)}${when}${
+      next.kind === SCHEDULE_ROW_KINDS.ROTATION ? ` · ${escapeHtml(entryPlace(next))}` : ''}</p>`);
+  }
+  const card = document.getElementById('team-current-card');
+  const content = parts.join('');
+  if (card.dataset.content !== content) {
+    card.innerHTML = content;
+    card.dataset.content = content;
+  }
+  card.hidden = !parts.length;
+  document.querySelectorAll('#team-schedule-list [data-schedule-row]').forEach(row => {
+    const badge = row.querySelector('.team-entry-badge');
+    if (badge) badge.hidden = row.dataset.scheduleRow !== next?.id;
+  });
+  applyCurrentRowHighlight(now);
+}
+
+function receiveWorkspace(workspace) {
+  if (pageBlocked) return;
+  latestWorkspace = workspace;
+  // Do not expose editing until station maps and the event roster are available.
+  if (!scheduleMetadataReady) return;
+  document.getElementById('schedule-manager').hidden = false;
+  const nextPublishedRevision = Number(workspace.published?.revision || 0);
+  const nextDraftRevision = Number(workspace.draft?.draftRevision || 0);
+  const workspaceChanged = nextPublishedRevision !== Number(publishedSchedule?.revision || 0) ||
+    nextDraftRevision !== Number(remoteDraft?.draftRevision || 0);
+  publishedSchedule = workspace.published;
+  remoteDraft = workspace.draft;
+  renderScheduleHistory();
+  if (!dirty) {
+    conflict = false;
+    document.getElementById('schedule-conflict').hidden = true;
+    setDraft(remoteDraft || publishedSchedule || { teamIds:teamIds(), commanderNames:{}, rows:[] });
+  } else if (workspaceChanged) {
+    conflict = true;
+    document.getElementById('schedule-conflict').hidden = false;
+    setSaveStatus('הלו״ז השתנה במכשיר אחר');
+  }
+  scheduleShown();
 }
 
 function subscribeToSchedule() {
   unsubscribeSchedule?.();
   unsubscribeRevisions?.();
   if (canManageSchedule(currentUser.role)) {
-    document.getElementById('schedule-manager').hidden = false;
     document.getElementById('schedule-team').hidden = true;
-    unsubscribeSchedule = repository.subscribeWorkspace(activeEvent.id, workspace => {
-      const nextPublishedRevision = Number(workspace.published?.revision || 0);
-      const nextDraftRevision = Number(workspace.draft?.draftRevision || 0);
-      const workspaceChanged = nextPublishedRevision !== Number(publishedSchedule?.revision || 0) ||
-        nextDraftRevision !== Number(remoteDraft?.draftRevision || 0);
-      publishedSchedule = workspace.published;
-      remoteDraft = workspace.draft;
-      renderScheduleHistory();
-      if (!dirty) {
-        conflict = false;
-        document.getElementById('schedule-conflict').hidden = true;
-        setDraft(remoteDraft || publishedSchedule || { teamIds:teamIds(), commanderNames:{}, rows:[] });
-      } else if (workspaceChanged) {
-        conflict = true;
-        document.getElementById('schedule-conflict').hidden = false;
-        setSaveStatus('הלו״ז השתנה במכשיר אחר');
-      }
-      scheduleShown();
-    }, error => showBlocking('טעינת הלו״ז נכשלה: ' + error.message));
+    unsubscribeSchedule = repository.subscribeWorkspace(activeEvent.id, receiveWorkspace,
+      error => showBlocking('טעינת הלו״ז נכשלה: ' + error.message));
     foreground.background(() => {
+      if (pageBlocked) return;
       unsubscribeRevisions = repository.subscribeRevisions(activeEvent.id, values => {
         publishedRevisions = values;
         renderScheduleHistory();
@@ -675,15 +757,13 @@ async function initializePage(pointerRead) {
     resolveEventId: () => pointerRead.then(item => activeEventIdFromPointer(item.exists() ? item.data() : null))
   });
   document.getElementById('schedule-user').textContent = `${currentUser.name || ''} · ${roleLabel(currentUser.role)}`;
-  const [, event] = await Promise.all([stationTypesRead, loadEventAndTeams(pointerRead)]);
-  activeEvent = event;
-  markLoad('event and teams loaded');
+  activeEvent = await loadEvent(pointerRead);
+  markLoad('event loaded');
   if (!activeEvent) { showBlocking('לא נמצא אירוע זמין.'); return; }
   document.getElementById('schedule-title').textContent = activeEvent.name || 'לו״ז גיבוש';
   document.getElementById('schedule-subtitle').textContent = canManageSchedule(currentUser.role)
     ? `${activeEvent.status === 'draft' ? 'טיוטה · ' : ''}מבט־על ועריכת שיבוץ לכל הצוותים`
     : `לו״ז צוות ${Number(currentUser.team)}`;
-  if (!teamIds().length) { showBlocking('לא נמצאו צוותים באירוע. יש להוסיף צוותים במסך הגדרת האירוע.'); return; }
   repository = createScheduleRepository(db, currentUser);
   const clock = localScheduleClock(new Date());
   document.getElementById('new-row-date').value = clock.date;
@@ -692,12 +772,42 @@ async function initializePage(pointerRead) {
   );
   window.toggleNewRowLabel();
   subscribeToSchedule();
+  // No extra reads: the same metadata requests finish in parallel with the
+  // schedule subscription, instead of delaying its start. Unknown station names
+  // stay numeric until maps/types are ready (never guess a customised station).
+  const [typesLoaded, teams] = await Promise.all([stationTypesRead, eventTeamsRead]);
+  if (pageBlocked) return;
+  if (!typesLoaded || teams.error || !Object.keys(teams.value).length) {
+    if (canManageSchedule(currentUser.role)) {
+      showBlocking(!typesLoaded || teams.error ? 'טעינת פרטי התחנות והצוותים נכשלה. רענן ונסה שוב.' :
+        'לא נמצאו צוותים באירוע. יש להוסיף צוותים במסך הגדרת האירוע.');
+    } else document.getElementById('schedule-details-warning').hidden = false;
+    return;
+  }
+  eventTeams = teams.value;
+  scheduleMetadataReady = true;
+  markLoad('station details loaded');
+  if (canManageSchedule(currentUser.role)) {
+    if (latestWorkspace) receiveWorkspace(latestWorkspace);
+  } else {
+    refreshTeamStationDetails();
+    updateTeamClock();
+  }
 }
 
 window.logout = async () => { await signOutAndClearCache(auth, db); location.href = 'index.html'; };
 window.addEventListener('beforeunload', event => {
   if (!dirty) return;
   event.preventDefault(); event.returnValue = '';
+});
+window.addEventListener('pageshow', event => {
+  if (!event.persisted) return;
+  // Returning through the browser's back/forward cache is a new opening too.
+  openingPositionApplied = false;
+  pageInteracted = false;
+  const manager = canManageSchedule(currentUser?.role);
+  const source = manager ? draftSchedule : teamProjection;
+  positionScheduleOnOpen(manager ? source?.rows : source?.entries, source?.timeZone);
 });
 document.getElementById('schedule-preview-modal').addEventListener('click', event => {
   if (event.target.id === 'schedule-preview-modal') window.closeSchedulePreview();
@@ -709,7 +819,7 @@ document.addEventListener('keydown', event => {
 });
 setInterval(() => {
   if (canManageSchedule(currentUser?.role)) applyCurrentRowHighlight();
-  else if (teamProjection) renderTeamSchedule();
+  else if (teamProjection) updateTeamClock();
 }, 30000);
 
 onAuthStateChanged(auth, async user => {

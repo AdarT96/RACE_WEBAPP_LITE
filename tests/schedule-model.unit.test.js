@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SCHEDULE_MAX_TEAMS, SCHEDULE_ROW_KINDS, buildTeamScheduleProjection, normalizeSchedule,
-  nextScheduleEntry, recommendedStationFromProjection, scheduleEntryAt, scheduleIssues
+  nextScheduleEntry, recommendedStationFromProjection, scheduleEntryAt, scheduleIssues, scheduleOpeningEntry
 } from '../frontend/js/schedule-model.js';
 import { stationIntensityFor } from '../frontend/js/station-intensity.js';
 import { evaluationTargetFromSearch, resolveInitialStation, stationOutsideSchedule } from '../frontend/js/app-navigation-model.js';
@@ -21,6 +21,46 @@ function masterSchedule() {
     ]
   });
 }
+
+test('opening uses the current slot; outside the explicit first/last minute returns the beginning', () => {
+  const rows = masterSchedule().rows;
+  for (const [time, expected] of [
+    ['2026-08-23T12:00:00+03:00', 'prep'],
+    ['2026-08-24T02:59:00+03:00', 'prep'],
+    ['2026-08-24T03:00:00+03:00', 'prep'],
+    ['2026-08-24T03:10:00+03:00', 'first'],
+    ['2026-08-24T03:59:59+03:00', 'first'],
+    ['2026-08-24T04:00:59+03:00', 'second'],
+    ['2026-08-24T04:01:00+03:00', 'prep'],
+    ['2026-08-25T03:20:00+03:00', 'prep']
+  ]) assert.equal(scheduleOpeningEntry(rows, new Date(time))?.id, expected, time);
+  assert.equal(scheduleOpeningEntry([], new Date()), null);
+  assert.equal(scheduleOpeningEntry(null, new Date()), null);
+});
+
+test('opening works across nights and missing days without mutating the input or changing recommendations', () => {
+  const rows = [
+    { id:'finish', date:'2026-11-06', startMinute:600 },
+    { id:'sleep', date:'2026-11-04', startMinute:1080 },
+    { id:'start', date:'2026-11-04', startMinute:540 }
+  ];
+  const original = JSON.stringify(rows);
+  assert.equal(scheduleOpeningEntry(rows, new Date('2026-11-05T01:00:00+02:00')).id, 'sleep');
+  assert.equal(scheduleOpeningEntry(rows, new Date('2026-11-06T10:01:00+02:00')).id, 'start');
+  assert.equal(JSON.stringify(rows), original);
+  assert.equal(scheduleEntryAt(rows, new Date('2026-11-05T01:00:00+02:00')), null);
+});
+
+test('opening obeys the schedule time zone, including Israel winter time and the DST transition', () => {
+  const rows = [
+    { id:'early', date:'2026-10-25', startMinute:30 },
+    { id:'one', date:'2026-10-25', startMinute:60 },
+    { id:'end', date:'2026-10-25', startMinute:180 }
+  ];
+  assert.equal(scheduleOpeningEntry(rows, new Date('2026-10-24T22:30:00Z')).id, 'one');
+  assert.equal(scheduleOpeningEntry(rows, new Date('2026-10-24T23:30:00Z')).id, 'one');
+  assert.equal(scheduleOpeningEntry(rows, new Date('2026-10-24T23:30:00Z'), 'UTC').id, 'early');
+});
 
 test('one master schedule creates a least-privilege projection per team', () => {
   const projection = buildTeamScheduleProjection(masterSchedule(), '01');

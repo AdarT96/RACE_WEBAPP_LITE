@@ -31,6 +31,18 @@ function writeCollapsed(id, collapsed) {
   try { localStorage.setItem(storageKey(id), collapsed ? '1' : '0'); } catch (error) { /* מצב פרטי — לא נשמר */ }
 }
 
+// Navigation can reveal a card without overwriting the user's saved preference.
+export function setCardCollapsed(card, collapsed, { persist = false } = {}) {
+  const button = card.querySelector(':scope > .card-collapse-btn');
+  if (!button) return;
+  card.classList.toggle('is-collapsed', collapsed);
+  button.setAttribute('aria-expanded', String(!collapsed));
+  const label = collapsed ? 'הצג' : 'כווץ';
+  button.setAttribute('aria-label', button.dataset.cardTitle ? `${label}: ${button.dataset.cardTitle}` : label);
+  button.title = collapsed ? 'הצג את הכרטיס' : 'כווץ את הכרטיס';
+  if (persist) writeCollapsed(card.dataset.collapsible, collapsed);
+}
+
 // אפשר לקרוא שוב אחרי שנוסף תוכן; כרטיס שכבר הוכן מדולג.
 export function initCollapsibleCards(root = document) {
   root.querySelectorAll('[data-collapsible]').forEach(card => {
@@ -44,21 +56,13 @@ export function initCollapsibleCards(root = document) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'card-collapse-btn';
-    const title = (head.querySelector('h1, h2, h3')?.textContent || '').trim();
-    const apply = collapsed => {
-      card.classList.toggle('is-collapsed', collapsed);
-      button.setAttribute('aria-expanded', String(!collapsed));
-      const label = collapsed ? 'הצג' : 'כווץ';
-      button.setAttribute('aria-label', title ? `${label}: ${title}` : label);
-      button.title = collapsed ? 'הצג את הכרטיס' : 'כווץ את הכרטיס';
-    };
-    apply(readCollapsed(id, card.dataset.collapsedDefault === '1'));
+    button.dataset.cardTitle = (head.querySelector('h1, h2, h3')?.textContent || head.textContent || '').trim();
+    card.appendChild(button);
+    setCardCollapsed(card, readCollapsed(id, card.dataset.collapsedDefault === '1'));
     button.addEventListener('click', event => {
       event.stopPropagation();
       const collapsed = !card.classList.contains('is-collapsed');
-      apply(collapsed);
-      writeCollapsed(id, collapsed);
+      setCardCollapsed(card, collapsed, { persist:true });
     });
-    card.appendChild(button);
   });
 }

@@ -7,7 +7,7 @@
     'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js'
   ];
   var CACHE_PREFIX = 'gibush-shell-';
-  var CACHE_VERSION = 'v2';
+  var CACHE_VERSION = 'v3';
   var CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
   // קבצי המעטפת שמוטמעים מראש בהתקנה. בדיקת יחידה מוודאת שהרשימה מכסה את כל
