@@ -153,7 +153,7 @@ test('doGet declares ensure_files and a bumped version', () => {
   const info = newEnv().get();
   assert.ok(info.features.includes('ensure_files'));
   assert.ok(info.features.includes('sync_batch'));
-  assert.match(info.version, /rep-durations/);
+  assert.match(info.version, /rep-durations-manual/);
 });
 
 // ───────────── counter stations: duration of each repetition ─────────────
@@ -170,6 +170,22 @@ test('counter station writes the duration of each repetition into the time colum
   assert.deepEqual(rows.slice(1).map(r => [r[2], r[3], r[4]]), [
     [101, '1:10, 1:25, 1:40 / 1:05', '3 / 1'],
     [102, '', 5]
+  ]);
+});
+
+test('a count corrected by hand keeps its tap times and is marked in the time column', () => {
+  const env = newEnv();
+  const ev = { uid: 'u', name: 'דנה' };
+  const crawl = { ...stationRow({ team: 1, pid: 101, round: 1, station: 1, evaluator: ev }),
+    station: '04', reps_list: [2, 4], rep_durations_list: [[70000, 85000, 100000], [65000]], reps_manual_list: [true, false] };
+  const noTimes = { ...stationRow({ team: 1, pid: 102, round: 1, station: 1, evaluator: ev }),
+    station: '04', reps_list: [3], rep_durations_list: [[]], reps_manual_list: [true] };
+  ensureBatched(env, [crawl, noTimes]);
+  env.call({ type: 'sync_batch', rows: [crawl, noTimes] });
+  const rows = env.findSpreadsheetByName('צוות 1')._sheets.find(s => s._name === 'זחילות')._rows;
+  assert.deepEqual(rows.slice(1).map(r => [r[2], r[3], r[4]]), [
+    [101, '⚠ תוקן ידנית, הזמנים לא תואמים לספירה: 1:10, 1:25, 1:40 / 1:05', '2 / 4'],
+    [102, '⚠ תוקן ידנית, הזמנים לא תואמים לספירה', 3]
   ]);
 });
 

@@ -86,6 +86,7 @@ export function normalizeAssessmentEntry(entry) {
     clearedScores: Array.from(new Set((Array.isArray(entry?.clearedScores) ? entry.clearedScores : [])
       .map(traitIdFor).filter(Boolean))),
     measurementCleared: entry?.measurementCleared === true,
+    measurementManual: entry?.measurementManual === true,
     hiddenCommentIds: Array.from(new Set((Array.isArray(entry?.hiddenCommentIds) ? entry.hiddenCommentIds : [])
       .map(String).filter(Boolean)))
   };
@@ -135,8 +136,18 @@ export function mergeAssessmentEntries(legacyEntry, privateEntry) {
     comments,
     clearedScores: current.clearedScores,
     measurementCleared: current.measurementCleared,
+    measurementManual: current.measurementManual,
     hiddenCommentIds: current.hiddenCommentIds
   };
+}
+
+// תיקון ידני של מדידה. זמני ההקשה (repTimes) נשמרים כפי שהם; אם היו הקשות,
+// measurementManual מסמן לקורא הגיליון שהזמנים כבר לא תואמים בהכרח לספירה.
+export function applyManualMeasurement(entry, value) {
+  entry.measurement = value;
+  entry.measurementCleared = value == null;
+  if (entry.repTimes?.length) entry.measurementManual = true;
+  return entry;
 }
 
 export function assessmentEntryFor({ assessment, race, participantId, evaluatorUid }) {
@@ -206,7 +217,8 @@ export function stationAssessmentEntry({ races, assessmentsByRace, race = null, 
   const round = race ? roundEntry(race) : null;
   const measurement = round ? round.measurement : null;
   const repTimes = round ? round.repTimes : [];
-  if (!first) return { ...normalizeAssessmentEntry(null), measurement, repTimes };
+  const measurementManual = round ? round.measurementManual : false;
+  if (!first) return { ...normalizeAssessmentEntry(null), measurement, repTimes, measurementManual };
 
   const earlier = [legacyEntryForParticipant(first.tags, pid, evaluatorUid), ...later.map(roundEntry)]
     .reduce((merged, entry) => ({
@@ -215,7 +227,7 @@ export function stationAssessmentEntry({ races, assessmentsByRace, race = null, 
       comments: normalizeNotes([...merged.comments, ...entry.comments])
     }), normalizeAssessmentEntry(null));
   const station = mergeAssessmentEntries(earlier, lookup(first.id)?.entries?.[pid]);
-  return { ...station, measurement, repTimes };
+  return { ...station, measurement, repTimes, measurementManual };
 }
 
 // סבב שמסמך ההערכה שלו מחזיק את ההערה (לעריכה של הערה ישנה מסבב מאוחר)

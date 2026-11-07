@@ -1168,7 +1168,7 @@
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
     createNote, normalizeAssessment, normalizeNote,
-    normalizeNotes, repetitionPlaces, stationAssessmentEntry,
+    normalizeNotes, repetitionPlaces, stationAssessmentEntry, applyManualMeasurement,
     generalStationRace, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
@@ -1193,6 +1193,7 @@
   import { openFirestore, signOutAndClearCache, getDocPatiently } from "./js/firestore-cache.js";
   import { mountMessageCenter } from "./js/message-center.js";
   import { activeEventIdFromPointer } from "./js/messages-model.js";
+  import { showToast } from "./js/toast.js";
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
   import {
     getAuth, onAuthStateChanged, signOut
@@ -3418,6 +3419,7 @@
       return;
     }
     const raceRef = doc(db, 'races', latestRace.id);
+    const endingRound = latestRace.round;
     setControlActionBusy(true);
     const slowNotice = setTimeout(() => showToast('הסיום עדיין לא הגיע לשרת — בדוק קליטה', 'info'), 8000);
     try {
@@ -3430,7 +3432,7 @@
         endedBy: currentUser.uid,
         endedReason: 'manual'
       });
-      showToast('הסבב הסתיים', 'info');
+      showToast(endingRound ? `סבב ${endingRound} הסתיים` : 'הסבב הסתיים', 'info');
     } catch (e) {
       showToast('שגיאה בסיום סבב: ' + (isPermissionDenied(e)
         ? 'הסבב כבר הסתיים במכשיר אחר.' : errorText(e)), 'error');
@@ -3649,8 +3651,11 @@
     const val = entry?.measurement != null ? entry.measurement : '';
     const label = st.measureLabel || 'מספר חזרות';
     const manual = usesManualMeasure(st);
-    const canEditMeasure = canEvaluate() && (manual ||
-      (currentRace?.id === latestRace?.id && isSessionEffectivelyRunning(currentRace)));
+    const activeTapRound = currentRace?.id === latestRace?.id && isSessionEffectivelyRunning(currentRace);
+    const canEditMeasure = canEvaluate() && Boolean(currentRace);
+    const hint = manual ? 'הזן את התוצאה הסופית. השמירה מתבצעת ביציאה מהשדה.'
+      : activeTapRound ? 'ניתן לתקן ידנית בזמן שהסבב פעיל.'
+      : 'הסבב הסתיים — עדיין אפשר לתקן ידנית. זמני החזרות יישארו, ובגיליון יסומן שהם לא תואמים לספירה.';
     box.style.display = '';
     box.innerHTML = `
       <div class="measure-entry ${manual ? 'manual' : ''}">
@@ -3659,7 +3664,8 @@
                step="1" onchange="setStationReps(this.value)" onfocus="this.select()"
                class="form-input"
                ${canEditMeasure ? '' : 'disabled'}>
-        <span class="hint">${manual ? 'הזן את התוצאה הסופית. השמירה מתבצעת ביציאה מהשדה.' : 'ניתן לתקן ידנית בזמן שהסבב פעיל.'}</span>
+        <span class="hint">${hint}</span>
+        ${!manual && entry?.measurementManual ? '<span class="hint measure-manual-note">⚠ הספירה תוקנה ידנית — זמני החזרות לא תואמים לה בהכרח.</span>' : ''}
       </div>`;
   }
 
@@ -3718,13 +3724,8 @@
   // קובע/מנקה את המדידה של המעריך הנוכחי בלבד.
   window.setStationReps = async (val) => {
     const st = currentStationType();
-    const manual = usesManualMeasure(st);
-    const activeTapRound = currentRace?.id === latestRace?.id && isSessionEffectivelyRunning(currentRace);
     if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) {
       showToast('לא נבחר משתתף לעדכון', 'error'); return;
-    }
-    if (!manual && !activeTapRound) {
-      showToast('אפשר לעדכן מדידה רק בסבב הפעיל', 'error'); return;
     }
     const raw = String(val ?? '').trim();
     const num = raw === '' ? null : Number(raw);
@@ -3737,13 +3738,7 @@
     const pid = stationNoteSelectedPid;
     try {
       if (!await commitPendingReps()) return;
-      await evaluationRepository.mutateParticipant(raceId, pid, entry => {
-        entry.measurement = num;
-        entry.measurementCleared = num == null;
-        // תיקון ידני כלפי מטה מוחק את זמני החזרות העודפות (האחרונות)
-        entry.repTimes = num == null ? [] : entry.repTimes.slice(0, num);
-        return entry;
-      });
+      await evaluationRepository.mutateParticipant(raceId, pid, entry => applyManualMeasurement(entry, num));
       if (currentRaceId === raceId) {
         if (num == null) delete localReps[pid]; else localReps[pid] = num;
       }
@@ -4088,7 +4083,7 @@
       const entryFor = race => stationAssessmentEntry({
         races: stationRaces, assessmentsByRace: personalAssessments, race, participantId, evaluatorUid: uid
       });
-      const places = [], times = [], reps = [], repDurations = [];
+      const places = [], times = [], reps = [], repDurations = [], repsManual = [];
       for (const { race, arrival, placeByParticipant } of rounds) {
         const place = placeByParticipant.get(String(participantId));
         if (place != null) {
@@ -4100,6 +4095,7 @@
         if (roundEntry.measurement != null) {
           reps.push(Number(roundEntry.measurement));
           repDurations.push(repetitionDurationsMs(race, roundEntry.repTimes));
+          repsManual.push(roundEntry.measurementManual === true);
         }
       }
 
@@ -4129,6 +4125,7 @@
         first_ms_list:  times,
         reps_list:      reps,
         rep_durations_list: repDurations,   // משך כל חזרה בכל סבב (ms), מקביל ל-reps_list
+        reps_manual_list: repsManual,       // הספירה תוקנה ידנית: הזמנים לא תואמים לה בהכרח
         scores:         myScores,
         comments:       myComments,
         evaluator_name: evaluatorNameFor(uid),
@@ -5204,12 +5201,7 @@
       showToast('יש להזין מספר שלם שאינו שלילי', 'error'); renderCandidateStation(); return;
     }
     try {
-      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
-        entry.measurement = value;
-        entry.measurementCleared = value == null;
-        entry.repTimes = value == null ? [] : entry.repTimes.slice(0, value);
-        return entry;
-      });
+      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => applyManualMeasurement(entry, value));
       candidateState.assessmentsByRace.set(raceId, updated);
       rebuildCandidateSummary();
     } catch (error) { showToast('שגיאה בשמירת תוצאה: ' + errorText(error), 'error'); }
@@ -5563,15 +5555,7 @@
     return text;
   }
 
-  window.showToast = (msg, type='info') => {
-    const c = document.getElementById('toast-container');
-    const same = [...c.children].find(item => item.textContent === msg && item.classList.contains(type));
-    if (same) { clearTimeout(same.expiry); same.expiry = setTimeout(() => same.remove(), 3500); return; }
-    while (c.children.length >= 2) c.firstElementChild.remove();
-    const el = document.createElement('div');
-    el.className = `toast ${type}`; el.textContent = msg;
-    c.appendChild(el); el.expiry = setTimeout(() => el.remove(), 3500);
-  };
+  window.showToast = showToast;
 
 </script>
 </body>

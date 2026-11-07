@@ -110,7 +110,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-11-07-rep-durations";
+var CODE_VERSION = "2026-11-07-rep-durations-manual";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -229,7 +229,7 @@ function buildStationRow_(payload, def, stationNo, evalName, pid) {
   if (def.measure === "place") vals[1] = roundsCell_(roundPlaces_(payload));
   vals[2] = pid;
   vals[3] = (def.measure === "reps" && Array.isArray(payload.rep_durations_list))
-    ? repDurationsCell_(payload.rep_durations_list)
+    ? repDurationsCell_(payload.rep_durations_list, payload.reps_manual_list)
     : roundsCell_(roundTimes_(payload).map(msToClock_));
   if (def.measure === "reps") vals[4] = roundsCell_(roundReps_(payload));
 
@@ -303,14 +303,19 @@ function roundsCell_(values) {
 }
 
 // תחנת ספירה: משך כל חזרה, "1:10, 1:25, 1:40"; כמה סבבים מופרדים ב-" / "
-function repDurationsCell_(lists) {
+// סבב שהספירה בו תוקנה ידנית מסומן: הזמנים נשארים, אבל לא תואמים לספירה בהכרח.
+var MANUAL_REPS_MARK = "⚠ תוקן ידנית, הזמנים לא תואמים לספירה";
+function repDurationsCell_(lists, manualFlags) {
   var parts = [], any = false;
+  var manual = Array.isArray(manualFlags) ? manualFlags : [];
   for (var i = 0; i < lists.length; i++) {
     var list = Array.isArray(lists[i]) ? lists[i] : [];
     var times = [];
     for (var j = 0; j < list.length; j++) times.push(msToClock_(list[j]) || "0:00");
-    if (times.length) any = true;
-    parts.push(times.join(", "));
+    var part = times.join(", ");
+    if (manual[i] === true) part = MANUAL_REPS_MARK + (part ? ": " + part : "");
+    if (part) any = true;
+    parts.push(part);
   }
   return any ? parts.join(" / ") : "";
 }

@@ -42,6 +42,7 @@
     .reason-track { height:9px; border-radius:999px; background:var(--surface); overflow:hidden; }
     .reason-fill { height:100%; background:var(--danger); border-radius:inherit; }
     .candidate-action { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+    .candidate-action .btn, .modal-actions .btn { min-height:44px; }
     .team-toggle {
       display:inline-flex; align-items:center; gap:7px; padding:7px 9px; min-height:44px;
       border:0; border-radius:8px; background:transparent; color:var(--text);
@@ -64,8 +65,10 @@
     .team-candidate-open { padding:7px 9px; border:0; border-radius:8px; background:transparent; color:var(--text); font:inherit; text-align:right; cursor:pointer; }
     .team-candidate-open small { color:var(--accent); font-size:10px; }
     .team-candidate-open:hover, .team-candidate-open:focus-visible { background:var(--card); outline:1px solid var(--accent); }
-    .team-station-open { display:grid; gap:2px; padding:5px 7px; border:0; border-radius:7px; background:transparent; color:var(--text); font:inherit; text-align:right; cursor:pointer; }
+    .team-station-open { display:grid; gap:2px; min-height:44px; padding:5px 7px; border:0; border-radius:7px; background:transparent; color:var(--text); font:inherit; text-align:right; cursor:pointer; }
     .team-station-open small { color:var(--accent); font-size:9px; }
+    .station-no { color:var(--text-muted); font-size:11px; }
+    .station-new { justify-self:start; padding:1px 7px; border-radius:999px; background:rgba(59,130,246,.16); color:#60a5fa; font-size:10px; font-weight:800; }
     .team-station-open:hover, .team-station-open:focus-visible { background:var(--surface); outline:1px solid var(--accent); }
     .empty-panel { color:var(--text-muted); padding:18px 8px; text-align:center; }
     .formation-alert-center { margin-bottom:14px; }
@@ -184,7 +187,7 @@
             <p class="formation-card-help">לחץ על צוות כדי לפתוח את רשימת המועמדים שלו. הנתונים מתעדכנים בזמן אמת.</p>
             <div class="formation-table-wrap">
               <table class="formation-table">
-                <thead><tr><th>צוות</th><th>פעילים</th><th>נשרו</th><th>תחנה</th><th>סבב</th><th>מצב</th></tr></thead>
+                <thead><tr><th>צוות</th><th>פעילים</th><th>נשרו</th><th>תחנה</th><th>סבב בתחנה</th><th>מצב</th></tr></thead>
                 <tbody id="teams-table"></tbody>
               </table>
             </div>

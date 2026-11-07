@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyManualMeasurement,
   assessmentEntryFor, buildCandidateSummary, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
-  normalizeRepTimes, normalizeScores, repetitionPlaces,
+  normalizeAssessmentEntry, normalizeRepTimes, normalizeScores, repetitionPlaces,
   generalStationRace, generalStationEvaluationId, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
 } from '../frontend/js/evaluation-model.js';
 
@@ -249,4 +250,18 @@ test('a general station is evaluated without rounds through a virtual round 0', 
   const entry = stationAssessmentEntry({ races: [old, general], assessmentsByRace, participantId: '100', evaluatorUid });
   assert.deepEqual(entry.scores, { resilience: 6, activity: 4 });
   assert.equal(stationAssessmentRace([old, general]).id, general.id);
+});
+
+test('manual count correction keeps tap times and marks the round as corrected', () => {
+  const tapped = normalizeAssessmentEntry({ measurement: 3, repTimes: [1000, 2000, 3000] });
+  const corrected = normalizeAssessmentEntry(applyManualMeasurement(tapped, 2));
+  assert.equal(corrected.measurement, 2);
+  assert.deepEqual(corrected.repTimes, [1000, 2000, 3000]);
+  assert.equal(corrected.measurementManual, true);
+  const cleared = normalizeAssessmentEntry(applyManualMeasurement(normalizeAssessmentEntry({ measurement: 3, repTimes: [1000] }), null));
+  assert.equal(cleared.measurement, null);
+  assert.equal(cleared.measurementCleared, true);
+  assert.deepEqual(cleared.repTimes, [1000]);
+  // תחנה בהזנה ידנית (בלי הקשות): אין זמנים, ולכן אין מה לסמן
+  assert.equal(normalizeAssessmentEntry(applyManualMeasurement(normalizeAssessmentEntry(null), 12)).measurementManual, false);
 });

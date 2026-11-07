@@ -176,6 +176,25 @@ function stationName(teamRow) {
   return stationTypeOf(teamRow)?.name || `תחנה ${Number(teamRow.station)}`;
 }
 
+// בשורת הצוות מופיע גם מספר התחנה: מספר הסבב נספר בתוך התחנה ומתחיל שוב מ-1.
+function stationLabelHtml(teamRow) {
+  const name = stationTypeOf(teamRow)?.name;
+  return name
+    ? `${escapeHtml(name)}<span class="station-no">תחנה ${Number(teamRow.station)}</span>`
+    : escapeHtml(stationName(teamRow));
+}
+
+// צוות שעבר תחנה מסומן "תחנה חדשה" לכמה דקות, כדי שהמעבר מסבב 4 לסבב 1 יהיה ברור.
+const STATION_NEW_MS = 3 * 60 * 1000;
+const teamStations = new Map();
+function stationChangedRecently(teamRow, nowMs = Date.now()) {
+  const seen = teamStations.get(teamRow.team);
+  if (!seen || seen.station !== teamRow.station) {
+    teamStations.set(teamRow.team, { station: teamRow.station, changedAt: seen?.station ? nowMs : 0 });
+  }
+  return nowMs - teamStations.get(teamRow.team).changedAt < STATION_NEW_MS;
+}
+
 // תחנה כללית אין בה סבבים — "טרם התחילה" היה מטעה
 function teamStatusLabel(teamRow) {
   if (teamRow.station && stationTypeOf(teamRow)?.measure === 'general' && teamRow.raceStatus === 'not_started') {
@@ -220,9 +239,9 @@ function renderTeams(snapshot) {
       <td data-label="פעילים">${team.active} מתוך ${team.total}</td>
       <td data-label="נשרו">${team.withdrawn}</td>
       <td data-label="תחנה">${team.station
-        ? `<button type="button" class="team-station-open" onclick="openTeamStationDetails('${escapeHtml(team.team)}')">${escapeHtml(stationName(team))}<small>פרטי תחנה</small></button>`
+        ? `<button type="button" class="team-station-open" onclick="openTeamStationDetails('${escapeHtml(team.team)}')">${stationLabelHtml(team)}${stationChangedRecently(team) ? '<span class="station-new">תחנה חדשה</span>' : ''}<small>פרטי תחנה</small></button>`
         : '—'}</td>
-      <td data-label="סבב">${team.round || '—'}</td>
+      <td data-label="סבב בתחנה">${team.round || '—'}</td>
       <td data-label="מצב"><span class="formation-status ${escapeHtml(team.raceStatus)}">${escapeHtml(teamStatusLabel(team))}</span></td>
     </tr>
     ${expanded ? `<tr class="team-details-row"><td colspan="6" class="team-details-cell">

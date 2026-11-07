@@ -22,6 +22,7 @@ import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { initCollapsibleCards } from './collapsible-cards.js';
+import { showToast } from './toast.js';
 
 initCollapsibleCards();
 
@@ -54,14 +55,6 @@ const storage = {
   get(key) { try { return localStorage.getItem(key) || ''; } catch (_) { return ''; } },
   set(key, value) { try { localStorage.setItem(key, value); } catch (_) { /* לא קריטי */ } }
 };
-
-function showToast(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  $('toast-container').appendChild(toast);
-  setTimeout(() => toast.remove(), 4200);
-}
 
 function showAlert(message, type = 'warning') {
   const element = $('page-alert');

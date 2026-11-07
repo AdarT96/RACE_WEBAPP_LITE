@@ -24,6 +24,7 @@ import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestor
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 import { initCollapsibleCards, setCardCollapsed } from './collapsible-cards.js';
+import { showToast } from './toast.js';
 
 markLoad('script loaded');
 
@@ -76,15 +77,6 @@ function showBlocking(message) {
   element.hidden = false;
   document.getElementById('schedule-manager').hidden = true;
   document.getElementById('schedule-team').hidden = true;
-}
-
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3800);
 }
 
 function updateBackLink() {
