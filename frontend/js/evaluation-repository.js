@@ -1,9 +1,9 @@
 import {
-  doc, getDoc, getDocFromCache, onSnapshot, setDoc, updateDoc, FieldPath, serverTimestamp
+  arrayUnion, doc, getDoc, getDocFromCache, increment, onSnapshot, setDoc, updateDoc, FieldPath, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
   EVALUATION_SCHEMA_VERSION, generalStationEvaluationId, normalizeAssessment, normalizeAssessmentEntry,
-  parseGeneralStationRaceId
+  normalizeRepTimes, parseGeneralStationRaceId
 } from './evaluation-model.js';
 
 // שמירת הערכה עובדת גם בלי קליטה. קודם כל שינוי עבר בטרנזקציה, וטרנזקציה
@@ -113,5 +113,30 @@ export function createEvaluationRepository(db, user, { onWriteError = error => c
     return normalizeAssessment({ evaluatorUid: uid, entries }, uid);
   }
 
-  return { uid, refFor, get, getMany, subscribe, mutate, mutateParticipant };
+  // הקשות מונה: "הוסף N" ו"הוסף זמנים" כפעולות שהשרת מחבר בעצמו (increment /
+  // arrayUnion), בלי לקרוא ולכתוב מחדש את כל המסמך. בקליטה חלשה כתיבה מלאה
+  // קראה מסמך שיצירתו עוד ממתינה (createdAt ריק), והשרת דחה אותה — הקשות נעלמו.
+  async function addRepetitions(raceId, deltasByPid, timesByPid = {}) {
+    const reference = refFor(raceId);
+    const pids = Object.keys(deltasByPid || {}).filter(pid => Number(deltasByPid[pid]) > 0);
+    if (!pids.length) return;
+    const snapshot = await current(reference);
+    if (!snapshot.exists()) {
+      const entries = Object.fromEntries(pids.map(pid => [String(pid), normalizeAssessmentEntry({
+        measurement: Number(deltasByPid[pid]), repTimes: timesByPid[pid] || []
+      })]));
+      send(setDoc(reference, fullPayload(snapshot, entries, raceId)));
+      return;
+    }
+    const fields = [];
+    pids.forEach(pid => {
+      fields.push(new FieldPath('entries', String(pid), 'measurement'), increment(Number(deltasByPid[pid])));
+      fields.push(new FieldPath('entries', String(pid), 'measurementCleared'), false);
+      const times = normalizeRepTimes(timesByPid[pid]);
+      if (times.length) fields.push(new FieldPath('entries', String(pid), 'repTimes'), arrayUnion(...times));
+    });
+    send(updateDoc(reference, ...fields, 'updatedAt', serverTimestamp()));
+  }
+
+  return { uid, refFor, get, getMany, subscribe, mutate, mutateParticipant, addRepetitions };
 }

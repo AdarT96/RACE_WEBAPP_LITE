@@ -1167,8 +1167,8 @@
   import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
-    createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, normalizeRepTimes, repetitionPlaces, stationAssessmentEntry,
+    createNote, normalizeAssessment, normalizeNote,
+    normalizeNotes, repetitionPlaces, stationAssessmentEntry,
     generalStationRace, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
@@ -3604,30 +3604,8 @@
 
     repsSavePromise = (async () => {
       try {
-        const baseMeasurements = Object.fromEntries(Object.keys(pendingDeltas).map(pid => [
-          pid, currentRaceId === raceId ? currentAssessmentEntry(pid).measurement : null
-        ]));
-        const updatedAssessment = await evaluationRepository.mutate(raceId, entries => {
-          Object.entries(pendingDeltas).forEach(([pid, delta]) => {
-            const entry = normalizeAssessmentEntry(entries[pid]);
-            const base = entry.measurement == null ? Number(baseMeasurements[pid] || 0) : entry.measurement;
-            entry.measurement = base + Number(delta || 0);
-            entry.measurementCleared = false;
-            entry.repTimes = normalizeRepTimes([...entry.repTimes, ...(pendingTimes[pid] || [])]);
-            entries[pid] = entry;
-          });
-          return entries;
-        });
-
-        if (currentRaceId === raceId) {
-          Object.keys(pendingDeltas).forEach(pid => {
-            const savedEntry = updatedAssessment.entries[String(pid)];
-            const stillPending = Number(pendingRepsByRace[raceId]?.[pid] || 0);
-            localReps[pid] = Number(savedEntry?.measurement || 0) + stillPending;
-            const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
-            if (el) el.textContent = String(localReps[pid]);
-          });
-        }
+        // המונה המקומי (localReps) כבר כולל כל הקשה; לשרת נשלחת רק התוספת
+        await evaluationRepository.addRepetitions(raceId, pendingDeltas, pendingTimes);
         return true;
       } catch (e) {
         const retry = pendingRepsByRace[raceId] || {};
@@ -5577,6 +5555,10 @@
     const text = String(error?.message || error || '');
     if (['unavailable', 'deadline-exceeded'].includes(code) || /offline|connection failed|network|failed to fetch|failed to get document/i.test(text)) {
       return 'אין קליטה — הפעולה לא בוצעה. נסה שוב כשתחזור קליטה.';
+    }
+    // הודעת החוקים של Firestore היא באנגלית טכנית ("PERMISSION_DENIED: evaluation error…")
+    if (code === 'permission-denied' || /PERMISSION_DENIED|insufficient permissions/i.test(text)) {
+      return 'השרת דחה את השמירה. רענן את הדף ונסה שוב; אם זה חוזר — פנה למנהל.';
     }
     return text;
   }
