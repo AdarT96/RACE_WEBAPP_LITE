@@ -1174,7 +1174,7 @@
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
   import { createArrivalController } from "./js/arrival-controller.js";
-  import { viewedRoundId } from "./js/round-navigation-model.js";
+  import { shouldFollowNewRound, viewedRoundId } from "./js/round-navigation-model.js";
   import { createPrivateNotesRepository } from "./js/private-notes-repository.js";
   import {
     CANDIDATE_STATUSES, DROPOUT_REASONS, RECOMMENDATION_STATUSES,
@@ -2530,8 +2530,12 @@
         return;
       }
 
+      const followNewRound = shouldFollowNewRound({
+        previousLatestId, latestRace, busy: Boolean(arrivalDragState)
+      });
+      if (followNewRound) roundChosenByUser = false;
       const targetId = viewedRoundId(list, previousViewedId,
-        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed);
+        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed || followNewRound);
       const target = list.find(r => r.id === targetId) || latestRace;
       const roundChanged = target.id !== previousViewedId;
 
@@ -2545,8 +2549,10 @@
       subscribeToStationAssessments();
 
       const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
-      if (newRoundArrived && canEvaluate() && target.id !== latestRace.id) {
-        showToast(`סבב ${latestRace.round} זמין — המעבר אליו לפי בחירתך`, 'info');
+      if (newRoundArrived && canEvaluate() && supportsRoundTabs()) {
+        showToast(target.id === latestRace.id
+          ? `סבב ${latestRace.round} התחיל — עברת אליו. סבבים קודמים זמינים בלשוניות.`
+          : `סבב ${latestRace.round} התחיל — סיים את הגרירה ולחץ "עבור לסבב החדש".`, 'info');
       }
       renderRace();
       roundShown();
@@ -4915,9 +4921,20 @@
       return;
     }
     let teamData = teamsCache[team] || null;
-    if (!teamData || !candidatesByTeam.has(team)) teamData = await loadTeamData(team) || teamData;
+    if (!teamData || !candidatesByTeam.has(team)) {
+      // בזמן הטעינה (קליטה חלשה) לא מציגים "אין מועמדים" — זה נראה כמו צוות ריק
+      if (!uniqueParticipantIds(teamData?.participants || []).length) {
+        picker.innerHTML = '';
+        empty.hidden = false;
+        empty.textContent = 'טוען את רשימת המועמדים…';
+      }
+      teamData = await loadTeamData(team) || teamData;
+    }
     const participants = uniqueParticipantIds(teamData?.participants || [])
       .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
+    empty.textContent = teamData
+      ? 'אין מועמדים בצוות.'
+      : 'לא ניתן לטעון את רשימת המועמדים. בדוק קליטה ונסה שוב.';
     const operationalStates = new Map((candidatesByTeam.get(team) || [])
       .map(state => [String(state.participantId), normalizeCandidateRecord(state, { team, participantId: state.participantId })]));
     sizeParticipantGrid(picker, participants.length);

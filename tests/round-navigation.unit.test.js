@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { viewedRoundId } from '../frontend/js/round-navigation-model.js';
+import { shouldFollowNewRound, viewedRoundId } from '../frontend/js/round-navigation-model.js';
 
 const rounds = (...ids) => ids.map(id => ({ id }));
 
@@ -25,4 +25,13 @@ test('evaluator selection remains unchanged after stop, reconnect and further ro
 test('operator can explicitly follow latest while evaluator can select history', () => {
   assert.equal(viewedRoundId(rounds('one', 'two', 'three'), 'one', true), 'three');
   assert.equal(viewedRoundId(rounds('one', 'two', 'three'), 'one', false), 'one');
+});
+
+test('a newly started round pulls the evaluator along unless they are mid-drag', () => {
+  const running = { id: 'two', status: 'running' };
+  assert.equal(shouldFollowNewRound({ previousLatestId: 'one', latestRace: running }), true);
+  assert.equal(shouldFollowNewRound({ previousLatestId: 'one', latestRace: running, busy: true }), false);
+  assert.equal(shouldFollowNewRound({ previousLatestId: 'two', latestRace: running }), false, 'same round, no jump');
+  assert.equal(shouldFollowNewRound({ previousLatestId: null, latestRace: running }), false, 'first load is handled separately');
+  assert.equal(shouldFollowNewRound({ previousLatestId: 'one', latestRace: { id: 'two', status: 'stopped' } }), false);
 });
