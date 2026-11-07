@@ -487,6 +487,10 @@ test('legacy clients may omit the limit but cannot choose another limit', async 
   await assertFails(setDoc(doc(operator, 'races', 'race_01_07_4'), {
     ...racePayload(), round: 4, timeLimitSeconds: 3600
   }));
+  // 30 דקות — הגרסה הנוכחית; 40 דקות — מכשיר שעוד מריץ גרסה ישנה
+  await assertSucceeds(setDoc(doc(operator, 'races', 'race_01_07_5'), {
+    ...racePayload(), round: 5, timeLimitSeconds: 1800
+  }));
 });
 
 test('evaluators can still edit evaluation data but never lifecycle fields', async () => {

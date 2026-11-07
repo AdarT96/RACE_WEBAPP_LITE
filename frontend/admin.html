@@ -971,7 +971,7 @@
     open: 'פתוח', in_progress: 'בטיפול', resolved: 'טופל'
   };
   const ISSUE_RACE_STATUS_LABELS = {
-    not_started: 'טרם התחיל', running: 'פעיל', stopped: 'עצור', time_limit: 'תקרת 40 דק׳'
+    not_started: 'טרם התחיל', running: 'פעיל', stopped: 'עצור', time_limit: 'תקרת 30 דק׳'
   };
 
   function issueReportTime(value) {
@@ -1354,7 +1354,7 @@
         (Number(b.round) || 0) - (Number(a.round) || 0);
       container.innerHTML = races.sort(byTeamStationRound).map(r => {
         const nowMs = Date.now();
-        const status = isSessionExpired(r, nowMs) ? 'תקרת 40 דק׳' :
+        const status = isSessionExpired(r, nowMs) ? 'תקרת 30 דק׳' :
           isSessionEffectivelyRunning(r, nowMs) ? 'פעיל' : 'עצור';
         const team    = r.team ? 'צוות ' + Number(r.team) : 'ללא צוות';
         const station = r.station ? 'תחנה ' + escHtml(String(r.station)) : 'ללא תחנה';

@@ -68,6 +68,6 @@ test('normalizes numeric context and caps diagnostic text lengths', () => {
   input.environment.userAgent = 'x'.repeat(600);
   const report = buildIssueReportData(input);
   assert.equal(report.context.round, 2);
-  assert.equal(report.context.effectiveElapsedMs, 2_400_000);
+  assert.equal(report.context.effectiveElapsedMs, 1_800_000);
   assert.equal(report.environment.userAgent.length, 500);
 });

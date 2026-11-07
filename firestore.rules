@@ -210,9 +210,10 @@ service cloud.firestore {
          (!request.resource.data.keys().hasAny(['participantIds']) ||
            (request.resource.data.participantIds is list &&
             request.resource.data.participantIds.size() <= 20)) &&
+         // 1800 = תקרת 30 דקות; 2400 נשאר רק למכשיר שעוד מריץ גרסה ישנה (40 דקות).
          (!request.resource.data.keys().hasAny(['timeLimitSeconds']) ||
            (request.resource.data.timeLimitSeconds is int &&
-            request.resource.data.timeLimitSeconds == 2400)) &&
+            request.resource.data.timeLimitSeconds in [1800, 2400])) &&
          request.resource.data.tags is list && request.resource.data.tags.size() == 0);
 
       allow update: if isAdmin();
