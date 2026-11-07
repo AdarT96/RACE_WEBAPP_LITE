@@ -865,7 +865,7 @@
       </summary>
       <div class="section-body">
         <p id="sn-help" style="font-size:12px; color:var(--text-muted); margin:0 0 12px">
-          בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נשמרו עבורו נתונים.
+          בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נתת לו ציון או הערה בתחנה.
         </p>
         <div id="sn-picker" class="note-picker-grid"></div>
         <div id="sn-picker-empty" style="text-align:center; padding:16px; color:var(--text-muted); display:none">
@@ -874,7 +874,7 @@
 
         <div id="sn-selected-area" style="margin-top:16px; display:none">
           <div class="sn-next-row">
-            <button type="button" class="btn btn-ghost sn-next-btn" onclick="selectNextUnscored()">המשתתף הבא בלי נתונים ←</button>
+            <button type="button" class="btn btn-ghost sn-next-btn" onclick="selectNextUnscored()">המשתתף הבא בלי הערכה ←</button>
           </div>
           <div style="font-size:13px; margin-bottom:12px">
             נבחר: <strong id="sn-selected-label" style="font-family:monospace; direction:ltr"></strong>
@@ -3372,13 +3372,12 @@
 
     // רשימת המשתתפים קפואה לפי הסבב, כדי ששינוי מאוחר בצוות לא ישנה היסטוריה.
     const participants = participantIdsForRace(currentRace, evaluatorArrival);
-    const myArrivalIds = new Set(evaluatorArrivalStateForRace(currentRace, evaluatorArrival).order);
     sizeParticipantGrid(picker, participants.length);
     info.textContent = '';
     const st = currentStationType();
     setText('sn-help', usesManualMeasure(st)
       ? `בחר משתתף והזן ${st.measureLabel || 'את התוצאה'} בסיום התחנה. אפשר להשלים או לתקן גם אחרי עצירת הסבב.`
-      : 'בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נשמרו עבורו נתונים.');
+      : 'בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נתת לו ציון או הערה בתחנה.');
 
     if (participants.length === 0) {
       picker.innerHTML = '';
@@ -3390,16 +3389,16 @@
     }
     pickerEmpty.style.display = 'none';
 
-    // נקודת ההתקדמות אישית לחלוטין: רק נתוני המעריך המחובר וסדר ההגעה שלו.
+    // הנקודה הירוקה = המעריך המחובר כבר נתן ציון או הערה בתחנה. סימון הגעה או
+    // ספירת חזרות אינם הערכה, ולכן לא מדליקים אותה.
     const hasData = pid => {
       const entry = currentAssessmentEntry(pid);
-      return Object.keys(entry.scores).length > 0 || entry.comments.length > 0 ||
-        entry.measurement != null || myArrivalIds.has(pid);
+      return Object.keys(entry.scores).length > 0 || entry.comments.length > 0;
     };
 
     const sorted = participants.slice().sort((a, b) => Number(a) - Number(b));
     const withData = sorted.filter(hasData).length;
-    info.textContent = `${withData} מתוך ${sorted.length} עם נתונים`;
+    info.textContent = `${withData} מתוך ${sorted.length} עם הערכה`;
     picker.innerHTML = sorted.map(pid => {
       const selected = stationNoteSelectedPid === pid;
       const dataCls = hasData(pid) ? ' has-data' : '';
@@ -3423,7 +3422,7 @@
       .map(button => ({ pid: button.textContent.trim(), done: button.classList.contains('has-data') }));
     const start = pids.findIndex(item => item.pid === stationNoteSelectedPid);
     const next = [...pids.slice(start + 1), ...pids.slice(0, Math.max(start, 0))].find(item => !item.done);
-    if (!next) { showToast('לכל המשתתפים כבר יש נתונים ✓', 'success'); return; }
+    if (!next) { showToast('לכל המשתתפים כבר יש הערכה ✓', 'success'); return; }
     window.selectStationNoteParticipant(next.pid, true);
   };
 
