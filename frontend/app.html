@@ -851,11 +851,11 @@
       </div>
     </details>
 
-    <!-- ══════════ Station notes (per-race, resets each session) ══════════ -->
+    <!-- ══════════ Station evaluation (whole station; measurement per round) ══════════ -->
     <details class="section app-section section--evaluation collapsible-section evaluator-only" id="station-notes-section">
       <summary class="section-summary">
         <div class="section-title-group">
-          <span class="section-kicker">הערכה לסבב הנבחר</span>
+          <span class="section-kicker">לכל סבבי התחנה</span>
           <h2>📝 הערכת התחנה</h2>
         </div>
         <span class="section-summary-side">
@@ -893,9 +893,9 @@
             <button class="btn btn-primary" onclick="addStationNote()"
                     style="padding:10px 18px; white-space:nowrap">➕ הוסף</button>
           </div>
-          <div id="sn-list-title" style="font-size:12px; color:var(--text-muted); margin:14px 0 6px">הערות שלי לסבב הזה:</div>
+          <div id="sn-list-title" style="font-size:12px; color:var(--text-muted); margin:14px 0 6px">הערות שלי לתחנה:</div>
           <div id="sn-list"></div>
-          <div id="sn-list-empty" style="color:var(--text-muted); font-size:13px">עוד לא נכתבו הערות למשתתף זה בסבב הזה.</div>
+          <div id="sn-list-empty" style="color:var(--text-muted); font-size:13px">עוד לא נכתבו הערות למשתתף זה בתחנה.</div>
         </div>
       </div>
     </details>
@@ -1156,9 +1156,9 @@
   } from "./js/session-policy.js";
   import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
   import {
-    EVALUATION_SCHEMA_VERSION, TRAITS, assessmentEntryFor, buildCandidateSummary,
+    EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
     createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, traitIdFor
+    normalizeNotes, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
@@ -1255,10 +1255,11 @@
   let candidatesByTeam = new Map();
   let candidatesTeamUnsubscribe = null;
   let candidatesSubscribedTeam = null;
-  let currentAssessment = normalizeAssessment(null);
-  let currentAssessmentRaceId = null;
-  let currentAssessmentLoading = false;
-  let currentAssessmentUnsubscribe = null;
+  // מסמכי ההערכה של כל סבבי התחנה הנבחרת (raceId → assessment): הציונים
+  // וההערות שייכים לתחנה כולה, והמדידה לכל סבב בנפרד.
+  const stationAssessments = new Map();
+  const stationAssessmentUnsubscribes = new Map();
+  const stationAssessmentsPending = new Set();
 
   const candidateState = {
     participantId: null, summary: null, races: [], assessmentsByRace: new Map(),
@@ -2354,41 +2355,55 @@
     arrivalControllerFor(race).activate();
   }
 
-  function detachCurrentAssessmentSubscription() {
+  function detachStationAssessmentSubscriptions() {
     setEvaluationPending(false);
-    if (currentAssessmentUnsubscribe) currentAssessmentUnsubscribe();
-    currentAssessmentUnsubscribe = null;
-    currentAssessment = normalizeAssessment(null, currentUser?.uid || '');
-    currentAssessmentRaceId = null;
-    currentAssessmentLoading = false;
+    stationAssessmentUnsubscribes.forEach(unsubscribe => unsubscribe());
+    stationAssessmentUnsubscribes.clear();
+    stationAssessments.clear();
+    stationAssessmentsPending.clear();
   }
 
-  function subscribeToCurrentAssessment(race) {
-    if (!canEvaluate() || !race?.id || !evaluationRepository) {
-      detachCurrentAssessmentSubscription();
+  // מאזין לכל סבבי התחנה (בדרך כלל מעטים): ציון שניתן בסבב 1 מוצג גם בסבב 3.
+  function subscribeToStationAssessments() {
+    if (!canEvaluate() || !evaluationRepository || !racesForContext.length) {
+      detachStationAssessmentSubscriptions();
       return;
     }
-    if (currentAssessmentRaceId === race.id && currentAssessmentUnsubscribe) return;
-    detachCurrentAssessmentSubscription();
-    currentAssessmentRaceId = race.id;
-    currentAssessmentLoading = true;
-    currentAssessmentUnsubscribe = evaluationRepository.subscribe(race.id, (assessment, meta = {}) => {
-      if (currentRaceId !== race.id) return;
-      currentAssessment = assessment;
-      currentAssessmentLoading = false;
-      setEvaluationPending(meta.pending === true);
-      renderRace();
-    }, error => {
-      if (currentRaceId !== race.id) return;
-      currentAssessmentLoading = false;
-      showToast('שגיאה בטעינת ההערכה האישית: ' + errorText(error), 'error');
-      renderRace();
+    const wanted = new Set(racesForContext.map(race => String(race.id)));
+    stationAssessmentUnsubscribes.forEach((unsubscribe, raceId) => {
+      if (wanted.has(raceId)) return;
+      unsubscribe();
+      stationAssessmentUnsubscribes.delete(raceId);
+      stationAssessments.delete(raceId);
+      stationAssessmentsPending.delete(raceId);
+    });
+    const generation = raceQueryGeneration;
+    wanted.forEach(raceId => {
+      if (stationAssessmentUnsubscribes.has(raceId)) return;
+      stationAssessmentUnsubscribes.set(raceId, evaluationRepository.subscribe(raceId, (assessment, meta = {}) => {
+        if (generation !== raceQueryGeneration) return;
+        stationAssessments.set(raceId, assessment);
+        if (meta.pending === true) stationAssessmentsPending.add(raceId);
+        else stationAssessmentsPending.delete(raceId);
+        setEvaluationPending(stationAssessmentsPending.size > 0);
+        renderRace();
+      }, error => {
+        if (generation !== raceQueryGeneration) return;
+        showToast('שגיאה בטעינת ההערכה האישית: ' + errorText(error), 'error');
+        renderRace();
+      }));
     });
   }
 
-  function currentAssessmentEntry(participantId, race = currentRace, assessment = currentAssessment) {
-    return assessmentEntryFor({
-      assessment, race, participantId, evaluatorUid: currentUser?.uid || ''
+  // הסבב שבמסמך ההערכה שלו נשמרים הציונים וההערות של התחנה
+  function stationAssessmentRaceId() {
+    return stationAssessmentRace(racesForContext)?.id || currentRaceId;
+  }
+
+  function currentAssessmentEntry(participantId, race = currentRace) {
+    return stationAssessmentEntry({
+      races: racesForContext, assessmentsByRace: stationAssessments, race,
+      participantId, evaluatorUid: currentUser?.uid || ''
     });
   }
 
@@ -2439,7 +2454,7 @@
 
       if (!latestRace) {
         detachEvaluatorArrivalSubscription();
-        detachCurrentAssessmentSubscription();
+        detachStationAssessmentSubscriptions();
         currentRace = null;
         currentRaceId = null;
         renderRoundNavigation();
@@ -2463,7 +2478,7 @@
         stationNoteSelectedPid = null;
       }
       subscribeToEvaluatorArrival(target);
-      subscribeToCurrentAssessment(target);
+      subscribeToStationAssessments();
 
       const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
       if (newRoundArrived && canEvaluate() && target.id !== latestRace.id) {
@@ -2500,7 +2515,7 @@
     initialRoundConfirmed = false;
     updateStaleViewBanner();
     detachEvaluatorArrivalSubscription();
-    detachCurrentAssessmentSubscription();
+    detachStationAssessmentSubscriptions();
     racesForContext = [];
     latestRace = null;
     currentRace = null;
@@ -2524,7 +2539,7 @@
     localReps = {};
     stationNoteSelectedPid = null;
     subscribeToEvaluatorArrival(race);
-    subscribeToCurrentAssessment(race);
+    subscribeToStationAssessments();
     renderRace();
   };
 
@@ -3524,7 +3539,7 @@
     box.style.display = '';
     box.innerHTML = `
       <div class="measure-entry ${manual ? 'manual' : ''}">
-        <label for="sn-reps-input">${escHtml(label)}:</label>
+        <label for="sn-reps-input">${escHtml(label)}${currentRace?.round ? ` (סבב ${escHtml(String(currentRace.round))})` : ''}:</label>
         <input id="sn-reps-input" type="number" inputmode="numeric" min="0" value="${escHtml(String(val))}"
                step="1" onchange="setStationReps(this.value)" onfocus="this.select()"
                class="form-input"
@@ -3565,7 +3580,7 @@
     const st = currentStationType();
     const p = st?.params?.[pi];
     if (!p || !currentRaceId || !currentRace || !stationNoteSelectedPid) return;
-    const raceId = currentRaceId;
+    const raceId = stationAssessmentRaceId();
     const pid = stationNoteSelectedPid;
     const traitId = traitIdFor(p);
     try {
@@ -3633,7 +3648,7 @@
     const title = document.getElementById('sn-list-title');
     if (!list) return;
     const raw = selectedTag()?.comments || [];
-    title.textContent = 'הערות שלי לסבב הזה:';
+    title.textContent = 'הערות שלי לתחנה:';
     const rows = [];
     raw.forEach((c, idx) => {
       const n = normalizeComment(c);
@@ -3649,7 +3664,7 @@
     if (rows.length === 0) {
       list.innerHTML = '';
       empty.style.display = '';
-      empty.textContent = 'עוד לא כתבת הערות למשתתף זה בסבב הזה.';
+      empty.textContent = 'עוד לא כתבת הערות למשתתף זה בתחנה.';
       return;
     }
     empty.style.display = 'none';
@@ -3670,9 +3685,9 @@
 
   async function appendStationNote(text) {
     if (!canEvaluate() || !currentRaceId || !currentRace || !stationNoteSelectedPid) {
-      showToast('בחר משתתף בסקציית "הערות לתחנה"', 'error'); return;
+      showToast('בחר משתתף בסקציית "הערכת התחנה"', 'error'); return;
     }
-    const raceId = currentRaceId;
+    const raceId = stationAssessmentRaceId();
     const pid = stationNoteSelectedPid;
     const noteObj = createNote({
       text, authorName: currentUser?.name || '', authorUid: currentUser?.uid || ''
@@ -3693,7 +3708,7 @@
     const target = selectedTag()?.comments.find(comment => comment.id === String(noteId));
     if (!target) return;
     if (!confirm('למחוק את ההערה?')) return;
-    const raceId = currentRaceId;
+    const raceId = stationAssessmentRaceId();
     const pid = stationNoteSelectedPid;
     try {
       await evaluationRepository.mutateParticipant(raceId, pid, entry => {
@@ -3709,7 +3724,7 @@
 
   // ═════════ Sheets sync ═════════
   // מסנכרן את הסבבים של הצוות והתחנה הנוכחיים ל-Google Sheets.
-  // כל מעריך שולח את הציונים וההערות *שלו* (dedup ב-Code.gs לפי id+סבב+מעריך).
+  // כל מעריך שולח את הציונים וההערות *שלו* (dedup ב-Code.gs לפי תחנה+מועמד+מעריך).
   // כל שורה נושאת את סוג התחנה (station_type) כדי שהטאב וייצוג העמודות יהיו לפי סוג.
   let sheetsSyncInProgress = false;
 
@@ -3906,48 +3921,70 @@
     return [...uids];
   }
 
+  // הסבבים מקובצים לתחנות (צוות + מספר תחנה), כל תחנה לפי סדר הסבבים.
+  function groupRacesByStation(races) {
+    const groups = new Map();
+    for (const race of (Array.isArray(races) ? races : [])) {
+      const key = `${race.team}|${race.station}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(race);
+    }
+    return [...groups.values()].map(list => list.slice()
+      .sort((a, b) => Number(a.round || 0) - Number(b.round || 0) || String(a.id).localeCompare(String(b.id))));
+  }
+
   // מנהל מסנכרן את ההערכות של כל המעריכים; מעריך מסנכרן את שלו בלבד.
   // בלי זה, סנכרון שמורשה למנהל בלבד היה כותב רק את ההערכות של המנהל עצמו
   // ומשאיר את כל שאר המעריכים מחוץ לקבצים.
-  function buildSyncRowsForRace(race, arrivalsByUid = new Map(), assessmentsByUid = new Map()) {
+  function buildSyncRowsForStation(stationRaces, arrivalsByRace = new Map(), assessmentsByRace = new Map()) {
     const uids = isAdmin()
-      ? evaluatorUidsForRace(race, arrivalsByUid, assessmentsByUid)
+      ? [...new Set(stationRaces.flatMap(race => evaluatorUidsForRace(
+          race, arrivalsByRace.get(race.id) || new Map(), assessmentsByRace.get(race.id) || new Map())))]
       : [currentUser?.uid || ''].filter(Boolean);
-
-    const rows = [];
-    for (const evaluatorUid of uids) {
-      rows.push(...buildRowsForEvaluator(
-        race,
-        evaluatorUid,
-        arrivalsByUid.get(evaluatorUid) || null,
-        assessmentsByUid.get(evaluatorUid) || null
-      ));
-    }
-    return rows;
+    return uids.flatMap(uid => buildRowsForEvaluator(stationRaces, uid, arrivalsByRace, assessmentsByRace));
   }
 
-  function buildRowsForEvaluator(race, uid, personalArrival, personalAssessment) {
+  // שורה אחת לכל מועמד בתחנה: הציונים וההערות של התחנה כולה, והמקום/הזמן/המדידה
+  // של כל סבב לפי סדר הסבבים.
+  function buildRowsForEvaluator(stationRaces, uid, arrivalsByRace, assessmentsByRace) {
     const rows = [];
-    const teamData = teamsCache[race.team] || teamsCache[selectedTeam] || {};
-    const st = stationTypeFor(race.station, teamData); // סוג התחנה של הצוות
-    const arrival = st?.measure === 'place'
-      ? evaluatorArrivalStateForRace(race, personalArrival)
-      : null;
-    const placeByParticipant = new Map((arrival?.order || [])
-      .map((participantId, index) => [String(participantId), index + 1]));
-    const participantIds = uniqueParticipantIds((race.participantIds || [])
-      .concat(Object.keys(personalAssessment?.entries || {}), arrival?.order || []));
+    const first = stationRaces[0];
+    if (!first) return rows;
+    const teamData = teamsCache[first.team] || teamsCache[selectedTeam] || {};
+    const st = stationTypeFor(first.station, teamData); // סוג התחנה של הצוות
+    const personalAssessments = new Map(stationRaces.map(race =>
+      [String(race.id), assessmentsByRace.get(race.id)?.get(uid) || null]));
+    const rounds = stationRaces.map(race => {
+      const arrival = st?.measure === 'place'
+        ? evaluatorArrivalStateForRace(race, arrivalsByRace.get(race.id)?.get(uid) || null)
+        : null;
+      const placeByParticipant = new Map((arrival?.order || [])
+        .map((participantId, index) => [String(participantId), index + 1]));
+      return { race, arrival, placeByParticipant };
+    });
+    const participantIds = uniqueParticipantIds(stationRaces.flatMap(race => (race.participantIds || [])
+      .concat(Object.keys(personalAssessments.get(String(race.id))?.entries || {})))
+      .concat(rounds.flatMap(round => round.arrival?.order || [])));
 
     for (const participantId of participantIds) {
-      const pidRaw = String(participantId || '').replace(/\D+/g, '');
-      const place = placeByParticipant.get(String(participantId));
-      const markedAt = place != null ? arrival?.slotTimes?.[String(place)] : null;
-      const elapsedMs = arrivalElapsedMs(race, markedAt);
+      const pidRaw = String(participantId || '').replace(/D+/g, '');
+      const entryFor = race => stationAssessmentEntry({
+        races: stationRaces, assessmentsByRace: personalAssessments, race, participantId, evaluatorUid: uid
+      });
+      const places = [], times = [], reps = [];
+      for (const { race, arrival, placeByParticipant } of rounds) {
+        const place = placeByParticipant.get(String(participantId));
+        if (place != null) {
+          places.push(Number(place));
+          const elapsedMs = arrivalElapsedMs(race, arrival?.slotTimes?.[String(place)]);
+          times.push(elapsedMs == null ? '' : elapsedMs);
+        }
+        const measurement = entryFor(race).measurement;
+        if (measurement != null) reps.push(Number(measurement));
+      }
 
       // הציונים וההערות של המעריך שהשורה הזו מתארת בלבד
-      const entry = assessmentEntryFor({
-        assessment: personalAssessment, race, participantId, evaluatorUid: uid
-      });
+      const entry = entryFor(null);
       const myScores = Object.fromEntries((st?.params || []).flatMap(param => {
         const score = entry.scores[traitIdFor(param)];
         return score == null ? [] : [[param.name, score]];
@@ -3955,29 +3992,27 @@
       const myComments = entry.comments.map(comment => comment.text).filter(Boolean).join('|');
 
       // מדלגים על משתתף שהמעריך הזה לא נתן לו כלום (ואין נתון אובייקטיבי)
-      const hasData = Object.keys(myScores).length > 0 || myComments ||
-                      place != null || entry.measurement != null;
+      const hasData = Object.keys(myScores).length > 0 || myComments || places.length || reps.length;
       if (!hasData) continue;
 
       const row = {
-        eventId:        String(race.eventId || activeFormationEvent?.id || ''),
+        eventId:        String(first.eventId || activeFormationEvent?.id || ''),
         id:             pidRaw,
-        team:           String(race.team || ''),
-        round:          Number(race.round || 0),
-        station:        String(race.station || ''),
+        team:           String(first.team || ''),
+        station:        String(first.station || ''),
         station_type:   st ? st.id : '',
         station_name:   st ? st.name : '',
         params:         st ? st.params.map(p => p.name) : [],
         measure:        st ? st.measure : '',
         measure_label:  st ? (st.measureLabel || '') : '',
-        place:          place != null ? Number(place) : '',
-        reps:           entry.measurement != null ? Number(entry.measurement) : '',
-        first_ms:       elapsedMs == null ? '' : elapsedMs,
+        places,
+        first_ms_list:  times,
+        reps_list:      reps,
         scores:         myScores,
         comments:       myComments,
         evaluator_name: evaluatorNameFor(uid),
         evaluator_uid:  uid,
-        evaluator_team: String(race.team || '')
+        evaluator_team: String(first.team || '')
       };
       if (APP_CONFIG.sheetsApiKey && !APP_CONFIG.sheetsApiKey.startsWith('YOUR_')) {
         row.key = APP_CONFIG.sheetsApiKey;
@@ -4011,14 +4046,8 @@
       gatherEvaluatorAssessmentsByUidForRaces(races)
     ]);
 
-    let stationRows = [];
-    for (const race of races) {
-      stationRows = stationRows.concat(buildSyncRowsForRace(
-        race,
-        arrivalsByRace.get(race.id) || new Map(),
-        assessmentsByRace.get(race.id) || new Map()
-      ));
-    }
+    const stationRows = groupRacesByStation(races)
+      .flatMap(stationRaces => buildSyncRowsForStation(stationRaces, arrivalsByRace, assessmentsByRace));
 
     const teamList = [...new Set((teams || []).filter(Boolean))];
     const noteGroups = await Promise.all(teamList.map(team => collectTeamNoteRows(team)));
@@ -4850,15 +4879,16 @@
     renderCandidateSummary();
   };
 
-  function scoreEditorHtml(station, round) {
+  // הציונים וההערות של התחנה כולה נשמרים בסבב הראשון שלה (station.assessmentRaceId)
+  function scoreEditorHtml(station) {
     if (!station.params.length) return '';
     return `<div class="candidate-score-editor">${station.params.map(param => {
       const traitId = traitIdFor(param);
-      const current = Number(round.scores[traitId] || 0);
+      const current = Number(station.scores[traitId] || 0);
       const buttons = [1,2,3,4,5,6,7].map(score => `
         <button type="button" class="${current === score ? 'selected' : ''}"
                 aria-label="${escHtml(param.name)} ציון ${score}"
-                onclick="setCandidateScore('${escHtml(round.raceId)}','${escHtml(traitId)}',${score})">${score}</button>
+                onclick="setCandidateScore('${escHtml(station.assessmentRaceId)}','${escHtml(traitId)}',${score})">${score}</button>
       `).join('');
       return `<div class="candidate-score-editor-row">
         <strong>${escHtml(param.name)}</strong><div class="candidate-score-buttons">${buttons}</div>
@@ -4866,24 +4896,25 @@
     }).join('')}</div>`;
   }
 
-  function stationNoteHtml(round) {
-    const notes = round.comments.slice().sort((a, b) => b.createdAt - a.createdAt);
+  function stationNoteHtml(station) {
+    const raceId = station.assessmentRaceId;
+    const notes = station.comments.slice().sort((a, b) => b.createdAt - a.createdAt);
     const list = notes.length ? `<div class="candidate-notes-list">${notes.map(note => `
       <div class="candidate-note"><div class="body">
         <div>${escHtml(note.text)}</div>
         <div class="meta">${note.createdAt ? escHtml(new Date(note.createdAt).toLocaleString('he-IL')) : ''}${note.updatedAt > note.createdAt ? ' · נערך' : ''}</div>
       </div><span class="candidate-note-actions">
         <button type="button" class="edit" title="ערוך"
-          onclick="editCandidateStationNote('${escHtml(round.raceId)}','${escHtml(note.id)}')">✎</button>
+          onclick="editCandidateStationNote('${escHtml(raceId)}','${escHtml(note.id)}')">✎</button>
         <button type="button" class="delete" title="מחק"
-          onclick="deleteCandidateStationNote('${escHtml(round.raceId)}','${escHtml(note.id)}')">✕</button>
+          onclick="deleteCandidateStationNote('${escHtml(raceId)}','${escHtml(note.id)}')">✕</button>
       </span></div>
-    `).join('')}</div>` : '<div class="candidate-empty">אין הערות שלי בסבב זה.</div>';
+    `).join('')}</div>` : '<div class="candidate-empty">אין הערות שלי בתחנה זו.</div>';
     return `${list}<div class="candidate-note-form">
-      <textarea class="form-input" rows="2" maxlength="2000" id="candidate-note-${escHtml(round.raceId)}"
-                placeholder="הוסף הערה לסבב הזה…"></textarea>
+      <textarea class="form-input" rows="2" maxlength="2000" id="candidate-note-${escHtml(raceId)}"
+                placeholder="הוסף הערה לתחנה…"></textarea>
       <button type="button" class="btn btn-primary"
-              onclick="addCandidateStationNote('${escHtml(round.raceId)}')">הוסף</button>
+              onclick="addCandidateStationNote('${escHtml(raceId)}')">הוסף</button>
     </div>`;
   }
 
@@ -4896,7 +4927,18 @@
 
     const chart = station.measure === 'place' && station.rounds.some(round => round.place != null)
       ? '<div class="candidate-chart-wrap"><canvas id="candidate-station-chart"></canvas></div>' : '';
-    panel.innerHTML = chart + station.rounds.map(round => {
+    const evaluation = `<article class="candidate-round-card">
+        <div class="candidate-round-head"><strong>הערכת התחנה</strong></div>
+        ${scoreEditorHtml(station)}
+        <details style="margin-top:12px" ${candidateState.openRoundIds.has(station.assessmentRaceId) ? 'open' : ''}
+                 ontoggle="toggleCandidateRoundDetails('${escHtml(station.assessmentRaceId)}',this.open)">
+          <summary style="cursor:pointer;font-weight:800">הערות שלי (${station.comments.length})</summary>
+          ${stationNoteHtml(station)}
+        </details>
+      </article>`;
+    // בתחנה בלי מדידה אין לסבב תוצאה משלו — מוצגת רק הערכת התחנה
+    const rounds = station.measure === 'place' || station.measure === 'reps' ? station.rounds : [];
+    panel.innerHTML = chart + evaluation + rounds.map(round => {
       let result = '';
       if (station.measure === 'place') {
         result = round.place == null
@@ -4916,12 +4958,6 @@
       }
       return `<article class="candidate-round-card">
         <div class="candidate-round-head"><strong>סבב ${round.round}</strong><div>${result}</div></div>
-        ${scoreEditorHtml(station, round)}
-        <details style="margin-top:12px" ${candidateState.openRoundIds.has(round.raceId) ? 'open' : ''}
-                 ontoggle="toggleCandidateRoundDetails('${escHtml(round.raceId)}',this.open)">
-          <summary style="cursor:pointer;font-weight:800">הערות שלי (${round.comments.length})</summary>
-          ${stationNoteHtml(round)}
-        </details>
       </article>`;
     }).join('');
 
@@ -4979,9 +5015,8 @@
   window.setCandidateScore = async (raceId, traitId, score) => {
     const pid = candidateState.participantId;
     if (!pid || !isEvaluator() && !isAdmin()) return;
-    const race = candidateState.races.find(item => item.id === raceId);
-    const assessment = candidateState.assessmentsByRace.get(raceId);
-    const visible = assessmentEntryFor({ assessment, race, participantId: pid, evaluatorUid: currentUser.uid });
+    const station = candidateState.summary?.stations.find(item => item.assessmentRaceId === raceId);
+    const visible = { scores: station?.scores || {} };
     try {
       const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
         entry.scores = { ...entry.scores };
@@ -5066,22 +5101,25 @@
 
   window.editCandidateStationNote = async (raceId, noteId) => {
     const pid = candidateState.participantId;
-    const station = candidateState.summary?.stations.find(item =>
-      item.rounds.some(round => round.raceId === raceId));
-    const round = station?.rounds.find(item => item.raceId === raceId);
-    const current = round?.comments.find(note => note.id === noteId);
+    const station = candidateState.summary?.stations.find(item => item.assessmentRaceId === raceId);
+    const current = station?.comments.find(note => note.id === noteId);
     if (!pid || !current) return;
     const text = prompt('עריכת הערה', current.text);
     if (text == null) return;
     const clean = text.trim();
     if (!clean) { showToast('לא ניתן לשמור הערה ריקה', 'error'); return; }
+    // הערה ישנה יכולה לשבת במסמך של סבב מאוחר — עורכים אותה במקומה
+    const holderId = stationNoteRaceId({
+      races: candidateState.races.filter(race => String(race.station || '') === station.stationId),
+      assessmentsByRace: candidateState.assessmentsByRace, participantId: pid, noteId
+    }) || raceId;
     try {
-      const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
+      const updated = await evaluationRepository.mutateParticipant(holderId, pid, entry => {
         entry.comments = entry.comments.map(note => note.id === noteId
           ? { ...note, text: clean, updatedAt: Date.now() } : note);
         return entry;
       });
-      candidateState.assessmentsByRace.set(raceId, updated);
+      candidateState.assessmentsByRace.set(holderId, updated);
       rebuildCandidateSummary();
     } catch (error) { showToast('שגיאה בעריכת הערה: ' + errorText(error), 'error'); }
   };

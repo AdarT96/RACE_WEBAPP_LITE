@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assessmentEntryFor, buildCandidateSummary, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
-  normalizeScores, traitIdFor
+  normalizeScores, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
 } from '../frontend/js/evaluation-model.js';
 
 const evaluatorUid = 'evaluator-1';
@@ -140,4 +140,64 @@ test('migration keeps a stable trait id even when its display name was edited', 
     'עמידות בתנאי לחץ': 'resilience'
   });
   assert.deepEqual(buckets.get('first')['100'].scores, { resilience: 6 });
+});
+
+test('station evaluation lives on the first round and carries into later rounds', () => {
+  const races = [race('a3', '01', 3), race('a1', '01', 1), race('a2', '01', 2)];
+  assert.equal(stationAssessmentRace(races).id, 'a1');
+  const assessmentsByRace = new Map([
+    ['a1', assessment({ resilience: 6 }, {
+      comments: [{ id: 'n1', text: 'מוביל', authorUid: evaluatorUid }], measurement: 4
+    })],
+    ['a2', assessment({}, { measurement: 9 })]
+  ]);
+  const inRound2 = stationAssessmentEntry({
+    races, assessmentsByRace, race: races[2], participantId: '100', evaluatorUid
+  });
+  assert.equal(inRound2.scores.resilience, 6);
+  assert.deepEqual(inRound2.comments.map(note => note.id), ['n1']);
+  assert.equal(inRound2.measurement, 9, 'measurement stays per round');
+  const inRound3 = stationAssessmentEntry({
+    races, assessmentsByRace, race: races[0], participantId: '100', evaluatorUid
+  });
+  assert.equal(inRound3.scores.resilience, 6);
+  assert.equal(inRound3.measurement, null);
+});
+
+test('scores saved per round before the change read as station values; the first round decides', () => {
+  const races = [race('a1', '01', 1), race('a2', '01', 2)];
+  const old = new Map([
+    ['a1', assessment({ resilience: 3 })],
+    ['a2', assessment({ resilience: 5 }, { comments: [{ id: 'late', text: 'ישן', authorUid: evaluatorUid }] })]
+  ]);
+  const entry = stationAssessmentEntry({ races, assessmentsByRace: old, participantId: '100', evaluatorUid });
+  assert.equal(entry.scores.resilience, 3, 'an explicit first-round score wins');
+  assert.deepEqual(entry.comments.map(note => note.id), ['late']);
+
+  const cleared = new Map([
+    ['a1', assessment({}, { clearedScores: ['resilience'], hiddenCommentIds: ['late'] })],
+    ['a2', old.get('a2')]
+  ]);
+  const after = stationAssessmentEntry({ races, assessmentsByRace: cleared, participantId: '100', evaluatorUid });
+  assert.equal(after.scores.resilience, undefined);
+  assert.deepEqual(after.comments, []);
+  assert.equal(stationNoteRaceId({ races, assessmentsByRace: old, participantId: '100', noteId: 'late' }), 'a2');
+  assert.equal(stationNoteRaceId({ races, assessmentsByRace: old, participantId: '100', noteId: 'new' }), 'a1');
+});
+
+test('candidate summary shows one station score and per-round results', () => {
+  const races = [race('a1', '01', 1), race('a2', '01', 2), race('b1', '02', 1)];
+  const assessmentsByRace = new Map([
+    ['a1', assessment({ resilience: 7 })],
+    ['b1', assessment({ resilience: 3 })]
+  ]);
+  const arrivalsByRace = new Map([['a1', { order: ['100'] }], ['a2', { order: ['200', '100'] }]]);
+  const summary = buildCandidateSummary({
+    participantId: '100', races, assessmentsByRace, arrivalsByRace, evaluatorUid, stationTypeForRace
+  });
+  const sprints = summary.stations[0];
+  assert.equal(sprints.assessmentRaceId, 'a1');
+  assert.equal(sprints.scores.resilience, 7);
+  assert.deepEqual(sprints.rounds.map(round => [round.round, round.place]), [[1, 1], [2, 2]]);
+  assert.equal(summary.traitAverages.resilience.value, 5);
 });

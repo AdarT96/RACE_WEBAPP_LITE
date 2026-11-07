@@ -136,6 +136,50 @@ export function assessmentEntryFor({ assessment, race, participantId, evaluatorU
   return mergeAssessmentEntries(legacyEntry, privateEntry);
 }
 
+function sortedRounds(races) {
+  return (Array.isArray(races) ? races : []).filter(race => race?.id != null).slice()
+    .sort((a, b) => Number(a.round || 0) - Number(b.round || 0) || String(a.id).localeCompare(String(b.id)));
+}
+
+// הציונים וההערות שייכים לתחנה כולה, לא לסבב: הם נשמרים במסמך ההערכה של
+// הסבב הראשון בתחנה. כל סבב שומר במסמך שלו רק את המדידה שלו.
+export function stationAssessmentRace(races) {
+  return sortedRounds(races)[0] || null;
+}
+
+// הרשומה שהמעריך רואה בתחנה: ציונים והערות של התחנה + המדידה של הסבב `race`.
+// ציונים והערות שנשמרו לפני השינוי בסבבים מאוחרים נקראים כנתון ישן מתחת
+// לסבב הראשון (המאוחר גובר); מחיקה או ניקוי בסבב הראשון מסתירים גם אותם.
+export function stationAssessmentEntry({ races, assessmentsByRace, race = null, participantId, evaluatorUid }) {
+  const pid = String(participantId);
+  const lookup = id => assessmentsByRace?.get?.(String(id)) || assessmentsByRace?.[id] || null;
+  const roundEntry = round => assessmentEntryFor({
+    assessment: lookup(round.id), race: round, participantId: pid, evaluatorUid
+  });
+  const [first, ...later] = sortedRounds(races);
+  const measurement = race ? roundEntry(race).measurement : null;
+  if (!first) return { ...normalizeAssessmentEntry(null), measurement };
+
+  const earlier = [legacyEntryForParticipant(first.tags, pid, evaluatorUid), ...later.map(roundEntry)]
+    .reduce((merged, entry) => ({
+      ...merged,
+      scores: { ...merged.scores, ...entry.scores },
+      comments: normalizeNotes([...merged.comments, ...entry.comments])
+    }), normalizeAssessmentEntry(null));
+  const station = mergeAssessmentEntries(earlier, lookup(first.id)?.entries?.[pid]);
+  return { ...station, measurement };
+}
+
+// סבב שמסמך ההערכה שלו מחזיק את ההערה (לעריכה של הערה ישנה מסבב מאוחר)
+export function stationNoteRaceId({ races, assessmentsByRace, participantId, noteId }) {
+  const pid = String(participantId);
+  const ordered = sortedRounds(races);
+  const lookup = id => assessmentsByRace?.get?.(String(id)) || assessmentsByRace?.[id] || null;
+  const holder = ordered.find(round => normalizeNotes(lookup(round.id)?.entries?.[pid]?.comments)
+    .some(note => note.id === String(noteId)));
+  return String((holder || ordered[0])?.id || '');
+}
+
 export function hasAssessmentData(entry) {
   const normalized = normalizeAssessmentEntry(entry);
   return Object.keys(normalized.scores).length > 0 ||
@@ -203,51 +247,53 @@ export function buildCandidateSummary({
   stationTypeForRace = () => null, evaluatorUid = ''
 }) {
   const candidateId = String(participantId || '');
-  const stationsByKey = new Map();
+  const racesByStation = new Map();
 
   (Array.isArray(races) ? races : []).forEach(race => {
-    const assessment = assessmentsByRace.get?.(race.id) || assessmentsByRace[race.id] || null;
-    const entry = assessmentEntryFor({ assessment, race, participantId: candidateId, evaluatorUid });
-    const arrival = arrivalsByRace.get?.(race.id) || arrivalsByRace[race.id] || null;
-    const order = Array.isArray(arrival?.order) ? arrival.order.map(String) : [];
-    const placeIndex = order.indexOf(candidateId);
-    const roster = Array.isArray(race?.participantIds) ? race.participantIds.map(String) : [];
-    const belongsToRound = roster.includes(candidateId) || placeIndex >= 0 || hasAssessmentData(entry);
-    if (!belongsToRound) return;
-
     const stationType = stationTypeForRace(race) || {};
     const stationId = String(race.station || '');
     const typeId = String(stationType.id || stationId);
     const key = `${stationId}:${typeId}`;
-    if (!stationsByKey.has(key)) {
-      stationsByKey.set(key, {
-        key, stationId, typeId,
-        name: String(stationType.name || `תחנה ${Number(stationId) || stationId}`),
-        measure: String(stationType.measure || 'none'),
-        measureLabel: String(stationType.measureLabel || 'תוצאה'),
-        params: Array.isArray(stationType.params) ? stationType.params : [],
-        rounds: []
-      });
+    if (!racesByStation.has(key)) {
+      racesByStation.set(key, { key, stationId, typeId, stationType, races: [] });
     }
-    stationsByKey.get(key).rounds.push({
-      raceId: String(race.id), round: Number(race.round || 0), status: String(race.status || ''),
-      scores: entry.scores, measurement: entry.measurement,
-      comments: entry.comments, place: placeIndex >= 0 ? placeIndex + 1 : null,
-      placedCount: order.length
-    });
+    racesByStation.get(key).races.push(race);
   });
 
-  const stations = Array.from(stationsByKey.values())
-    .sort((a, b) => numericStationOrder(a.stationId) - numericStationOrder(b.stationId) || a.name.localeCompare(b.name, 'he'))
-    .map(station => {
-      station.rounds.sort((a, b) => a.round - b.round || a.raceId.localeCompare(b.raceId));
-      const traitAverages = {};
-      TRAITS.forEach(trait => {
-        const value = average(station.rounds.map(round => round.scores[trait.id]));
-        if (value != null) traitAverages[trait.id] = value;
-      });
-      return { ...station, traitAverages };
+  const stations = [];
+  racesByStation.forEach(({ key, stationId, typeId, stationType, races: stationRaces }) => {
+    const station = stationAssessmentEntry({
+      races: stationRaces, assessmentsByRace, participantId: candidateId, evaluatorUid
     });
+    const rounds = sortedRounds(stationRaces).flatMap(race => {
+      const measurement = stationAssessmentEntry({
+        races: stationRaces, assessmentsByRace, race, participantId: candidateId, evaluatorUid
+      }).measurement;
+      const arrival = arrivalsByRace.get?.(race.id) || arrivalsByRace[race.id] || null;
+      const order = Array.isArray(arrival?.order) ? arrival.order.map(String) : [];
+      const placeIndex = order.indexOf(candidateId);
+      const roster = Array.isArray(race?.participantIds) ? race.participantIds.map(String) : [];
+      if (!roster.includes(candidateId) && placeIndex < 0 && measurement == null) return [];
+      return [{
+        raceId: String(race.id), round: Number(race.round || 0), status: String(race.status || ''),
+        measurement, place: placeIndex >= 0 ? placeIndex + 1 : null, placedCount: order.length
+      }];
+    });
+    if (!rounds.length && !hasAssessmentData(station)) return;
+    stations.push({
+      key, stationId, typeId,
+      name: String(stationType.name || `תחנה ${Number(stationId) || stationId}`),
+      measure: String(stationType.measure || 'none'),
+      measureLabel: String(stationType.measureLabel || 'תוצאה'),
+      params: Array.isArray(stationType.params) ? stationType.params : [],
+      // הסבב שבמסמך שלו נשמרים הציונים וההערות של התחנה
+      assessmentRaceId: String(stationAssessmentRace(stationRaces).id),
+      scores: station.scores, comments: station.comments,
+      traitAverages: { ...station.scores },
+      rounds
+    });
+  });
+  stations.sort((a, b) => numericStationOrder(a.stationId) - numericStationOrder(b.stationId) || a.name.localeCompare(b.name, 'he'));
 
   const traitAverages = {};
   TRAITS.forEach(trait => {

@@ -28,13 +28,14 @@ var CREATE_FILES_HINT = "הגדרת אירוע → שלב 5 \"צור/בדוק ק
 var EVENT_FOLDER_NAME = "";
 
 // כותרות טאב מועמד (מבנה קבוע)
-// קובץ המעריך — טאב לכל מועמד, שורה לכל (תחנה × סבב × מעריך).
-var PARTICIPANT_HEADERS = ["תחנה", "סבב", "מקום", "מספר", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
+// קובץ המעריך — טאב לכל מועמד, שורה לכל (תחנה × מעריך). ההערכה שייכת לתחנה
+// כולה; המקום/המדידה של כל סבב נכתבים באותו תא לפי סדר הסבבים ("3 / 5 / 2").
+var PARTICIPANT_HEADERS = ["תחנה", "מס׳ תחנה", "מקום", "מספר", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
 var GENERAL_STATION_LABEL = "(הערה כללית)";
 
-// קובץ הצוות — טאב לכל תחנה, כמו בקובץ "תוצאות": כל הצוות בתחנה אחת,
-// ממוין לפי סבב ואז מקום, כך שסדר ההגעה נקרא ישירות מלמעלה למטה.
-var STATION_HEADERS = ["סבב", "מקום", "מועמד", "זמן", "מדידה", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
+// קובץ הצוות — טאב לכל סוג תחנה: שורה לכל (מס׳ תחנה × מועמד × מעריך), כי
+// שתי תחנות מאותו סוג הן תחנות נפרדות. ממוין לפי מס׳ תחנה ואז מועמד.
+var STATION_HEADERS = ["מס׳ תחנה", "מקום", "מועמד", "זמן", "מדידה", "פרמטר א׳", "ציון א׳", "פרמטר ב׳", "ציון ב׳", "מעריך", "הערות"];
 var GENERAL_NOTES_TAB     = "הערות כלליות";
 var GENERAL_NOTES_HEADERS = ["מועמד", "מעריך", "הערה"];
 
@@ -109,7 +110,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-10-22-batched-file-check";
+var CODE_VERSION = "2026-11-07-station-wide-evaluation";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -208,33 +209,27 @@ function writeStationRow_(ss, payload, def) {
   var sheet = getOrCreateSheet_(ss, String(def.name));
   ensureHeaders_(sheet, STATION_HEADERS, "#0f766e");
 
-  var round    = Number(payload.round || 0);
-  var evalName = String(payload.evaluator_name || "");
-  var vals     = buildStationRow_(payload, def, round, evalName, pid);
+  var stationNo = stationNumber_(payload);
+  var evalName  = String(payload.evaluator_name || "");
+  var vals      = buildStationRow_(payload, def, stationNo, evalName, pid);
 
-  var rowIndex = findStationRow_(sheet, pid, round, evalName);
+  var rowIndex = findStationRow_(sheet, pid, stationNo, evalName);
   if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, STATION_HEADERS.length).setValues([vals]);
   else sheet.appendRow(vals);
 
   sortStationTab_(sheet);
 }
 
-// עמודות: סבב·מקום·מועמד·זמן·מדידה·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
-function buildStationRow_(payload, def, round, evalName, pid) {
+// עמודות: מס׳ תחנה·מקום·מועמד·זמן·מדידה·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
+function buildStationRow_(payload, def, stationNo, evalName, pid) {
   var vals = [];
   for (var i = 0; i < STATION_HEADERS.length; i++) vals.push("");
 
-  vals[0] = round;
-  if (def.measure === "place" && payload.place !== undefined &&
-      payload.place !== "" && payload.place !== null) {
-    vals[1] = Number(payload.place) || "";
-  }
+  vals[0] = stationNo;
+  if (def.measure === "place") vals[1] = roundsCell_(roundPlaces_(payload));
   vals[2] = pid;
-  vals[3] = msToClock_(payload.first_ms);
-  if (def.measure === "reps" && payload.reps !== undefined &&
-      payload.reps !== "" && payload.reps !== null) {
-    vals[4] = Number(payload.reps);
-  }
+  vals[3] = roundsCell_(roundTimes_(payload).map(msToClock_));
+  if (def.measure === "reps") vals[4] = roundsCell_(roundReps_(payload));
 
   var scores = payload.scores || {};
   var params = def.params || [];
@@ -246,13 +241,13 @@ function buildStationRow_(payload, def, round, evalName, pid) {
   return vals;
 }
 
-// זהות שורה בטאב תחנה: מועמד + סבב + מעריך (בטאב מועמד המפתח הוא תחנה+סבב+מעריך)
-function findStationRow_(sheet, pid, round, evalName) {
+// זהות שורה בטאב תחנה: מס׳ תחנה + מועמד + מעריך (בטאב מועמד: תחנה + מס׳ תחנה + מעריך)
+function findStationRow_(sheet, pid, stationNo, evalName) {
   var last = sheet.getLastRow();
   if (last < 2) return -1;
   var vals = sheet.getRange(2, 1, last - 1, STATION_HEADERS.length).getValues();
   for (var i = vals.length - 1; i >= 0; i--) {
-    if (Number(vals[i][0]) === Number(round) &&
+    if (Number(vals[i][0]) === Number(stationNo) &&
         String(vals[i][2]) === String(pid) &&
         String(vals[i][9] || "") === String(evalName)) {
       return 2 + i;
@@ -261,14 +256,48 @@ function findStationRow_(sheet, pid, round, evalName) {
   return -1;
 }
 
-// סבב עולה, ובתוכו מקום עולה — כך סדר ההגעה נקרא מלמעלה למטה.
+// מס׳ תחנה עולה, ובתוכו מועמד עולה.
 // knownLast (אופציונלי): מספר השורה האחרונה כשהמיזוג כבר יודע אותו —
 // חוסך קריאת getLastRow. בלעדיו (הנתיב הישן) מתנהג כמו תמיד.
 function sortStationTab_(sheet, knownLast) {
   var last = knownLast || sheet.getLastRow();
   if (last < 3) return; // אין מה למיין
   sheet.getRange(2, 1, last - 1, STATION_HEADERS.length)
-       .sort([{ column: 1, ascending: true }, { column: 2, ascending: true }]);
+       .sort([{ column: 1, ascending: true }, { column: 3, ascending: true }]);
+}
+
+// מספר התחנה בלוח הזמנים ("03" → 3). שורה בלי תחנה (לקוח ישן) נכתבת לפי הסבב.
+function stationNumber_(payload) {
+  var n = parseInt(String(payload.station || "").replace(/D+/g, ""), 10);
+  return Number.isFinite(n) ? n : Number(payload.round || 0);
+}
+
+// ערכי הסבבים של שורת תחנה, לפי סדר הסבבים. לקוח ישן שולח ערך יחיד.
+function roundValues_(list, single) {
+  var values = Array.isArray(list) ? list : [single];
+  var out = [];
+  for (var i = 0; i < values.length; i++) {
+    if (values[i] !== undefined && values[i] !== null && values[i] !== "") out.push(values[i]);
+  }
+  return out;
+}
+function roundPlaces_(payload) {
+  return roundValues_(payload.places, payload.place)
+    .map(function (v) { return Number(v) || ""; })
+    .filter(function (v) { return v !== ""; });
+}
+function roundReps_(payload) {
+  return roundValues_(payload.reps_list, payload.reps).map(Number);
+}
+function roundTimes_(payload) {
+  return Array.isArray(payload.first_ms_list) ? payload.first_ms_list : [payload.first_ms];
+}
+
+// סבב יחיד נשאר מספר (למיון ולנוסחאות); כמה סבבים — "3 / 5 / 2"
+function roundsCell_(values) {
+  if (!values.length) return "";
+  if (values.length === 1) return values[0];
+  return values.join(" / ");
 }
 
 function msToClock_(ms) {
@@ -300,29 +329,24 @@ function writeParticipantRow_(ss, payload, def) {
   var sheet = getOrCreateSheet_(ss, String(pid));
   ensureHeaders_(sheet, PARTICIPANT_HEADERS, "#4a86e8");
 
-  var round    = Number(payload.round || 0);
-  var evalName = String(payload.evaluator_name || "");
-  var vals     = buildParticipantRow_(payload, def, round, evalName);
+  var stationNo = stationNumber_(payload);
+  var evalName  = String(payload.evaluator_name || "");
+  var vals      = buildParticipantRow_(payload, def, stationNo, evalName);
 
-  var rowIndex = findParticipantRow_(sheet, def.name, round, evalName);
+  var rowIndex = findParticipantRow_(sheet, def.name, stationNo, evalName);
   if (rowIndex > 0) sheet.getRange(rowIndex, 1, 1, PARTICIPANT_HEADERS.length).setValues([vals]);
   else sheet.appendRow(vals);
 }
 
-// עמודות: תחנה·סבב·מקום·מספר·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
-function buildParticipantRow_(payload, def, round, evalName) {
+// עמודות: תחנה·מס׳ תחנה·מקום·מספר·פרמטר א׳·ציון א׳·פרמטר ב׳·ציון ב׳·מעריך·הערות
+function buildParticipantRow_(payload, def, stationNo, evalName) {
   var vals = [];
   for (var i = 0; i < PARTICIPANT_HEADERS.length; i++) vals.push("");
   vals[0] = def.name;
-  vals[1] = round;
+  vals[1] = stationNo;
 
-  if (def.measure === "place") {
-    if (payload.place !== undefined && payload.place !== "" && payload.place !== null)
-      vals[2] = Number(payload.place) || "";
-  } else if (def.measure === "reps") {
-    if (payload.reps !== undefined && payload.reps !== "" && payload.reps !== null)
-      vals[3] = Number(payload.reps);
-  }
+  if (def.measure === "place") vals[2] = roundsCell_(roundPlaces_(payload));
+  else if (def.measure === "reps") vals[3] = roundsCell_(roundReps_(payload));
 
   var scores = payload.scores || {};
   var params = def.params || [];
@@ -334,13 +358,13 @@ function buildParticipantRow_(payload, def, round, evalName) {
   return vals;
 }
 
-function findParticipantRow_(sheet, stationName, round, evalName) {
+function findParticipantRow_(sheet, stationName, stationNo, evalName) {
   var last = sheet.getLastRow();
   if (last < 2) return -1;
   var vals = sheet.getRange(2, 1, last - 1, PARTICIPANT_HEADERS.length).getValues();
   for (var i = vals.length - 1; i >= 0; i--) {
     if (String(vals[i][0]) === String(stationName) &&
-        Number(vals[i][1]) === Number(round) &&
+        Number(vals[i][1]) === Number(stationNo) &&
         String(vals[i][8] || "") === String(evalName)) {
       return 2 + i;
     }
@@ -928,7 +952,7 @@ function writeTeamBatch_(teamSs, rows, warnings) {
     var def = effectiveDef_(row, t.def);
     var tab = String(def.name);
     (byTab[tab] = byTab[tab] || []).push(
-      buildStationRow_(row, def, Number(row.round || 0), String(row.evaluator_name || ""), pid));
+      buildStationRow_(row, def, stationNumber_(row), String(row.evaluator_name || ""), pid));
   }
 
   var count = 0;
@@ -1010,7 +1034,7 @@ function writeEvaluatorBatch_(evalSs, rows) {
       var t = resolveType_(row);
       if (!t) continue;
       var def = effectiveDef_(row, t.def);
-      vals = buildParticipantRow_(row, def, Number(row.round || 0), String(row.evaluator_name || ""));
+      vals = buildParticipantRow_(row, def, stationNumber_(row), String(row.evaluator_name || ""));
     }
     (byPid[pid] = byPid[pid] || []).push(vals);
   }
