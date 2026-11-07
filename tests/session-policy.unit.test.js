@@ -8,6 +8,7 @@ import {
   isSessionEffectivelyRunning,
   effectiveSessionElapsedMs,
   measuredElapsedMs,
+  repetitionDurationsMs,
   canRoleControlSession
 } from '../frontend/js/session-policy.js';
 
@@ -76,4 +77,15 @@ test('the commander\'s tap is the round start/end when plausible; otherwise the 
     status: 'stopped', startedAt: server, startTappedAt: server - 700,
     endedAt: server + 60_000, endTappedAt: server + 59_200, timeLimitSeconds: 2400
   }), 59_900);
+});
+
+test('repetition durations: first from the round start, then from the previous tap', () => {
+  const race = { status: 'running', startedAt: START };
+  assert.deepEqual(repetitionDurationsMs(race, [START + 70_000, START + 155_000, START + 255_000]),
+    [70_000, 85_000, 100_000]);
+  assert.deepEqual(repetitionDurationsMs(race, [START + 155_000, START + 70_000]), [70_000, 85_000],
+    'taps saved out of order are sorted');
+  assert.deepEqual(repetitionDurationsMs(race, [START - 1_000, START + 30_000]), [30_000],
+    'a tap before the start is ignored');
+  assert.deepEqual(repetitionDurationsMs({ status: 'running' }, [START]), [], 'no start time, no durations');
 });

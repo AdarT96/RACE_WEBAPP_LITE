@@ -68,12 +68,20 @@ export function normalizeNotes(notes) {
     .filter(note => note.text && !seen.has(note.id) && seen.add(note.id));
 }
 
+// שעות ההקשה (ms מאז 1970) של כל חזרה בסבב, בתחנת ספירה. מהן מחושב משך כל חזרה.
+export const MAX_REP_TIMES = 300;
+export function normalizeRepTimes(value) {
+  return (Array.isArray(value) ? value : []).map(Number)
+    .filter(time => Number.isFinite(time) && time > 0).slice(0, MAX_REP_TIMES);
+}
+
 export function normalizeAssessmentEntry(entry) {
   const measurement = entry?.measurement == null || entry?.measurement === ''
     ? null : Number(entry.measurement);
   return {
     scores: normalizeScores(entry?.scores),
     measurement: Number.isFinite(measurement) && measurement >= 0 ? measurement : null,
+    repTimes: normalizeRepTimes(entry?.repTimes),
     comments: normalizeNotes(entry?.comments),
     clearedScores: Array.from(new Set((Array.isArray(entry?.clearedScores) ? entry.clearedScores : [])
       .map(traitIdFor).filter(Boolean))),
@@ -123,6 +131,7 @@ export function mergeAssessmentEntries(legacyEntry, privateEntry) {
     scores: { ...legacyScores, ...current.scores },
     measurement: current.measurement == null && !current.measurementCleared
       ? legacy.measurement : current.measurement,
+    repTimes: current.repTimes,
     comments,
     clearedScores: current.clearedScores,
     measurementCleared: current.measurementCleared,
@@ -157,8 +166,10 @@ export function stationAssessmentEntry({ races, assessmentsByRace, race = null, 
     assessment: lookup(round.id), race: round, participantId: pid, evaluatorUid
   });
   const [first, ...later] = sortedRounds(races);
-  const measurement = race ? roundEntry(race).measurement : null;
-  if (!first) return { ...normalizeAssessmentEntry(null), measurement };
+  const round = race ? roundEntry(race) : null;
+  const measurement = round ? round.measurement : null;
+  const repTimes = round ? round.repTimes : [];
+  if (!first) return { ...normalizeAssessmentEntry(null), measurement, repTimes };
 
   const earlier = [legacyEntryForParticipant(first.tags, pid, evaluatorUid), ...later.map(roundEntry)]
     .reduce((merged, entry) => ({
@@ -167,7 +178,7 @@ export function stationAssessmentEntry({ races, assessmentsByRace, race = null, 
       comments: normalizeNotes([...merged.comments, ...entry.comments])
     }), normalizeAssessmentEntry(null));
   const station = mergeAssessmentEntries(earlier, lookup(first.id)?.entries?.[pid]);
-  return { ...station, measurement };
+  return { ...station, measurement, repTimes };
 }
 
 // סבב שמסמך ההערכה שלו מחזיק את ההערה (לעריכה של הערה ישנה מסבב מאוחר)
@@ -307,4 +318,31 @@ export function buildCandidateSummary({
   });
 
   return { participantId: candidateId, traitAverages, stations };
+}
+
+// גרף ההשוואה בתחנת ספירה: לכל חזרה (בכל סבב) — המקום של כל משתתף לפי משך
+// החזרה (הקצר ביותר = 1, זמן זהה = אותו מקום). מי שלא השלים את החזרה — null.
+// rounds: [{ round, durationsByParticipant: Map<pid, ms[]> }] לפי סדר הסבבים.
+export function repetitionPlaces(rounds) {
+  const columns = [];
+  const places = new Map();
+  const list = (Array.isArray(rounds) ? rounds : []).map(item => ({
+    round: Number(item?.round || 0),
+    durations: new Map([...(item?.durationsByParticipant || new Map())]
+      .map(([pid, values]) => [String(pid), (Array.isArray(values) ? values : []).map(Number)]))
+  }));
+  list.forEach(({ durations }) => durations.forEach((_, pid) => { if (!places.has(pid)) places.set(pid, []); }));
+  list.forEach(({ round, durations }) => {
+    const reps = Math.max(0, ...[...durations.values()].map(values => values.length));
+    for (let rep = 0; rep < reps; rep += 1) {
+      columns.push({ round, rep: rep + 1 });
+      const times = [...durations].map(([pid, values]) => [pid, values[rep]])
+        .filter(([, value]) => Number.isFinite(value));
+      places.forEach((row, pid) => {
+        const own = durations.get(pid)?.[rep];
+        row.push(Number.isFinite(own) ? 1 + times.filter(([, value]) => value < own).length : null);
+      });
+    }
+  });
+  return { columns, places };
 }

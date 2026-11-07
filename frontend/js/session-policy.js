@@ -86,4 +86,14 @@ export function measuredElapsedMs(race, measuredAt) {
   return elapsed >= 0 && elapsed <= sessionLimitMs(race) ? elapsed : null;
 }
 
+// משך כל חזרה בתחנת ספירה: הראשונה מתחילת הסבב, כל אחת אחריה מההקשה הקודמת.
+// הקשה מחוץ לזמן הסבב (לפני ההתחלה / אחרי המגבלה) אינה נספרת.
+export function repetitionDurationsMs(race, tapTimes) {
+  const elapsed = (Array.isArray(tapTimes) ? tapTimes : [])
+    .map(time => measuredElapsedMs(race, time))
+    .filter(value => value != null)
+    .sort((a, b) => a - b);
+  return elapsed.map((value, index) => value - (index ? elapsed[index - 1] : 0));
+}
+
 export const canRoleControlSession = canControlSession;

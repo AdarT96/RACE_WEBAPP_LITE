@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assessmentEntryFor, buildCandidateSummary, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
-  normalizeScores, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+  normalizeRepTimes, normalizeScores, repetitionPlaces, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
 } from '../frontend/js/evaluation-model.js';
 
 const evaluatorUid = 'evaluator-1';
@@ -200,4 +200,29 @@ test('candidate summary shows one station score and per-round results', () => {
   assert.equal(sprints.scores.resilience, 7);
   assert.deepEqual(sprints.rounds.map(round => [round.round, round.place]), [[1, 1], [2, 2]]);
   assert.equal(summary.traitAverages.resilience.value, 5);
+});
+
+test('counter tap times stay with their own round', () => {
+  assert.deepEqual(normalizeRepTimes([5, '7', null, -1, 'x']), [5, 7]);
+  const races = [race('a1', '02', 1), race('a2', '02', 2)];
+  const assessmentsByRace = new Map([
+    ['a1', assessment({ resilience: 4 }, { measurement: 2, repTimes: [1000, 2000] })],
+    ['a2', assessment({}, { measurement: 1, repTimes: [9000] })]
+  ]);
+  const inRound2 = stationAssessmentEntry({ races, assessmentsByRace, race: races[1], participantId: '100', evaluatorUid });
+  assert.deepEqual(inRound2.repTimes, [9000]);
+  assert.equal(inRound2.scores.resilience, 4);
+  assert.deepEqual(stationAssessmentEntry({ races, assessmentsByRace, participantId: '100', evaluatorUid }).repTimes, []);
+});
+
+test('comparison chart ranks each repetition by how long it took', () => {
+  const { columns, places } = repetitionPlaces([
+    { round: 1, durationsByParticipant: new Map([['1', [70, 90, 80]], ['2', [60, 95]], ['3', [70, 85, 90]]]) },
+    { round: 2, durationsByParticipant: new Map([['1', [50]], ['2', [40]]]) }
+  ]);
+  assert.deepEqual(columns, [{ round: 1, rep: 1 }, { round: 1, rep: 2 }, { round: 1, rep: 3 }, { round: 2, rep: 1 }]);
+  assert.deepEqual(places.get('1'), [2, 2, 1, 2], 'equal times share a place');
+  assert.deepEqual(places.get('2'), [1, 3, null, 1], 'a repetition not done is a gap');
+  assert.deepEqual(places.get('3'), [2, 1, 2, null]);
+  assert.deepEqual(repetitionPlaces([]).columns, []);
 });
