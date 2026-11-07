@@ -6,6 +6,7 @@
 import { initializeApp }              from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
 import { getAuth, createUserWithEmailAndPassword,
          signInWithEmailAndPassword, signOut,
+         sendPasswordResetEmail,
          onAuthStateChanged }          from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
 import { doc, setDoc,
          getDoc, serverTimestamp }     from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
@@ -17,6 +18,7 @@ import { openFirestore, getDocPatiently } from './firestore-cache.js';
 const fbApp  = initializeApp(window.FIREBASE_CONFIG);
 const auth   = getAuth(fbApp);
 const db     = openFirestore(fbApp);
+auth.languageCode = 'he'; // מייל איפוס הסיסמה נשלח בעברית
 
 // ── Helpers ──────────────────────────────────────────
 const $  = id => document.getElementById(id);
@@ -157,6 +159,26 @@ async function loginUser() {
   }
 }
 
+// ── Password reset ────────────────────────────────────
+// Firebase שולח מייל עם קישור לדף שבו בוחרים סיסמה חדשה. כשהגנת חשיפת אימיילים
+// פעילה בפרויקט, גם אימייל שאינו רשום "מצליח" — לכן ההודעה מנוסחת בתנאי.
+async function resetPassword() {
+  const email = val('login-email');
+  if (!email) return showMsg('login-msg', 'הזינו את האימייל בשדה "אימייל" ולחצו שוב על "שכחתי סיסמה".', 'warning');
+
+  setLoading('reset-btn', true);
+  const stopSlowNotice = slowNotice('login-msg', 'השליחה מתעכבת — כנראה קליטה חלשה. נא להמתין.');
+  try {
+    await sendPasswordResetEmail(auth, email);
+    showMsg('login-msg', `✉️ אם ${email} רשום במערכת, נשלח אליו קישור לבחירת סיסמה חדשה. כדאי לבדוק גם בתיקיית הספאם.`, 'success');
+  } catch(err) {
+    showMsg('login-msg', firebaseErrMsg(err.code));
+  } finally {
+    stopSlowNotice();
+    setLoading('reset-btn', false);
+  }
+}
+
 // ── Tab Init ──────────────────────────────────────────
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -172,3 +194,4 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // Expose to inline onclick handlers
 window.registerUser = registerUser;
 window.loginUser    = loginUser;
+window.resetPassword = resetPassword;
