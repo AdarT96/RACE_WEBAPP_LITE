@@ -153,7 +153,24 @@ test('doGet declares ensure_files and a bumped version', () => {
   const info = newEnv().get();
   assert.ok(info.features.includes('ensure_files'));
   assert.ok(info.features.includes('sync_batch'));
-  assert.match(info.version, /station-wide-evaluation/);
+  assert.match(info.version, /rep-durations/);
+});
+
+// ───────────── counter stations: duration of each repetition ─────────────
+test('counter station writes the duration of each repetition into the time column', () => {
+  const env = newEnv();
+  const ev = { uid: 'u', name: 'דנה' };
+  const crawl = { ...stationRow({ team: 1, pid: 101, round: 1, station: 1, evaluator: ev }),
+    station: '04', reps_list: [3, 1], rep_durations_list: [[70000, 85000, 100000], [65000]] };
+  const manual = { ...stationRow({ team: 1, pid: 102, round: 1, station: 1, evaluator: ev }),
+    station: '04', reps_list: [5], rep_durations_list: [[]] };
+  ensureBatched(env, [crawl, manual]);
+  env.call({ type: 'sync_batch', rows: [crawl, manual] });
+  const rows = env.findSpreadsheetByName('צוות 1')._sheets.find(s => s._name === 'זחילות')._rows;
+  assert.deepEqual(rows.slice(1).map(r => [r[2], r[3], r[4]]), [
+    [101, '1:10, 1:25, 1:40 / 1:05', '3 / 1'],
+    [102, '', 5]
+  ]);
 });
 
 // ───────────── station-wide evaluation ─────────────

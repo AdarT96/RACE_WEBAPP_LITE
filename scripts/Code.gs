@@ -110,7 +110,7 @@ function doPost(e) {
 // בלי זה אין דרך להבדיל בין "הקוד נשמר בעורך" לבין "הקוד נפרס" —
 // שמירה לבדה אינה מעלה לאוויר, וזה בדיוק המקום שבו טעינו.
 // לעדכן את CODE_VERSION בכל שינוי מהותי ב-Code.gs.
-var CODE_VERSION = "2026-11-07-station-wide-evaluation";
+var CODE_VERSION = "2026-11-07-rep-durations";
 
 // FEATURES מפורט כאן ונבדק מול הראוטר בבדיקה למטה, כדי ש-doGet לא יוכל
 // להצהיר על יכולת שאינה קיימת בפריסה. הצהרה לא מדויקת גרועה מכלום:
@@ -228,7 +228,9 @@ function buildStationRow_(payload, def, stationNo, evalName, pid) {
   vals[0] = stationNo;
   if (def.measure === "place") vals[1] = roundsCell_(roundPlaces_(payload));
   vals[2] = pid;
-  vals[3] = roundsCell_(roundTimes_(payload).map(msToClock_));
+  vals[3] = (def.measure === "reps" && Array.isArray(payload.rep_durations_list))
+    ? repDurationsCell_(payload.rep_durations_list)
+    : roundsCell_(roundTimes_(payload).map(msToClock_));
   if (def.measure === "reps") vals[4] = roundsCell_(roundReps_(payload));
 
   var scores = payload.scores || {};
@@ -298,6 +300,19 @@ function roundsCell_(values) {
   if (!values.length) return "";
   if (values.length === 1) return values[0];
   return values.join(" / ");
+}
+
+// תחנת ספירה: משך כל חזרה, "1:10, 1:25, 1:40"; כמה סבבים מופרדים ב-" / "
+function repDurationsCell_(lists) {
+  var parts = [], any = false;
+  for (var i = 0; i < lists.length; i++) {
+    var list = Array.isArray(lists[i]) ? lists[i] : [];
+    var times = [];
+    for (var j = 0; j < list.length; j++) times.push(msToClock_(list[j]) || "0:00");
+    if (times.length) any = true;
+    parts.push(times.join(", "));
+  }
+  return any ? parts.join(" / ") : "";
 }
 
 function msToClock_(ms) {

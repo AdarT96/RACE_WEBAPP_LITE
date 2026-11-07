@@ -1153,13 +1153,14 @@
     isSessionEffectivelyRunning,
     effectiveSessionElapsedMs,
     measuredElapsedMs,
+    repetitionDurationsMs,
     canRoleControlSession
   } from "./js/session-policy.js";
   import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
     createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+    normalizeNotes, normalizeRepTimes, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
@@ -1273,6 +1274,7 @@
   // ספירת חזרות: תצוגה מקומית + תור הפרשים לכל סבב, כדי לא לדרוס מעריך אחר
   let localReps    = {};
   let pendingRepsByRace = {};
+  let pendingRepTimesByRace = {};   // שעת כל הקשה שעוד לא נשמרה — ממנה משך כל חזרה
   let repsSaveTimer = null;
   let repsSavePromise = null;
 
@@ -3476,6 +3478,9 @@
     const racePending = pendingRepsByRace[currentRaceId] || {};
     racePending[pid] = Number(racePending[pid] || 0) + 1;
     pendingRepsByRace[currentRaceId] = racePending;
+    const raceTimes = pendingRepTimesByRace[currentRaceId] || {};
+    (raceTimes[pid] = raceTimes[pid] || []).push(Date.now());
+    pendingRepTimesByRace[currentRaceId] = raceTimes;
     const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
     if (el) el.textContent = String(localReps[pid]);
     scheduleRepsSave();
@@ -3494,7 +3499,9 @@
     if (!raceId) return true;
 
     const pendingDeltas = { ...pendingRepsByRace[raceId] };
+    const pendingTimes = { ...(pendingRepTimesByRace[raceId] || {}) };
     delete pendingRepsByRace[raceId];
+    delete pendingRepTimesByRace[raceId];
 
     repsSavePromise = (async () => {
       try {
@@ -3507,6 +3514,7 @@
             const base = entry.measurement == null ? Number(baseMeasurements[pid] || 0) : entry.measurement;
             entry.measurement = base + Number(delta || 0);
             entry.measurementCleared = false;
+            entry.repTimes = normalizeRepTimes([...entry.repTimes, ...(pendingTimes[pid] || [])]);
             entries[pid] = entry;
           });
           return entries;
@@ -3528,6 +3536,11 @@
           retry[pid] = Number(retry[pid] || 0) + Number(delta || 0);
         });
         pendingRepsByRace[raceId] = retry;
+        const retryTimes = pendingRepTimesByRace[raceId] || {};
+        Object.entries(pendingTimes).forEach(([pid, times]) => {
+          retryTimes[pid] = [...times, ...(retryTimes[pid] || [])];
+        });
+        pendingRepTimesByRace[raceId] = retryTimes;
         showToast('שגיאה בשמירת ספירה: ' + errorText(e), 'error');
         return false;
       } finally {
@@ -3650,6 +3663,8 @@
       await evaluationRepository.mutateParticipant(raceId, pid, entry => {
         entry.measurement = num;
         entry.measurementCleared = num == null;
+        // תיקון ידני כלפי מטה מוחק את זמני החזרות העודפות (האחרונות)
+        entry.repTimes = num == null ? [] : entry.repTimes.slice(0, num);
         return entry;
       });
       if (currentRaceId === raceId) {
@@ -3996,7 +4011,7 @@
       const entryFor = race => stationAssessmentEntry({
         races: stationRaces, assessmentsByRace: personalAssessments, race, participantId, evaluatorUid: uid
       });
-      const places = [], times = [], reps = [];
+      const places = [], times = [], reps = [], repDurations = [];
       for (const { race, arrival, placeByParticipant } of rounds) {
         const place = placeByParticipant.get(String(participantId));
         if (place != null) {
@@ -4004,8 +4019,11 @@
           const elapsedMs = arrivalElapsedMs(race, arrival?.slotTimes?.[String(place)]);
           times.push(elapsedMs == null ? '' : elapsedMs);
         }
-        const measurement = entryFor(race).measurement;
-        if (measurement != null) reps.push(Number(measurement));
+        const roundEntry = entryFor(race);
+        if (roundEntry.measurement != null) {
+          reps.push(Number(roundEntry.measurement));
+          repDurations.push(repetitionDurationsMs(race, roundEntry.repTimes));
+        }
       }
 
       // הציונים וההערות של המעריך שהשורה הזו מתארת בלבד
@@ -4033,6 +4051,7 @@
         places,
         first_ms_list:  times,
         reps_list:      reps,
+        rep_durations_list: repDurations,   // משך כל חזרה בכל סבב (ms), מקביל ל-reps_list
         scores:         myScores,
         comments:       myComments,
         evaluator_name: evaluatorNameFor(uid),
@@ -5068,6 +5087,7 @@
       const updated = await evaluationRepository.mutateParticipant(raceId, pid, entry => {
         entry.measurement = value;
         entry.measurementCleared = value == null;
+        entry.repTimes = value == null ? [] : entry.repTimes.slice(0, value);
         return entry;
       });
       candidateState.assessmentsByRace.set(raceId, updated);
