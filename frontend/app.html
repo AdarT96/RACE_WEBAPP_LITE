@@ -910,7 +910,7 @@
         ▶ סבב חדש
       </button>
       <button class="btn btn-info evaluator-only" onclick="openCompareChart()" style="padding:12px 20px"
-              title="השווה את המקום שהמשתתפים הגיעו בכל סבב בתחנה הזאת">
+              title="השווה את מקומות המשתתפים בכל סבב (או בכל חזרה, בתחנת ספירה) בתחנה הזאת">
         📈 גרף השוואה
       </button>
       <button class="btn btn-info evaluator-only admin-only" onclick="doSyncSheets()" style="padding:12px 20px"
@@ -1082,11 +1082,11 @@
 <div class="modal-overlay" id="chart-modal">
   <div class="modal-box">
     <div class="modal-header">
-      <h3>📈 השוואת המקומות שלי לפי סבב <span id="chart-context" style="font-size:13px; color:var(--text-muted)"></span></h3>
+      <h3><span id="chart-title">📈 השוואת המקומות שלי לפי סבב</span> <span id="chart-context" style="font-size:13px; color:var(--text-muted)"></span></h3>
       <button class="modal-close" onclick="closeCompareChart()">✕</button>
     </div>
     <div style="padding:0 20px 20px">
-      <p style="font-size:12px; color:var(--text-muted); margin:8px 0">בחר משתתפים כדי להשוות את המקום שהגיעו בכל סבב של התחנה. סבב שלא סיימו בו — קו קטוע.</p>
+      <p id="chart-help" style="font-size:12px; color:var(--text-muted); margin:8px 0">בחר משתתפים כדי להשוות את המקום שהגיעו בכל סבב של התחנה. סבב שלא סיימו בו — קו קטוע.</p>
       <div id="chart-picker" class="chart-picker"></div>
       <div id="chart-canvas-wrap"><canvas id="chart-canvas"></canvas></div>
       <div id="chart-empty" class="chart-empty" style="display:none">אין נתונים להצגה — בחר משתתפים או הרץ סבבים.</div>
@@ -1160,7 +1160,7 @@
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
     createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, normalizeRepTimes, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+    normalizeNotes, normalizeRepTimes, repetitionPlaces, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
@@ -5234,20 +5234,55 @@
   let compareChartAllRaces = [];      // races for current team+station
   let compareChartArrivalByRace = new Map();
   const compareChartSelected = new Set();
+  // תחנת ספירה: אין סדר הגעה — המקום בכל חזרה נקבע לפי משך החזרה (מזמני ההקשות)
+  let compareChartReps = null;        // { columns, places, durations } או null בתחנת מקום
+
+  function clockText(ms) {
+    const total = Math.round(Number(ms || 0) / 1000);
+    return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+  }
+
+  async function loadRepetitionComparison(races) {
+    const ordered = races.slice().sort((a, b) => Number(a.round || 0) - Number(b.round || 0));
+    const assessmentsByRace = await gatherEvaluatorAssessmentsForRaces(ordered);
+    const rounds = ordered.map(race => {
+      const pids = uniqueParticipantIds((race.participantIds || [])
+        .concat(Object.keys(assessmentsByRace.get(String(race.id))?.entries || {})));
+      const durationsByParticipant = new Map();
+      pids.forEach(pid => {
+        const { repTimes } = stationAssessmentEntry({
+          races: ordered, assessmentsByRace, race, participantId: pid, evaluatorUid: currentUser?.uid || ''
+        });
+        const durations = repetitionDurationsMs(race, repTimes);
+        if (durations.length) durationsByParticipant.set(String(pid), durations);
+      });
+      return { round: Number(race.round || 0), durationsByParticipant };
+    });
+    const durations = new Map(rounds.map(round => [round.round, round.durationsByParticipant]));
+    return { ...repetitionPlaces(rounds), durations };
+  }
 
   window.openCompareChart = async () => {
     if (!selectedTeam || !selectedStation) { showToast('בחר צוות ותחנה', 'error'); return; }
     const modal = document.getElementById('chart-modal');
     modal.classList.add('open');
 
+    const repsStation = currentStationType()?.measure === 'reps';
+    setText('chart-title', repsStation ? '📈 השוואת המקומות שלי לפי חזרה' : '📈 השוואת המקומות שלי לפי סבב');
+    setText('chart-help', repsStation
+      ? 'בכל חזרה, המקום נקבע לפי הזמן שלקחה (המהיר ביותר = 1). הזמנים מופיעים בלחיצה על נקודה. חזרה שלא הושלמה — קו קטוע.'
+      : 'בחר משתתפים כדי להשוות את המקום שהגיעו בכל סבב של התחנה. סבב שלא סיימו בו — קו קטוע.');
+
     // Load all races for team+station (all rounds)
     try {
       compareChartAllRaces = await gatherRacesForCurrentContext();
-      compareChartArrivalByRace = await gatherEvaluatorArrivalsForRaces(compareChartAllRaces);
+      compareChartArrivalByRace = repsStation ? new Map() : await gatherEvaluatorArrivalsForRaces(compareChartAllRaces);
+      compareChartReps = repsStation ? await loadRepetitionComparison(compareChartAllRaces) : null;
     } catch (e) {
       showToast('שגיאה בטעינת סבבים: ' + errorText(e), 'error');
       compareChartAllRaces = [];
       compareChartArrivalByRace = new Map();
+      compareChartReps = null;
     }
 
     const teamData = teamsCache[selectedTeam] || {};
@@ -5255,8 +5290,8 @@
       `· צוות ${Number(selectedTeam)} · ${stationDisplayName(selectedStation, teamData)}`);
 
     // Unique participants across all rounds
-    const pset = new Set();
-    for (const race of compareChartAllRaces) {
+    const pset = new Set(compareChartReps ? compareChartReps.places.keys() : []);
+    for (const race of compareChartReps ? [] : compareChartAllRaces) {
       const arrival = evaluatorArrivalStateForRace(
         race, personalArrivalFrom(compareChartArrivalByRace.get(race.id)));
       arrival.order.forEach(participantId => pset.add(String(participantId)));
@@ -5279,7 +5314,9 @@
   function renderChartPicker(participants) {
     const picker = document.getElementById('chart-picker');
     if (participants.length === 0) {
-      picker.innerHTML = '<span style="color:var(--text-muted); font-size:13px">אין משתתפים שסיימו סבבים בתחנה הזאת עדיין.</span>';
+      picker.innerHTML = compareChartReps
+        ? '<span style="color:var(--text-muted); font-size:13px">אין עדיין זמני חזרות בתחנה הזאת. הזמנים נשמרים בלחיצה על המונה בזמן הסבב.</span>'
+        : '<span style="color:var(--text-muted); font-size:13px">אין משתתפים שסיימו סבבים בתחנה הזאת עדיין.</span>';
       return;
     }
     picker.innerHTML = participants.map(p => {
@@ -5313,11 +5350,21 @@
     canvasWrap.style.display = '';
 
     const rounds = compareChartAllRaces.map(r => Number(r.round || 0)).sort((a, b) => a - b);
-    const labels = rounds.map(r => 'סבב ' + r);
+    const reps = compareChartReps;
+    const severalRounds = reps && new Set(reps.columns.map(column => column.round)).size > 1;
+    const labels = reps
+      ? reps.columns.map(column => (severalRounds ? `ס׳${column.round} · ` : '') + 'חזרה ' + column.rep)
+      : rounds.map(r => 'סבב ' + r);
+    // משך החזרה לתיבת המידע בלבד — לא מוצג על הגרף עצמו
+    const durationAt = (pid, index) => {
+      const column = reps?.columns[index];
+      if (!column) return null;
+      return reps.durations.get(column.round)?.get(String(pid))?.[column.rep - 1] ?? null;
+    };
 
     // For each selected participant, build a data array aligned with rounds
     const datasets = Array.from(compareChartSelected).map((pid, idx) => {
-      const data = rounds.map(rnd => {
+      const data = reps ? (reps.places.get(String(pid)) || []) : rounds.map(rnd => {
         const race = compareChartAllRaces.find(r => Number(r.round || 0) === rnd);
         if (!race) return null;
         const arrival = evaluatorArrivalStateForRace(
@@ -5329,6 +5376,7 @@
       const color = `hsl(${hue},70%,55%)`;
       return {
         label: 'משתתף ' + pid,
+        pid: String(pid),
         data,
         borderColor: color,
         backgroundColor: color,
@@ -5351,7 +5399,11 @@
           legend: { labels: { color: '#94a3b8' } },
           tooltip: {
             callbacks: {
-              label: (ctx) => ctx.dataset.label + ': ' + (ctx.raw == null ? 'לא סיים' : 'מקום ' + ctx.raw)
+              label: (ctx) => {
+                if (ctx.raw == null) return ctx.dataset.label + ': לא סיים';
+                const duration = reps ? durationAt(ctx.dataset.pid, ctx.dataIndex) : null;
+                return ctx.dataset.label + ': מקום ' + ctx.raw + (duration != null ? ` (${clockText(duration)})` : '');
+              }
             }
           }
         },
@@ -5362,7 +5414,7 @@
             max: maxPlace,
             ticks: { stepSize: 1, color: '#94a3b8' },
             grid: { color: 'rgba(255,255,255,0.06)' },
-            title: { display: true, text: 'מקום', color: '#94a3b8' }
+            title: { display: true, text: reps ? 'מקום לפי זמן החזרה' : 'מקום', color: '#94a3b8' }
           },
           x: {
             ticks: { color: '#94a3b8' },

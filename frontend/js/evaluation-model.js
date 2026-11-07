@@ -319,3 +319,30 @@ export function buildCandidateSummary({
 
   return { participantId: candidateId, traitAverages, stations };
 }
+
+// גרף ההשוואה בתחנת ספירה: לכל חזרה (בכל סבב) — המקום של כל משתתף לפי משך
+// החזרה (הקצר ביותר = 1, זמן זהה = אותו מקום). מי שלא השלים את החזרה — null.
+// rounds: [{ round, durationsByParticipant: Map<pid, ms[]> }] לפי סדר הסבבים.
+export function repetitionPlaces(rounds) {
+  const columns = [];
+  const places = new Map();
+  const list = (Array.isArray(rounds) ? rounds : []).map(item => ({
+    round: Number(item?.round || 0),
+    durations: new Map([...(item?.durationsByParticipant || new Map())]
+      .map(([pid, values]) => [String(pid), (Array.isArray(values) ? values : []).map(Number)]))
+  }));
+  list.forEach(({ durations }) => durations.forEach((_, pid) => { if (!places.has(pid)) places.set(pid, []); }));
+  list.forEach(({ round, durations }) => {
+    const reps = Math.max(0, ...[...durations.values()].map(values => values.length));
+    for (let rep = 0; rep < reps; rep += 1) {
+      columns.push({ round, rep: rep + 1 });
+      const times = [...durations].map(([pid, values]) => [pid, values[rep]])
+        .filter(([, value]) => Number.isFinite(value));
+      places.forEach((row, pid) => {
+        const own = durations.get(pid)?.[rep];
+        row.push(Number.isFinite(own) ? 1 + times.filter(([, value]) => value < own).length : null);
+      });
+    }
+  });
+  return { columns, places };
+}

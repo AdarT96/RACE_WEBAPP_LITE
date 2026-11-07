@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assessmentEntryFor, buildCandidateSummary, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
-  normalizeRepTimes, normalizeScores, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+  normalizeRepTimes, normalizeScores, repetitionPlaces, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
 } from '../frontend/js/evaluation-model.js';
 
 const evaluatorUid = 'evaluator-1';
@@ -213,4 +213,16 @@ test('counter tap times stay with their own round', () => {
   assert.deepEqual(inRound2.repTimes, [9000]);
   assert.equal(inRound2.scores.resilience, 4);
   assert.deepEqual(stationAssessmentEntry({ races, assessmentsByRace, participantId: '100', evaluatorUid }).repTimes, []);
+});
+
+test('comparison chart ranks each repetition by how long it took', () => {
+  const { columns, places } = repetitionPlaces([
+    { round: 1, durationsByParticipant: new Map([['1', [70, 90, 80]], ['2', [60, 95]], ['3', [70, 85, 90]]]) },
+    { round: 2, durationsByParticipant: new Map([['1', [50]], ['2', [40]]]) }
+  ]);
+  assert.deepEqual(columns, [{ round: 1, rep: 1 }, { round: 1, rep: 2 }, { round: 1, rep: 3 }, { round: 2, rep: 1 }]);
+  assert.deepEqual(places.get('1'), [2, 2, 1, 2], 'equal times share a place');
+  assert.deepEqual(places.get('2'), [1, 3, null, 1], 'a repetition not done is a gap');
+  assert.deepEqual(places.get('3'), [2, 1, 2, null]);
+  assert.deepEqual(repetitionPlaces([]).columns, []);
 });
