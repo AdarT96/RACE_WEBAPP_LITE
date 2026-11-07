@@ -19,6 +19,7 @@ import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestor
 import { createForegroundGate } from './load-priority.js';
 import { mountMessageCenter } from './message-center.js';
 import { mountEventMapEditor } from './event-map.js';
+import { showToast } from './toast.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -48,14 +49,6 @@ function teamIdsFromInput() {
   const invalid = tokens.find(token => !normalizeEventTeamId(token));
   if (invalid) throw new Error(`מספר הצוות "${invalid}" אינו תקין. ניתן להזין 1–${SCHEDULE_MAX_TEAMS}.`);
   return [...new Set(tokens.map(normalizeEventTeamId))];
-}
-
-function showToast(message, type = 'info') {
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.textContent = message;
-  document.getElementById('toast-container').appendChild(toast);
-  setTimeout(() => toast.remove(), 4200);
 }
 
 function showAlert(message, type = 'warning') {

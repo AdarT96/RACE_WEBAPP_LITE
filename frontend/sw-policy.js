@@ -7,7 +7,7 @@
     'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js'
   ];
   var CACHE_PREFIX = 'gibush-shell-';
-  var CACHE_VERSION = 'v4';
+  var CACHE_VERSION = 'v5';
   var CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
   // קבצי המעטפת שמוטמעים מראש בהתקנה. בדיקת יחידה מוודאת שהרשימה מכסה את כל
@@ -30,7 +30,7 @@
     'private-notes-repository', 'roles', 'round-navigation-model', 'schedule-excel-adapter',
     'schedule-model', 'schedule-page', 'schedule-publication-model', 'schedule-repository',
     'session-policy', 'staff-assignment', 'station-intensity', 'station-operational-dialog',
-    'station-operational-status', 'station-types'
+    'station-operational-status', 'station-types', 'toast'
   ].map(function (name) { return 'js/' + name + '.js'; });
 
   // החלטה לכל בקשה: 'same-origin' | 'sdk' | 'skip'. skip = ה-SW לא נוגע בבקשה

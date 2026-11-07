@@ -470,6 +470,7 @@
 <script src="js/station-types.js"></script>
 
 <script type="module">
+  import { showToast } from "./js/toast.js";
   import {
     isSessionExpired, isSessionEffectivelyRunning
   } from "./js/session-policy.js";
@@ -1782,12 +1783,7 @@
     return (s == null || s === false ? '' : String(s)).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  window.showToast = (msg, type='info') => {
-    const c = document.getElementById('toast-container');
-    const el = document.createElement('div');
-    el.className = `toast ${type}`; el.textContent = msg;
-    c.appendChild(el); setTimeout(() => el.remove(), 3500);
-  };
+  window.showToast = showToast;
 
   // ═══════════════════════════════════════════════════════════
   //  מחיקת נתוני גיבוש קודם

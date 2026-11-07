@@ -26,7 +26,7 @@ class StationOperationalDialog extends HTMLElement {
         .head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
         h2 { margin:0; font-size:21px; }
         .subtitle { margin:5px 0 0; color:light-dark(#64748b,#9ca3af); font-size:12px; }
-        .close { width:34px; height:34px; flex:0 0 auto; border:0; border-radius:50%; background:light-dark(#e5e7eb,#293142); color:inherit; font-size:22px; cursor:pointer; }
+        .close { width:44px; height:44px; flex:0 0 auto; border:0; border-radius:50%; background:light-dark(#e5e7eb,#293142); color:inherit; font-size:22px; cursor:pointer; }
         .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:18px; }
         .field { min-height:76px; display:grid; align-content:center; gap:5px; padding:12px; border:1px solid light-dark(#d7dee9,#374151); border-radius:11px; background:light-dark(#f8fafc,#0d111a); }
         .field span { color:light-dark(#64748b,#9ca3af); font-size:11px; }
@@ -38,7 +38,7 @@ class StationOperationalDialog extends HTMLElement {
         .status.not_started { color:light-dark(#64748b,#9ca3af); background:rgba(148,163,184,.12); }
         .warning { margin-top:12px; padding:10px 12px; border:1px solid rgba(239,68,68,.4); border-radius:10px; background:rgba(239,68,68,.09); color:#ef4444; font-size:12px; }
         .footer { display:flex; justify-content:flex-end; margin-top:16px; }
-        .done { padding:9px 15px; border:0; border-radius:9px; background:#2563eb; color:white; font-weight:800; cursor:pointer; }
+        .done { min-height:44px; min-width:88px; padding:9px 18px; border:0; border-radius:9px; background:#2563eb; color:white; font-weight:800; cursor:pointer; }
         @media (max-width:440px) { .grid { grid-template-columns:1fr; } }
       </style>
       <div class="layer" hidden role="dialog" aria-modal="true" aria-labelledby="title">

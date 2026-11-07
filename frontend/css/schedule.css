@@ -104,6 +104,16 @@
   .schedule-history-card { grid-template-columns:1fr; }
   .team-entry { grid-template-columns:62px 1fr; }
   .team-entry-intensity { grid-column:2; }
+  /* בטלפון עמודת השעה צרה (תאריך ושעה זה מעל זה), כדי שעמודת צוות שלמה תיכנס לצידה */
+  .schedule-table .time-column { width:124px; min-width:124px; max-width:124px; }
+  .schedule-table thead th { min-width:160px; padding:9px; }
+  .schedule-table tbody .time-column { padding:7px; }
+  .schedule-time-editor { grid-template-columns:1fr; }
+  .schedule-time-editor input, .schedule-time-editor select { width:100%; min-width:0; }
+  .schedule-row-actions { flex-wrap:wrap; }
+  .schedule-row-actions select { width:100%; min-width:0; }
+  .schedule-station-cell { min-width:160px; }
+  .team-header input { min-width:0; width:100%; }
 }
 
 body.outdoor-mode .schedule-savebar { background:rgba(240,244,248,.95); }
