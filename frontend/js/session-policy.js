@@ -4,7 +4,8 @@
 
 import { canControlSession } from './roles.js';
 
-export const DEFAULT_SESSION_LIMIT_SECONDS = 40 * 60;
+// תקרת סבב: 30 דקות. סבב שהמפק״צ לא עצר נסגר לבד בתקרה (גם אם יצא מהמסך).
+export const DEFAULT_SESSION_LIMIT_SECONDS = 30 * 60;
 
 export function timestampToMs(value) {
   if (value == null) return null;

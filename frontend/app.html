@@ -903,6 +903,12 @@
       </div>
     </details>
 
+    <!-- התחלה/עצירה שעוד לא הגיעה לשרת: המעריכים עוד לא רואים אותה -->
+    <div id="race-write-pending" class="alert alert-warning" role="status" aria-live="polite"
+         style="margin-top:16px" hidden>
+      ⏳ השינוי בסבב עדיין לא הגיע לשרת — המעריכים עוד לא רואים אותו. אל תצא מהמסך ואל תעבור לאפליקציה אחרת עד שההודעה תיעלם.
+    </div>
+
     <!-- Actions -->
     <div style="display:flex; gap:12px; justify-content:center; margin-top:20px; flex-wrap:wrap">
       <button id="end-btn" class="btn btn-danger btn-xl session-control-only" onclick="endSession()" hidden>
@@ -1162,7 +1168,8 @@
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
     createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, normalizeRepTimes, repetitionPlaces, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+    normalizeNotes, normalizeRepTimes, repetitionPlaces, stationAssessmentEntry,
+    generalStationRace, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
@@ -1369,6 +1376,9 @@
   function currentStationType() {
     return stationTypeFor(selectedStation, teamsCache[selectedTeam]);
   }
+  function isGeneralStation() {
+    return isGeneralStationType(currentStationType());
+  }
   function supportsRoundTabs() {
     return ['sprints', 'stretcher'].includes(currentStationType()?.id);
   }
@@ -1491,6 +1501,7 @@
   }
 
   function stationMeasureSummary(st) {
+    if (isGeneralStationType(st)) return 'כללי · הערכה בלי סבבים';
     if (!st || st.measure === 'none') return 'הערכה איכותנית';
     if (st.measure === 'place') return 'סימון סדר הגעה';
     const label = st.measureLabel || 'מספר חזרות';
@@ -2329,8 +2340,20 @@
     const button = event.target.closest('[data-arrival-retry]');
     if (button) arrivalControllers.get(button.dataset.arrivalRetry)?.controller.retry();
   });
+  // התחלה/עצירת סבב שנשמרה במכשיר ועוד לא אושרה בשרת. אם המפק״צ יוצא עכשיו,
+  // השמירה נשלחת רק כשיפתח שוב את האפליקציה — ועד אז המעריכים לא רואים אותה.
+  let pendingRaceWrites = new Set();
+  function updateRaceWritePending(snap) {
+    pendingRaceWrites = new Set(snap.docs.filter(item => item.metadata.hasPendingWrites).map(item => item.id));
+    const banner = document.getElementById('race-write-pending');
+    if (banner) banner.hidden = !(canControlSession() && pendingRaceWrites.size > 0);
+  }
+  function hasPendingRaceWrites() {
+    return canControlSession() && pendingRaceWrites.size > 0;
+  }
+
   window.addEventListener('beforeunload', event => {
-    if (!hasPendingArrivals()) return;
+    if (!hasPendingArrivals() && !hasPendingRaceWrites()) return;
     event.preventDefault(); event.returnValue = '';
   });
   let scheduleNavigationPending = false;
@@ -2342,6 +2365,11 @@
     if (hasPendingArrivals()) {
       event.preventDefault();
       showToast('יש להמתין לשמירת סדר ההגעה לפני מעבר לעמוד אחר.', 'error');
+      return;
+    }
+    if (hasPendingRaceWrites()) {
+      event.preventDefault();
+      showToast('הסבב עדיין לא נשמר בשרת — המעריכים לא רואים אותו. המתן לפני מעבר לעמוד אחר.', 'error');
       return;
     }
     // A quick tap on the schedule must not discard the last reps still waiting
@@ -2462,6 +2490,7 @@
 
     raceQueryUnsubscribe = onSnapshot(q, { includeMetadataChanges:true }, (snap) => {
       if (generation !== raceQueryGeneration) return;
+      updateRaceWritePending(snap);
       // אישור מהשרת בלי שינוי בנתונים מעדכן רק את הדגל — אין מה לרנדר מחדש.
       const metadataOnly = raceListSnapshotSeen && snap.docChanges().length === 0;
       raceListSnapshotSeen = true;
@@ -2471,7 +2500,7 @@
       if (!snap.metadata.fromCache) initialRoundConfirmed = true;
       if (metadataOnly) {
         // השרת אישר שאין סבבים — מחליפים את "טוען" ב"ממתין למפק״צ".
-        if (!latestRace && !snap.metadata.fromCache) renderIdleForNextRound(1);
+        if (!latestRace && !snap.metadata.fromCache && !isGeneralStation()) renderIdleForNextRound(1);
         return;
       }
       const previousLatestId = latestRace?.id || null;
@@ -2479,6 +2508,11 @@
       const list = [];
       snap.forEach(d => list.push({ id: d.id, ...d.data() }));
       list.sort((a, b) => Number(a.round || 0) - Number(b.round || 0) || a.id.localeCompare(b.id));
+      if (isGeneralStation()) {
+        showGeneralStation(list);
+        roundShown();
+        return;
+      }
       racesForContext = list;
       latestRace = list.length ? list[list.length - 1] : null;
 
@@ -2732,8 +2766,63 @@
     });
   }
 
+  // תחנה כללית: אין סבבים. "סבב 0" מדומה מחזיק את הערכת התחנה; סבבים אמיתיים
+  // שנשמרו לפני שהתחנה סווגה ככללית נקראים מתחתיו כנתון ישן.
+  function showGeneralStation(realRaces) {
+    const general = generalStationRace({
+      eventId: activeFormationEvent.id, team: selectedTeam, station: selectedStation
+    });
+    detachEvaluatorArrivalSubscription();
+    if (currentRaceId !== general.id) { stationNoteSelectedPid = null; localReps = {}; }
+    racesForContext = [general, ...realRaces];
+    latestRace = null;
+    currentRace = general;
+    currentRaceId = general.id;
+    subscribeToStationAssessments();
+    renderRace();
+  }
+
+  function renderGeneralStation() {
+    const teamData = teamsCache[selectedTeam] || {};
+    stopSessionTimer();
+    applyRoleVisibility();
+    renderRoundNavigation();
+    renderStationOverview(currentStationType(), teamData);
+    setText('hdr-round', '—');
+    setText('hdr-status', '📝 כללי');
+    renderStickyRound('—', 'כללי · בלי סבבים');
+    setText('hdr-time', '—');
+    setText('sticky-time', '—');
+    hideAllSessionControls();
+    const compare = document.querySelector('button[onclick="openCompareChart()"]');
+    if (compare) compare.hidden = true;
+    if (!canEvaluate()) {
+      setText('hdr-progress', '—');
+      renderIdlePlaceholder('תחנה כללית — אין סבבים להפעלה. המעריכים מעריכים את המשתתפים ישירות.');
+      return;
+    }
+    document.getElementById('idle-panel').style.display = 'none';
+    document.getElementById('race-panel').style.display = '';
+    document.getElementById('grid-section').style.display = 'none';
+    document.getElementById('finished-section').style.display = 'none';
+    document.getElementById('finished-list').replaceChildren();
+    if (localStorage.getItem(collapsibleStorageKey('station-notes-section')) == null) {
+      openCollapsibleSection('station-notes-section');
+    }
+    const participants = participantIdsForRace(currentRace);
+    const evaluated = participants.filter(pid => {
+      const entry = currentAssessmentEntry(pid);
+      return Object.keys(entry.scores).length > 0 || entry.comments.length > 0;
+    }).length;
+    setText('hdr-progress', `${evaluated} מתוך ${participants.length}`);
+    renderStationNotesSection();
+  }
+
   function renderRace() {
     if (!currentRace) return;
+    if (isGeneralStationRace(currentRace)) { renderGeneralStation(); return; }
+    const compareButton = document.querySelector('button[onclick="openCompareChart()"]');
+    if (compareButton) compareButton.hidden = false;
     const nowMs = Date.now();
     applyRoleVisibility();
     renderRoundNavigation();
@@ -3379,7 +3468,9 @@
     sizeParticipantGrid(picker, participants.length);
     info.textContent = '';
     const st = currentStationType();
-    setText('sn-help', usesManualMeasure(st)
+    setText('sn-help', isGeneralStationType(st)
+      ? 'תחנה כללית — אין סבבים, אפשר להעריך בכל זמן. בחר משתתף כדי לתת ציון או לכתוב הערה. נקודה ירוקה מציינת שכבר נתת לו ציון או הערה.'
+      : usesManualMeasure(st)
       ? `בחר משתתף והזן ${st.measureLabel || 'את התוצאה'} בסיום התחנה. אפשר להשלים או לתקן גם אחרי עצירת הסבב.`
       : 'בחר משתתף כדי לתת ציון, להזין מדידה או לכתוב הערה לתחנה. נקודה ירוקה מציינת שכבר נתת לו ציון או הערה בתחנה.');
 
@@ -4079,7 +4170,7 @@
     const snap = await getDocs(query(collection(db, 'races'), ...constraints));
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-    return list;
+    return list.concat(await gatherGeneralStationRaces());
   }
 
   // בניית השורות משותפת לשני הכפתורים — ההבדל היחיד הוא היקף הסבבים
@@ -4113,7 +4204,28 @@
     const snap = await getDocs(q);
     const list = [];
     snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    if (isGeneralStation()) {
+      list.push(generalStationRace({ eventId: activeFormationEvent.id, team: selectedTeam, station: selectedStation }));
+    }
     return list;
+  }
+
+  // הערכות תחנות כלליות (בלי סבבים) כ"סבבים" מדומים. מנהל רואה את כל המסמכים;
+  // מעריך — רק את שלו. filters: { team } לצמצום לצוות אחד.
+  async function gatherGeneralStationRaces({ team = '' } = {}) {
+    if (!activeFormationEvent || !currentUser?.uid) return [];
+    const constraints = [];
+    if (team) constraints.push(where('team', '==', String(team)));
+    if (!isAdmin()) constraints.push(where('evaluatorUid', '==', currentUser.uid));
+    const snapshot = await getDocs(query(
+      collection(db, 'events', activeFormationEvent.id, 'stationEvaluations'), ...constraints));
+    const seen = new Map();
+    snapshot.forEach(item => {
+      const { team: docTeam, station } = item.data();
+      const race = generalStationRace({ eventId: activeFormationEvent.id, team: docTeam, station });
+      if (!seen.has(race.id)) seen.set(race.id, race);
+    });
+    return [...seen.values()];
   }
 
   // מחזירה Map<raceId, Map<evaluatorUid, arrival>>.
@@ -4122,7 +4234,8 @@
   // קורא את מסמכי כל המעריכים בכל סבב.
   async function gatherEvaluatorArrivalsForRaces(races, { allEvaluators = false } = {}) {
     const result = new Map();
-    const list = Array.isArray(races) ? races : [];
+    // לתחנה כללית אין סדר הגעה (ואין מסמך סבב שאפשר לקרוא תחתיו)
+    const list = (Array.isArray(races) ? races : []).filter(race => !isGeneralStationRace(race));
 
     if (allEvaluators && isAdmin()) {
       const snapshots = await Promise.all(list.map(race =>
@@ -4182,12 +4295,19 @@
     const list = Array.isArray(races) ? races : [];
 
     if (isAdmin()) {
-      const snapshots = await Promise.all(list.map(race =>
-        getDocs(collection(db, 'races', String(race.id), 'evaluatorAssessments'))));
+      // תחנה כללית: מסמך לכל מעריך באוסף התחנות של האירוע, לא תחת סבב
+      const snapshots = await Promise.all(list.map(race => {
+        const general = parseGeneralStationRaceId(race.id);
+        return general
+          ? getDocs(query(collection(db, 'events', general.eventId, 'stationEvaluations'),
+            where('team', '==', general.team), where('station', '==', general.station)))
+          : getDocs(collection(db, 'races', String(race.id), 'evaluatorAssessments'));
+      }));
       snapshots.forEach((snapshot, index) => {
         const byUid = new Map();
         snapshot.forEach(document => {
-          byUid.set(document.id, normalizeAssessment(document.data(), document.id));
+          const evaluatorUid = String(document.data().evaluatorUid || document.id);
+          byUid.set(evaluatorUid, normalizeAssessment(document.data(), evaluatorUid));
         });
         result.set(String(list[index].id), byUid);
       });
@@ -4819,8 +4939,11 @@
     if (privacyMigrationComplete) {
       constraints.push(where('evaluationSchemaVersion', '==', EVALUATION_SCHEMA_VERSION));
     }
-    const snapshot = await getDocs(query(collection(db, 'races'), ...constraints));
-    return snapshot.docs.map(document => ({ id: document.id, ...document.data() }))
+    const [snapshot, general] = await Promise.all([
+      getDocs(query(collection(db, 'races'), ...constraints)),
+      gatherGeneralStationRaces({ team })
+    ]);
+    return snapshot.docs.map(document => ({ id: document.id, ...document.data() })).concat(general)
       .sort((a, b) => Number(a.station || 0) - Number(b.station || 0) ||
         Number(a.round || 0) - Number(b.round || 0));
   }

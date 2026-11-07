@@ -166,10 +166,22 @@ function attachEvent(nextEventId) {
   }));
 }
 
+function stationTypeOf(teamRow) {
+  const typeId = teamRow.stationMap?.[teamRow.station] || window.DEFAULT_STATION_ORDER?.[Number(teamRow.station) - 1];
+  return stationTypes[typeId] || null;
+}
+
 function stationName(teamRow) {
   if (!teamRow.station) return '—';
-  const typeId = teamRow.stationMap?.[teamRow.station] || window.DEFAULT_STATION_ORDER?.[Number(teamRow.station) - 1];
-  return stationTypes[typeId]?.name || `תחנה ${Number(teamRow.station)}`;
+  return stationTypeOf(teamRow)?.name || `תחנה ${Number(teamRow.station)}`;
+}
+
+// תחנה כללית אין בה סבבים — "טרם התחילה" היה מטעה
+function teamStatusLabel(teamRow) {
+  if (teamRow.station && stationTypeOf(teamRow)?.measure === 'general' && teamRow.raceStatus === 'not_started') {
+    return 'כללית · בלי סבבים';
+  }
+  return stationOperationalStatusLabel(teamRow.raceStatus);
 }
 
 function renderTeams(snapshot) {
@@ -211,7 +223,7 @@ function renderTeams(snapshot) {
         ? `<button type="button" class="team-station-open" onclick="openTeamStationDetails('${escapeHtml(team.team)}')">${escapeHtml(stationName(team))}<small>פרטי תחנה</small></button>`
         : '—'}</td>
       <td data-label="סבב">${team.round || '—'}</td>
-      <td data-label="מצב"><span class="formation-status ${escapeHtml(team.raceStatus)}">${stationOperationalStatusLabel(team.raceStatus)}</span></td>
+      <td data-label="מצב"><span class="formation-status ${escapeHtml(team.raceStatus)}">${escapeHtml(teamStatusLabel(team))}</span></td>
     </tr>
     ${expanded ? `<tr class="team-details-row"><td colspan="6" class="team-details-cell">
       <div class="team-candidate-heading"><strong>מועמדי צוות ${Number(team.team)}</strong><span>${team.total} מועמדים</span></div>

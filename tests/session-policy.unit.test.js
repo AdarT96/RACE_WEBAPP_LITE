@@ -13,12 +13,13 @@ import {
 } from '../frontend/js/session-policy.js';
 
 const START = 1_700_000_000_000;
-const LIMIT_MS = 40 * 60 * 1000;
+const LIMIT_MS = 30 * 60 * 1000;
 
-test('new and legacy races use the 40-minute limit', () => {
-  assert.equal(DEFAULT_SESSION_LIMIT_SECONDS, 2400);
+test('new and legacy races use the 30-minute limit', () => {
+  assert.equal(DEFAULT_SESSION_LIMIT_SECONDS, 1800);
   assert.equal(sessionLimitMs({}), LIMIT_MS);
-  assert.equal(sessionLimitMs({ timeLimitSeconds: 2400 }), LIMIT_MS);
+  assert.equal(sessionLimitMs({ timeLimitSeconds: 1800 }), LIMIT_MS);
+  assert.equal(sessionLimitMs({ timeLimitSeconds: 2400 }), LIMIT_MS, 'a round saved with the old 40 minutes also closes at 30');
   assert.equal(sessionLimitMs({ timeLimitSeconds: 3600 }), LIMIT_MS);
   assert.equal(sessionDeadlineMs({ startedAt: START }), START + LIMIT_MS);
 });

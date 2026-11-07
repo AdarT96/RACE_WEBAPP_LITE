@@ -220,7 +220,8 @@
           <select id="sttype-measure" class="role-sel" onchange="onStTypeMeasureChange(this.value)">
             <option value="place">מקום (סדר הגעה)</option>
             <option value="reps">מספר (חזרות/ברגים/שלב)</option>
-            <option value="none">ללא</option>
+            <option value="none">ללא (ציונים והערות בתוך סבב)</option>
+            <option value="general">כללי (הערכה בלי סבבים)</option>
           </select>
         </label>
         <label id="sttype-measurelabel-wrap" style="font-size:13px; display:none">תווית המספר:
@@ -971,7 +972,7 @@
     open: 'פתוח', in_progress: 'בטיפול', resolved: 'טופל'
   };
   const ISSUE_RACE_STATUS_LABELS = {
-    not_started: 'טרם התחיל', running: 'פעיל', stopped: 'עצור', time_limit: 'תקרת 40 דק׳'
+    not_started: 'טרם התחיל', running: 'פעיל', stopped: 'עצור', time_limit: 'תקרת 30 דק׳'
   };
 
   function issueReportTime(value) {
@@ -1354,7 +1355,7 @@
         (Number(b.round) || 0) - (Number(a.round) || 0);
       container.innerHTML = races.sort(byTeamStationRound).map(r => {
         const nowMs = Date.now();
-        const status = isSessionExpired(r, nowMs) ? 'תקרת 40 דק׳' :
+        const status = isSessionExpired(r, nowMs) ? 'תקרת 30 דק׳' :
           isSessionEffectivelyRunning(r, nowMs) ? 'פעיל' : 'עצור';
         const team    = r.team ? 'צוות ' + Number(r.team) : 'ללא צוות';
         const station = r.station ? 'תחנה ' + escHtml(String(r.station)) : 'ללא תחנה';
@@ -1802,8 +1803,8 @@
     'unassignedCandidates', 'candidateNumbers', 'intake',
     // הודעות פנימיות ומצב הקריאה של כל משתמש
     'messages', 'messageReads',
-    // מפת שטח הגיבוש
-    'assets'
+    // מפת שטח הגיבוש והערכות תחנות כלליות
+    'assets', 'stationEvaluations'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 

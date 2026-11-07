@@ -210,9 +210,10 @@ service cloud.firestore {
          (!request.resource.data.keys().hasAny(['participantIds']) ||
            (request.resource.data.participantIds is list &&
             request.resource.data.participantIds.size() <= 20)) &&
+         // 1800 = תקרת 30 דקות; 2400 נשאר רק למכשיר שעוד מריץ גרסה ישנה (40 דקות).
          (!request.resource.data.keys().hasAny(['timeLimitSeconds']) ||
            (request.resource.data.timeLimitSeconds is int &&
-            request.resource.data.timeLimitSeconds == 2400)) &&
+            request.resource.data.timeLimitSeconds in [1800, 2400])) &&
          request.resource.data.tags is list && request.resource.data.tags.size() == 0);
 
       allow update: if isAdmin();
@@ -990,6 +991,42 @@ service cloud.firestore {
         allow create: if (isAdmin() || isFormationCommander()) &&
           isActiveEvent(eventId) && validTransition();
         allow delete: if purgeableEvent(eventId);
+      }
+
+      // הערכת תחנה "כללית" (בלי סבבים): מסמך אחד לכל מעריך בכל תחנה של הצוות שלו,
+      // {team}_{station}_{uid}. אותו מבנה כמו evaluatorAssessments + team/station.
+      // פרטי לחלוטין: רק המעריך עצמו (והמנהל, לסנכרון) קוראים.
+      match /stationEvaluations/{evaluationId} {
+        function ownEvaluationId() {
+          return isApprovedRole('evaluator') &&
+            evaluationId.matches('^[0-9]{1,2}_[0-9]{1,2}_' + request.auth.uid + '$') &&
+            isOwnTeam(evaluationId.split('_')[0]);
+        }
+
+        function validStationEvaluation() {
+          let data = request.resource.data;
+          return data.keys().hasAll([
+              'evaluatorUid', 'team', 'station', 'entries', 'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            data.keys().hasOnly([
+              'evaluatorUid', 'team', 'station', 'entries', 'schemaVersion', 'createdAt', 'updatedAt'
+            ]) &&
+            data.evaluatorUid == request.auth.uid &&
+            evaluationId == data.team + '_' + data.station + '_' + request.auth.uid &&
+            data.entries is map && data.entries.size() <= 20 &&
+            data.schemaVersion == 2 &&
+            data.updatedAt == request.time;
+        }
+
+        allow get: if isAdmin() || ownEvaluationId();
+        allow list: if isAdmin() ||
+          (isApprovedRole('evaluator') && resource.data.evaluatorUid == request.auth.uid &&
+           isOwnTeam(resource.data.team));
+        allow create: if isActiveEvent(eventId) && ownEvaluationId() && validStationEvaluation() &&
+          request.resource.data.createdAt == request.time;
+        allow update: if isActiveEvent(eventId) && ownEvaluationId() && validStationEvaluation() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['entries', 'updatedAt']);
+        allow delete: if isAdmin();
       }
 
       // מפת שטח הגיבוש: תמונה אחת לאירוע (assets/map), כ-base64 בתוך המסמך —

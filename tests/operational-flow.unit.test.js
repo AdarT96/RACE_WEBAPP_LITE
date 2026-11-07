@@ -32,8 +32,8 @@ test('two evaluators keep independent arrival orders and reorder only candidate-
 
 test('an evaluator can record a post-stop arrival but research time remains empty after the limit', () => {
   const race = { status:'stopped', startedAt:0, endedAt:2_400_000, timeLimitSeconds:2_400 };
-  assert.equal(measuredElapsedMs(race, 2_399_999), 2_399_999);
-  assert.equal(measuredElapsedMs(race, 2_400_001), null);
+  assert.equal(measuredElapsedMs(race, 1_799_999), 1_799_999);
+  assert.equal(measuredElapsedMs(race, 1_800_001), null);
 });
 
 test('withdrawing a candidate affects the next roster without rewriting the frozen round roster', () => {

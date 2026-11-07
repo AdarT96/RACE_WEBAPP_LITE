@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   assessmentEntryFor, buildCandidateSummary, buildLegacyAssessmentBuckets, mergeAssessmentEntries,
-  normalizeRepTimes, normalizeScores, repetitionPlaces, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
+  normalizeRepTimes, normalizeScores, repetitionPlaces,
+  generalStationRace, generalStationEvaluationId, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentEntry, stationAssessmentRace, stationNoteRaceId, traitIdFor
 } from '../frontend/js/evaluation-model.js';
 
 const evaluatorUid = 'evaluator-1';
@@ -225,4 +226,27 @@ test('comparison chart ranks each repetition by how long it took', () => {
   assert.deepEqual(places.get('2'), [1, 3, null, 1], 'a repetition not done is a gap');
   assert.deepEqual(places.get('3'), [2, 1, 2, null]);
   assert.deepEqual(repetitionPlaces([]).columns, []);
+});
+
+test('a general station is evaluated without rounds through a virtual round 0', () => {
+  assert.equal(isGeneralStationType({ measure: 'general' }), true);
+  assert.equal(isGeneralStationType({ measure: 'none' }), false);
+  const general = generalStationRace({ eventId: 'ev-1', team: '01', station: '08' });
+  assert.equal(general.round, 0);
+  assert.equal(isGeneralStationRace(general), true);
+  assert.equal(isGeneralStationRace(race('a1', '01', 1)), false);
+  assert.deepEqual(parseGeneralStationRaceId(general.id), { eventId: 'ev-1', team: '01', station: '08' });
+  assert.equal(parseGeneralStationRaceId('race_01_08_1'), null);
+  assert.equal(generalStationEvaluationId('01', '08', 'uid1'), '01_08_uid1');
+
+  // the virtual round comes first, so it holds the station evaluation; scores saved
+  // in real rounds before the station became general still read underneath it
+  const old = race('r1', '08', 1);
+  const assessmentsByRace = new Map([
+    [general.id, assessment({ resilience: 6 })],
+    ['r1', assessment({ resilience: 2, activity: 4 })]
+  ]);
+  const entry = stationAssessmentEntry({ races: [old, general], assessmentsByRace, participantId: '100', evaluatorUid });
+  assert.deepEqual(entry.scores, { resilience: 6, activity: 4 });
+  assert.equal(stationAssessmentRace([old, general]).id, general.id);
 });

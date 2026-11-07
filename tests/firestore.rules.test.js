@@ -487,6 +487,10 @@ test('legacy clients may omit the limit but cannot choose another limit', async 
   await assertFails(setDoc(doc(operator, 'races', 'race_01_07_4'), {
     ...racePayload(), round: 4, timeLimitSeconds: 3600
   }));
+  // 30 דקות — הגרסה הנוכחית; 40 דקות — מכשיר שעוד מריץ גרסה ישנה
+  await assertSucceeds(setDoc(doc(operator, 'races', 'race_01_07_5'), {
+    ...racePayload(), round: 5, timeLimitSeconds: 1800
+  }));
 });
 
 test('evaluators can still edit evaluation data but never lifecycle fields', async () => {
@@ -2023,4 +2027,47 @@ test('event map: only the admin prepares a draft event map; the commander delete
   await assertSucceeds(setDoc(mapRef(userDb('admin1')), mapPayload('admin1')));
   await assertFails(deleteDoc(mapRef(userDb('evaluator1'))));
   await assertSucceeds(deleteDoc(mapRef(userDb('formation1'))));
+});
+
+// ---- הערכת תחנה כללית (events/{eventId}/stationEvaluations) ----
+const stationEvaluationRef = (db, id, eventId = 'event-1') => doc(db, 'events', eventId, 'stationEvaluations', id);
+function stationEvaluationPayload(uid, team = '01', station = '08', overrides = {}) {
+  return {
+    evaluatorUid: uid, team, station,
+    entries: { '100': { scores: { activity: 6 }, measurement: null, comments: [] } },
+    schemaVersion: 2, createdAt: serverTimestamp(), updatedAt: serverTimestamp(), ...overrides
+  };
+}
+
+test('general station: an evaluator keeps one private evaluation per own-team station', async () => {
+  const own = userDb('evaluator1');
+  await assertSucceeds(getDoc(stationEvaluationRef(own, '01_08_evaluator1')), 'reading a missing own document');
+  await assertSucceeds(setDoc(stationEvaluationRef(own, '01_08_evaluator1'), stationEvaluationPayload('evaluator1')));
+  await assertSucceeds(updateDoc(stationEvaluationRef(own, '01_08_evaluator1'), {
+    entries: { '100': { scores: { activity: 7 }, measurement: null, comments: [] } }, updatedAt: serverTimestamp()
+  }));
+  await assertSucceeds(getDocs(query(collection(own, 'events', 'event-1', 'stationEvaluations'),
+    where('evaluatorUid', '==', 'evaluator1'), where('team', '==', '01'))));
+
+  // another evaluator, another team, the operator and the commander never see it
+  await assertFails(getDoc(stationEvaluationRef(userDb('evaluator2'), '01_08_evaluator1')));
+  await assertFails(getDocs(collection(userDb('evaluator2'), 'events', 'event-1', 'stationEvaluations')));
+  await assertFails(getDoc(stationEvaluationRef(userDb('operator1'), '01_08_evaluator1')));
+  await assertFails(getDoc(stationEvaluationRef(userDb('formation1'), '01_08_evaluator1')));
+  await assertSucceeds(getDocs(collection(userDb('admin1'), 'events', 'event-1', 'stationEvaluations')));
+});
+
+test('general station: id, team, owner and shape are enforced', async () => {
+  const own = userDb('evaluator1');
+  await assertFails(setDoc(stationEvaluationRef(own, '02_08_evaluator1'), stationEvaluationPayload('evaluator1', '02')), 'other team');
+  await assertFails(setDoc(stationEvaluationRef(own, '01_08_evaluator2'), stationEvaluationPayload('evaluator2')), 'other evaluator');
+  await assertFails(setDoc(stationEvaluationRef(own, '01_09_evaluator1'), stationEvaluationPayload('evaluator1')), 'id/station mismatch');
+  await assertFails(setDoc(stationEvaluationRef(own, '01_08_evaluator1'), stationEvaluationPayload('evaluator1', '01', '08', { extra: 1 })));
+  await assertFails(setDoc(stationEvaluationRef(userDb('operator1'), '01_08_operator1'), stationEvaluationPayload('operator1')));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-old'), { name: 'ישן', status: 'closed', schemaVersion: 3 });
+  });
+  await assertFails(setDoc(stationEvaluationRef(own, '01_08_evaluator1', 'event-old'), stationEvaluationPayload('evaluator1')), 'closed event');
+  await assertSucceeds(setDoc(stationEvaluationRef(own, '01_08_evaluator1'), stationEvaluationPayload('evaluator1')));
+  await assertFails(updateDoc(stationEvaluationRef(own, '01_08_evaluator1'), { team: '02', updatedAt: serverTimestamp() }));
 });
