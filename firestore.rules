@@ -992,6 +992,40 @@ service cloud.firestore {
         allow delete: if purgeableEvent(eventId);
       }
 
+      // מפת שטח הגיבוש: תמונה אחת לאירוע (assets/map), כ-base64 בתוך המסמך —
+      // בלי Storage, וזמינה גם בלי קליטה ממטמון Firestore. כותבים: מנהל (טיוטה
+      // או פעיל) ומפקד הגיבוש (באירוע הפעיל). קוראים: כל הסגל באירוע הפעיל.
+      match /assets/{assetId} {
+        function validMapShape() {
+          let data = request.resource.data;
+          return assetId == 'map' &&
+            data.keys().hasAll([
+              'data', 'mimeType', 'width', 'height', 'updatedBy', 'updatedByName', 'updatedAt', 'schemaVersion'
+            ]) &&
+            data.keys().hasOnly([
+              'data', 'mimeType', 'width', 'height', 'updatedBy', 'updatedByName', 'updatedAt', 'schemaVersion'
+            ]) &&
+            data.data is string && data.data.size() >= 100 && data.data.size() <= 750000 &&
+            data.mimeType in ['image/jpeg', 'image/png', 'image/webp'] &&
+            data.width is int && data.width > 0 && data.width <= 6000 &&
+            data.height is int && data.height > 0 && data.height <= 6000 &&
+            data.updatedBy == request.auth.uid &&
+            data.updatedByName is string && data.updatedByName.size() <= 200 &&
+            data.updatedAt == request.time &&
+            data.schemaVersion == 1;
+        }
+
+        function mayEditMap() {
+          return adminMayEditEvent(eventId) || (isFormationCommander() && isActiveEvent(eventId));
+        }
+
+        allow read: if isAdmin() ||
+          (isActiveEvent(eventId) &&
+           effectiveRoleIn(activePointer()) in ['operator', 'evaluator', 'formation_commander', 'adjutant']);
+        allow create, update: if mayEditMap() && validMapShape();
+        allow delete: if mayEditMap() || purgeableEvent(eventId);
+      }
+
       // הודעות פנימיות באירוע. שולחים: מנהל ומפקד הגיבוש בלבד. הודעה אינה
       // ניתנת לעדכון אחרי היצירה; מחיקה למנהל בלבד. נמען קורא רק הודעה שתפקידו
       // מופיע ב-targetRoles (השאילתה array-contains על התפקיד שלו).

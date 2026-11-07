@@ -1972,3 +1972,55 @@ test('the commander may record the tap moments of start and end, as timestamps o
   await assertSucceeds(updateDoc(ref, { status: 'stopped', endedAt: serverTimestamp(), endedBy: 'operator1', endedReason: 'manual', endTappedAt: Timestamp.now() }));
   await assertFails(updateDoc(ref, { startTappedAt: Timestamp.now() }));   // the start cannot be moved afterwards
 });
+
+// ---- מפת שטח הגיבוש (events/{eventId}/assets/map) ----
+const mapRef = (db, eventId = 'event-1', assetId = 'map') => doc(db, 'events', eventId, 'assets', assetId);
+function mapPayload(uid, overrides = {}) {
+  return {
+    data: 'A'.repeat(4000), mimeType: 'image/jpeg', width: 1600, height: 1200,
+    updatedBy: uid, updatedByName: 'מעלה', updatedAt: serverTimestamp(), schemaVersion: 1, ...overrides
+  };
+}
+
+test('event map: admin and formation commander upload; all staff read; others cannot write', async () => {
+  await assertSucceeds(setDoc(mapRef(userDb('admin1')), mapPayload('admin1')));
+  await assertSucceeds(setDoc(mapRef(userDb('formation1')), mapPayload('formation1')));
+  for (const uid of ['operator1', 'evaluator1', 'adjutant1']) {
+    await assertFails(setDoc(mapRef(userDb(uid)), mapPayload(uid)));
+    await assertSucceeds(getDoc(mapRef(userDb(uid))));
+  }
+  await assertSucceeds(getDoc(mapRef(userDb('formation1'))));
+  await assertFails(getDoc(mapRef(testEnv.unauthenticatedContext().firestore())));
+  await assertFails(getDoc(mapRef(userDb('adjutantPending'))));
+});
+
+test('event map: shape and size are enforced', async () => {
+  const db = userDb('formation1');
+  const bad = overrides => assertFails(setDoc(mapRef(db), mapPayload('formation1', overrides)));
+  await bad({ data: 'A'.repeat(750001) });
+  await bad({ data: 'A' });
+  await bad({ mimeType: 'text/html' });
+  await bad({ width: 0 });
+  await bad({ height: 6001 });
+  await bad({ width: 12.5 });
+  await bad({ updatedBy: 'admin1' });
+  await bad({ updatedAt: Timestamp.fromMillis(Date.now() - 60_000) });
+  await bad({ schemaVersion: 2 });
+  await bad({ extra: true });
+  await assertFails(setDoc(mapRef(db, 'event-1', 'other'), mapPayload('formation1')));
+  await assertSucceeds(setDoc(mapRef(db), mapPayload('formation1', { data: 'A'.repeat(750000), mimeType: 'image/png' })));
+});
+
+test('event map: only the admin prepares a draft event map; the commander deletes only in the active event', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'events', 'event-draft'), { name: 'טיוטה', status: 'draft', schemaVersion: 3 });
+  });
+  await assertSucceeds(setDoc(mapRef(userDb('admin1'), 'event-draft'), mapPayload('admin1')));
+  await assertFails(setDoc(mapRef(userDb('formation1'), 'event-draft'), mapPayload('formation1')));
+  await assertFails(getDoc(mapRef(userDb('evaluator1'), 'event-draft')));
+  await assertFails(deleteDoc(mapRef(userDb('formation1'), 'event-draft')));
+
+  await assertSucceeds(setDoc(mapRef(userDb('admin1')), mapPayload('admin1')));
+  await assertFails(deleteDoc(mapRef(userDb('evaluator1'))));
+  await assertSucceeds(deleteDoc(mapRef(userDb('formation1'))));
+});

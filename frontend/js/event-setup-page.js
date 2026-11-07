@@ -18,6 +18,7 @@ import { createScheduleRepository } from './schedule-repository.js';
 import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestore-cache.js';
 import { createForegroundGate } from './load-priority.js';
 import { mountMessageCenter } from './message-center.js';
+import { mountEventMapEditor } from './event-map.js';
 
 const firebaseApp = initializeApp(window.FIREBASE_CONFIG);
 const auth = getAuth(firebaseApp);
@@ -35,6 +36,7 @@ let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 // הודעות פנימיות הן עבודת רקע: מתחילות אחרי שמסך ההגדרה נטען.
 const foreground = createForegroundGate();
 let messageCenter = null;
+let mapEditor = null;
 
 const escapeHtml = value => String(value ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -302,6 +304,12 @@ async function selectEvent(eventId) {
   if (!currentEventId) return;
   history.replaceState(null, '', `event-setup.html?eventId=${encodeURIComponent(currentEventId)}`);
   await refreshBundle();
+  if (!mapEditor) {
+    mapEditor = mountEventMapEditor({
+      db, user: { uid: currentUser.uid, name: currentUser.name }, container: document.getElementById('event-map-editor'),
+      getEventId: () => currentEventId
+    });
+  } else mapEditor.refresh();
 }
 
 // הרשימה בשדה היא רשימת הצוותים הרצויה. צוות שנמחק ממנה מוסר מהאירוע אחרי

@@ -134,6 +134,7 @@
       <span id="commander-user" class="user-name"></span>
       <span class="badge badge-info">תפעול</span>
       <a href="schedule.html" class="btn btn-ghost nav-btn">לו״ז</a>
+      <a href="map.html" class="btn btn-ghost nav-btn">מפה</a>
       <a href="intake.html" class="btn btn-ghost nav-btn">קליטה</a>
       <a id="admin-link" href="admin.html" class="btn btn-ghost nav-btn" style="display:none">ניהול</a>
       <button class="btn btn-ghost nav-btn" onclick="logout()">התנתק</button>
@@ -200,6 +201,11 @@
           <section class="formation-card" data-collapsible="reasons">
             <h2>סיבות נשירה</h2>
             <div id="reason-bars" class="reason-bars"></div>
+          </section>
+          <section class="formation-card" data-collapsible="event-map">
+            <h2>מפת שטח הגיבוש</h2>
+            <p class="formation-card-help">תמונת מפה של השטח. כל בעלי התפקידים פותחים אותה מכפתור "מפה" בסרגל העליון.</p>
+            <div id="event-map-editor"></div>
           </section>
         </aside>
       </div>

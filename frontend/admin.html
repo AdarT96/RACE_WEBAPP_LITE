@@ -94,6 +94,7 @@
   <div class="navbar-actions">
     <div class="badge badge-warning">מנהל</div>
     <a href="schedule.html" class="btn btn-ghost nav-btn">🗓️ לו״ז</a>
+    <a href="map.html" class="btn btn-ghost nav-btn">🗺️ מפה</a>
     <a href="app.html" class="btn btn-ghost" style="padding:6px 12px; font-size:13px">אפליקציה</a>
     <button class="btn btn-ghost" onclick="doLogout()" style="padding:6px 12px; font-size:13px">התנתק</button>
   </div>
@@ -1800,7 +1801,9 @@
     // קליטת מועמדים: מועמדים כלליים (ללא צוות), רישום המספרים והמונה
     'unassignedCandidates', 'candidateNumbers', 'intake',
     // הודעות פנימיות ומצב הקריאה של כל משתמש
-    'messages', 'messageReads'
+    'messages', 'messageReads',
+    // מפת שטח הגיבוש
+    'assets'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 
