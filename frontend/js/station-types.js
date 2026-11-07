@@ -5,7 +5,8 @@
 //  כל סוג תחנה:
 //    name         — שם התצוגה (וגם שם הטאב ב-Sheet)
 //    measure      — מדידה כמותית בתחנה: "place" (סדר הגעה/מקום) |
-//                   "reps" (מספר חזרות) | "none" (רק ציונים והערות)
+//                   "reps" (מספר חזרות) | "none" (רק ציונים והערות, בתוך סבב)
+//                   | "general" (כללי: הערכה בלי סבבים — המעריך מעריך בכל זמן)
 //    measureLabel — תווית לשדה הכמותי (רלוונטי ל-"reps")
 //    measureInput — "tap" לספירה בלחיצה (ברירת מחדל) | "manual" להזנה ידנית
 //    params[]      — פרמטרים נבדקים (1–2), כל אחד עם ציון 1–7 והערות מהירות
@@ -160,7 +161,7 @@ const DEFAULT_STATION_TYPES = {
 
   tent: {
     name: "אוהל",
-    measure: "none",
+    measure: "general",
     markingNote: "",
     params: [
       { name: "אקטיביות", quickNotes: [
@@ -183,7 +184,7 @@ const DEFAULT_STATION_TYPES = {
 
   checkers: {
     name: "דמקה",
-    measure: "none",
+    measure: "general",
     markingNote: "",
     params: [
       { name: "אסרטיביות", quickNotes: [
@@ -207,7 +208,7 @@ const DEFAULT_STATION_TYPES = {
 
   spiderWeb: {
     name: "קורי עכביש",
-    measure: "none",
+    measure: "general",
     markingNote: "",
     params: [
       { name: "אינטליגנציה חברתית", quickNotes: [
@@ -337,7 +338,7 @@ const DEFAULT_STATION_TYPES = {
 
   debate: {
     name: "דיבייט",
-    measure: "none",
+    measure: "general",
     markingNote: "",
     params: [
       { name: "אסרטיביות", quickNotes: [

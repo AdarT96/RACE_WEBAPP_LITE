@@ -220,7 +220,8 @@
           <select id="sttype-measure" class="role-sel" onchange="onStTypeMeasureChange(this.value)">
             <option value="place">מקום (סדר הגעה)</option>
             <option value="reps">מספר (חזרות/ברגים/שלב)</option>
-            <option value="none">ללא</option>
+            <option value="none">ללא (ציונים והערות בתוך סבב)</option>
+            <option value="general">כללי (הערכה בלי סבבים)</option>
           </select>
         </label>
         <label id="sttype-measurelabel-wrap" style="font-size:13px; display:none">תווית המספר:
@@ -1802,8 +1803,8 @@
     'unassignedCandidates', 'candidateNumbers', 'intake',
     // הודעות פנימיות ומצב הקריאה של כל משתמש
     'messages', 'messageReads',
-    // מפת שטח הגיבוש
-    'assets'
+    // מפת שטח הגיבוש והערכות תחנות כלליות
+    'assets', 'stationEvaluations'
   ];
   const PURGE_RACE_SUBCOLLECTIONS = ['evaluatorArrivals', 'evaluatorAssessments'];
 

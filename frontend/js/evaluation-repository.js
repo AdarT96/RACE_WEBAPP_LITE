@@ -2,7 +2,8 @@ import {
   doc, getDoc, getDocFromCache, onSnapshot, setDoc, updateDoc, FieldPath, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js';
 import {
-  EVALUATION_SCHEMA_VERSION, normalizeAssessment, normalizeAssessmentEntry
+  EVALUATION_SCHEMA_VERSION, generalStationEvaluationId, normalizeAssessment, normalizeAssessmentEntry,
+  parseGeneralStationRaceId
 } from './evaluation-model.js';
 
 // שמירת הערכה עובדת גם בלי קליטה. קודם כל שינוי עבר בטרנזקציה, וטרנזקציה
@@ -15,7 +16,18 @@ export function createEvaluationRepository(db, user, { onWriteError = error => c
   const uid = String(user?.uid || '');
   if (!uid) throw new Error('חסר מזהה משתמש');
 
-  const refFor = raceId => doc(db, 'races', String(raceId), 'evaluatorAssessments', uid);
+  // תחנה כללית (סבב מדומה) — ההערכה במסמך התחנה של המעריך באירוע
+  const refFor = raceId => {
+    const general = parseGeneralStationRaceId(raceId);
+    return general
+      ? doc(db, 'events', general.eventId, 'stationEvaluations',
+        generalStationEvaluationId(general.team, general.station, uid))
+      : doc(db, 'races', String(raceId), 'evaluatorAssessments', uid);
+  };
+  const extraFieldsFor = raceId => {
+    const general = parseGeneralStationRaceId(raceId);
+    return general ? { team: general.team, station: general.station } : {};
+  };
 
   async function get(raceId) {
     const snapshot = await getDoc(refFor(raceId));
@@ -55,8 +67,9 @@ export function createEvaluationRepository(db, user, { onWriteError = error => c
     write.catch(onWriteError);
   }
 
-  function fullPayload(snapshot, entries) {
+  function fullPayload(snapshot, entries, raceId) {
     return {
+      ...extraFieldsFor(raceId),
       evaluatorUid: uid,
       entries,
       schemaVersion: EVALUATION_SCHEMA_VERSION,
@@ -74,7 +87,7 @@ export function createEvaluationRepository(db, user, { onWriteError = error => c
     const entries = Object.fromEntries(Object.entries(existing.entries)
       .map(([participantId, entry]) => [participantId, normalizeAssessmentEntry(entry)]));
     const updated = mutateEntries(entries) || entries;
-    const payload = fullPayload(snapshot, updated);
+    const payload = fullPayload(snapshot, updated, raceId);
     // Full replacement is intentional: deleted scores/comments must not survive
     // as nested map fields through Firestore's recursive merge semantics.
     send(setDoc(reference, payload));
@@ -95,7 +108,7 @@ export function createEvaluationRepository(db, user, { onWriteError = error => c
       // החלפת הרשומה של המועמד הזה בלבד (לא מיזוג) — ציון שנמחק לא נשאר בה
       send(updateDoc(reference, new FieldPath('entries', pid), updatedEntry, 'updatedAt', serverTimestamp()));
     } else {
-      send(setDoc(reference, fullPayload(snapshot, entries)));
+      send(setDoc(reference, fullPayload(snapshot, entries, raceId)));
     }
     return normalizeAssessment({ evaluatorUid: uid, entries }, uid);
   }

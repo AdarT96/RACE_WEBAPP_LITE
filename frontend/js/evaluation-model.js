@@ -145,6 +145,43 @@ export function assessmentEntryFor({ assessment, race, participantId, evaluatorU
   return mergeAssessmentEntries(legacyEntry, privateEntry);
 }
 
+// תחנה "כללית": אין סבבים — המעריך מעריך מתי שהוא רוצה. ההערכה נשמרת במסמך
+// של התחנה (events/{eventId}/stationEvaluations/{team}_{station}_{uid}), ובקוד
+// היא מופיעה כ"סבב 0" מדומה, כך שהמסך, דשבורד המועמד והסנכרון עובדים כרגיל.
+export const GENERAL_MEASURE = 'general';
+const GENERAL_RACE_PREFIX = 'general~';
+
+export function isGeneralStationType(stationType) {
+  return stationType?.measure === GENERAL_MEASURE;
+}
+
+export function generalStationRaceId(eventId, team, station) {
+  return `${GENERAL_RACE_PREFIX}${eventId}~${team}~${station}`;
+}
+
+export function parseGeneralStationRaceId(raceId) {
+  const text = String(raceId || '');
+  if (!text.startsWith(GENERAL_RACE_PREFIX)) return null;
+  const [eventId, team, station] = text.slice(GENERAL_RACE_PREFIX.length).split('~');
+  return eventId && team && station ? { eventId, team, station } : null;
+}
+
+export function isGeneralStationRace(race) {
+  return Boolean(parseGeneralStationRaceId(race?.id));
+}
+
+export function generalStationRace({ eventId, team, station, participantIds = [] }) {
+  return {
+    id: generalStationRaceId(eventId, team, station), eventId: String(eventId),
+    team: String(team), station: String(station), round: 0, status: GENERAL_MEASURE,
+    participantIds: (Array.isArray(participantIds) ? participantIds : []).map(String), tags: []
+  };
+}
+
+export function generalStationEvaluationId(team, station, uid) {
+  return `${team}_${station}_${uid}`;
+}
+
 function sortedRounds(races) {
   return (Array.isArray(races) ? races : []).filter(race => race?.id != null).slice()
     .sort((a, b) => Number(a.round || 0) - Number(b.round || 0) || String(a.id).localeCompare(String(b.id)));

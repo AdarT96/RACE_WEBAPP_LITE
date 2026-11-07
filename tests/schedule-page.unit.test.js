@@ -169,13 +169,15 @@ test('the direct schedule link stays outside the menu and uses the existing guar
 test('the schedule shortcut flushes debounced counts, blocks failed saves, and does not delay ordinary navigation', async () => {
   const app = readFileSync(new URL('../frontend/app.html', import.meta.url), 'utf8');
   const handler = app.slice(app.indexOf('  let scheduleNavigationPending = false;'), app.indexOf('  function detachEvaluatorArrivalSubscription('));
-  for (const scenario of ['none','saved','failed','arrivals','new-tab']) {
+  for (const scenario of ['none','saved','failed','arrivals','round','new-tab']) {
     let click, saved = 0, prevented = 0;
     const window = {location:{href:'http://localhost/app.html'}};
     const context = vm.createContext({
       window, location:new URL(window.location.href), URL,
       repsSavePromise:null, pendingRepsByRace:scenario === 'none' ? {} : {r:{'1':1}},
       hasPendingArrivals:() => scenario === 'arrivals', showToast(){},
+      // התחלה/עצירת סבב שעוד לא הגיעה לשרת חוסמת יציאה כמו סדר הגעה
+      hasPendingRaceWrites:() => scenario === 'round',
       commitPendingReps:async () => { saved++; return scenario !== 'failed'; },
       document:{addEventListener:(type, fn) => { click = fn; }}
     });
@@ -185,7 +187,7 @@ test('the schedule shortcut flushes debounced counts, blocks failed saves, and d
       ctrlKey:scenario === 'new-tab', preventDefault:() => { prevented++; }
     });
     assert.equal(saved, ['saved','failed'].includes(scenario) ? 1 : 0, scenario);
-    assert.equal(prevented, ['saved','failed','arrivals'].includes(scenario) ? 1 : 0, scenario);
+    assert.equal(prevented, ['saved','failed','arrivals','round'].includes(scenario) ? 1 : 0, scenario);
     assert.equal(window.location.href, scenario === 'saved' ? 'http://localhost/schedule.html' : 'http://localhost/app.html', scenario);
   }
 });
