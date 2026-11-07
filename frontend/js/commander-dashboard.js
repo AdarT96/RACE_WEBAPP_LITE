@@ -21,6 +21,7 @@ import { openFirestore, signOutAndClearCache, getDocPatiently } from './firestor
 import { mountMessageCenter } from './message-center.js';
 import { activeEventIdFromPointer } from './messages-model.js';
 import { initCollapsibleCards } from './collapsible-cards.js';
+import { mountEventMapEditor } from './event-map.js';
 
 initCollapsibleCards();
 
@@ -48,6 +49,7 @@ let pendingIdentityTarget = null;
 let expandedTeam = '';
 let openCandidateDetailsTarget = null;
 let latestDashboardSnapshot = null;
+let mapEditor = null;
 let effectiveRaceSignature = '';
 let stationTypes = { ...(window.DEFAULT_STATION_TYPES || {}) };
 let candidateSearchQuery = '';
@@ -104,6 +106,8 @@ function subscribeToActiveEvent() {
 function attachEvent(nextEventId) {
   clearEventSubscriptions();
   eventId = nextEventId;
+  // המפה כבדה (עד ~700KB) — נטענת אחרי שהדשבורד הוצג
+  foreground.background(() => mapEditor?.refresh());
   const fail = label => error => showBlocking(`טעינת ${label} נכשלה: ${error.message}`);
   eventSubscriptions.push(onSnapshot(doc(db, 'events', eventId), snapshot => {
     if (!snapshot.exists() || snapshot.data().status !== 'active') {
@@ -554,6 +558,12 @@ onAuthStateChanged(auth, async user => {
       eventId: activeEventIdFromPointer(pointer)
     });
     setTimeout(() => foreground.release(), 5000);
+    foreground.background(() => {
+      mapEditor = mountEventMapEditor({
+        db, user: { uid: user.uid, name: currentUser.name }, container: document.getElementById('event-map-editor'),
+        getEventId: () => eventId
+      });
+    });
     subscribeToActiveEvent();
     clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {

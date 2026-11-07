@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0f1117">
+  <script src="js/pwa-register.js" defer></script>
+  <title>מפת שטח הגיבוש</title>
+  <link rel="stylesheet" href="css/main.css?v=1.5-map">
+  <script>
+    // מצב חוץ (ניגודיות גבוהה בשמש) — ברירת מחדל כמו במסך הכניסה
+    document.addEventListener('DOMContentLoaded', () => {
+      try { if (localStorage.getItem('outdoorMode') !== '0') document.body.classList.add('outdoor-mode'); } catch (_) {}
+    });
+  </script>
+  <style>
+    body { padding-bottom: 24px; }
+    .map-shell { max-width: 1100px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 12px; }
+    .map-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+    .map-toolbar h1 { font-size: 1.15rem; }
+    .map-meta { font-size: 12px; color: var(--text-muted); }
+    /* "התאם למסך": כל המפה נראית; "גודל מלא": גלילה בשתי הצירים + צביטה להגדלה */
+    .map-frame { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); overflow: auto;
+                 max-height: calc(100vh - 170px); -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y pinch-zoom; }
+    .map-frame img { display: block; width: 100%; height: auto; }
+    .map-frame.full img { width: auto; max-width: none; }
+    .map-empty { padding: 32px 16px; text-align: center; color: var(--text-muted); }
+    .map-toolbar .btn { min-height: 44px; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand"><span class="logo">🗺️</span><span>מפת שטח הגיבוש</span></div>
+    <div class="navbar-actions">
+      <span id="map-user" class="user-name"></span>
+      <a id="map-back" class="btn btn-ghost nav-btn" href="index.html">חזרה</a>
+    </div>
+  </nav>
+
+  <main class="map-shell">
+    <div class="map-toolbar">
+      <div>
+        <h1 id="map-title">מפת שטח הגיבוש</h1>
+        <div id="map-meta" class="map-meta">טוען…</div>
+      </div>
+      <button id="map-zoom" class="btn btn-ghost" type="button" hidden>גודל מלא</button>
+    </div>
+    <div id="map-frame" class="map-frame">
+      <img id="map-image" alt="מפת שטח הגיבוש" hidden>
+      <div id="map-empty" class="map-empty" hidden></div>
+    </div>
+  </main>
+
+  <script src="js/firebase-config.js"></script>
+  <script type="module" src="js/map-page.js"></script>
+</body>
+</html>
