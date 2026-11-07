@@ -2,7 +2,10 @@
 // The golden file (tests/fixtures/sheets-sync-golden.json) was produced by running
 // these SAME scenarios against the code before the batching/speed-up change
 // (perf/offline-cache-timer-reads:scripts/Code.gs), so a passing test means
-// "new Code.gs writes exactly what the old one wrote".
+// "new Code.gs writes exactly what the old one wrote". It was regenerated once for
+// the station-wide evaluation: only the header "סבב" → "מס׳ תחנה" and the station tab
+// order (station, then candidate) changed. These rows carry no station number, so
+// Code.gs keys them by round, as an older client would.
 
 export const EVENT = { eventId: 'ev1', eventName: 'גיבוש בדיקה' };
 

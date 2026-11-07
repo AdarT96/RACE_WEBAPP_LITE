@@ -28,7 +28,7 @@ for (const [mode, ensure] of Object.entries(ensureModes)) {
   }
 }
 
-test('station sync: rows sorted by round then place, header formatted and frozen', () => {
+test('station sync: rows sorted by station number then candidate, header formatted and frozen', () => {
   const state = golden.stationSync.state;
   const teamKey = Object.keys(state).find(k => k.startsWith('צוות 1'));
   const tab = state[teamKey].find(t => t.name === 'ספרינטים');
@@ -36,7 +36,7 @@ test('station sync: rows sorted by round then place, header formatted and frozen
   assert.equal(tab.formats['1,1'].fontWeight, 'bold');
   assert.equal(tab.formats['1,1'].background, '#0f766e');
   assert.equal(tab.formats['1,1'].fontColor, 'white');
-  assert.deepEqual(tab.rows.slice(1).map(r => [r[0], r[1]]), [[1, 1], [1, 1], [1, 3], [2, 2]]);
+  assert.deepEqual(tab.rows.slice(1).map(r => [r[0], r[2]]), [[1, 101], [1, 102], [1, 103], [2, 101]]);
 });
 
 test('repeat sync overwrites by key and never duplicates rows', () => {
@@ -153,7 +153,39 @@ test('doGet declares ensure_files and a bumped version', () => {
   const info = newEnv().get();
   assert.ok(info.features.includes('ensure_files'));
   assert.ok(info.features.includes('sync_batch'));
-  assert.match(info.version, /batched-file-check/);
+  assert.match(info.version, /station-wide-evaluation/);
+});
+
+// ───────────── station-wide evaluation ─────────────
+// הלקוח שולח שורה אחת לכל מועמד בתחנה: ציוני התחנה, ומקום/זמן/מדידה לכל סבב.
+test('one row per candidate per station: rounds share a cell, same-type stations stay apart', () => {
+  const env = newEnv();
+  const ev = { uid: 'u', name: 'דנה' };
+  const sprint = (station, places, score) => ({
+    ...stationRow({ team: 1, pid: 101, round: 1, station: 0, evaluator: ev, score }),
+    station, places, first_ms_list: places.map(place => 60000 + place * 1000), place: undefined, first_ms: undefined
+  });
+  const crawl = { ...stationRow({ team: 1, pid: 101, round: 1, station: 1, evaluator: ev }), station: '04', reps_list: [12, 14] };
+  const rows = [sprint('03', [3, 5, 2], 6), sprint('07', [1], 4), crawl];
+  ensureBatched(env, rows);
+  env.call({ type: 'sync_batch', rows });
+  env.call({ type: 'sync_batch', rows: [sprint('03', [3, 5, 2, 4], 7)] });
+
+  const team = env.findSpreadsheetByName('צוות 1');
+  const sprints = team._sheets.find(s => s._name === 'ספרינטים')._rows;
+  assert.equal(sprints[0][0], 'מס׳ תחנה');
+  assert.deepEqual(sprints.slice(1).map(r => [r[0], r[1], r[2], r[3], r[6]]), [
+    [3, '3 / 5 / 2 / 4', 101, '1:03 / 1:05 / 1:02 / 1:04', 7],
+    [7, 1, 101, '1:01', 4]
+  ]);
+  const crawls = team._sheets.find(s => s._name === 'זחילות')._rows;
+  assert.equal(crawls[1][4], '12 / 14');
+
+  const personal = env.findSpreadsheetByName('שיט מעריך')._sheets.find(s => s._name === '101')._rows;
+  assert.equal(personal[0][1], 'מס׳ תחנה');
+  assert.deepEqual(personal.slice(1).map(r => [r[0], r[1], r[2], r[3]]), [
+    ['ספרינטים', 3, '3 / 5 / 2 / 4', ''], ['ספרינטים', 7, 1, ''], ['זחילות', 4, '', '12 / 14']
+  ]);
 });
 
 // ───────────── fewer Sheets calls ─────────────
