@@ -1167,14 +1167,14 @@
   import { ISSUE_REPORT_CATEGORIES, buildIssueReportData } from "./js/issue-report.js";
   import {
     EVALUATION_SCHEMA_VERSION, TRAITS, buildCandidateSummary,
-    createNote, normalizeAssessment, normalizeAssessmentEntry, normalizeNote,
-    normalizeNotes, normalizeRepTimes, repetitionPlaces, stationAssessmentEntry,
+    createNote, normalizeAssessment, normalizeNote,
+    normalizeNotes, repetitionPlaces, stationAssessmentEntry,
     generalStationRace, isGeneralStationRace, isGeneralStationType, parseGeneralStationRaceId, stationAssessmentRace, stationNoteRaceId, traitIdFor
   } from "./js/evaluation-model.js";
   import { createEvaluationRepository } from "./js/evaluation-repository.js";
   import { createArrivalRepository } from "./js/arrival-repository.js";
   import { createArrivalController } from "./js/arrival-controller.js";
-  import { viewedRoundId } from "./js/round-navigation-model.js";
+  import { shouldFollowNewRound, viewedRoundId } from "./js/round-navigation-model.js";
   import { createPrivateNotesRepository } from "./js/private-notes-repository.js";
   import {
     CANDIDATE_STATUSES, DROPOUT_REASONS, RECOMMENDATION_STATUSES,
@@ -2530,8 +2530,12 @@
         return;
       }
 
+      const followNewRound = shouldFollowNewRound({
+        previousLatestId, latestRace, busy: Boolean(arrivalDragState)
+      });
+      if (followNewRound) roundChosenByUser = false;
       const targetId = viewedRoundId(list, previousViewedId,
-        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed);
+        isOperator() || !supportsRoundTabs() || followLatestUntilConfirmed || followNewRound);
       const target = list.find(r => r.id === targetId) || latestRace;
       const roundChanged = target.id !== previousViewedId;
 
@@ -2545,8 +2549,10 @@
       subscribeToStationAssessments();
 
       const newRoundArrived = previousLatestId && previousLatestId !== latestRace.id;
-      if (newRoundArrived && canEvaluate() && target.id !== latestRace.id) {
-        showToast(`סבב ${latestRace.round} זמין — המעבר אליו לפי בחירתך`, 'info');
+      if (newRoundArrived && canEvaluate() && supportsRoundTabs()) {
+        showToast(target.id === latestRace.id
+          ? `סבב ${latestRace.round} התחיל — עברת אליו. סבבים קודמים זמינים בלשוניות.`
+          : `סבב ${latestRace.round} התחיל — סיים את הגרירה ולחץ "עבור לסבב החדש".`, 'info');
       }
       renderRace();
       roundShown();
@@ -3598,30 +3604,8 @@
 
     repsSavePromise = (async () => {
       try {
-        const baseMeasurements = Object.fromEntries(Object.keys(pendingDeltas).map(pid => [
-          pid, currentRaceId === raceId ? currentAssessmentEntry(pid).measurement : null
-        ]));
-        const updatedAssessment = await evaluationRepository.mutate(raceId, entries => {
-          Object.entries(pendingDeltas).forEach(([pid, delta]) => {
-            const entry = normalizeAssessmentEntry(entries[pid]);
-            const base = entry.measurement == null ? Number(baseMeasurements[pid] || 0) : entry.measurement;
-            entry.measurement = base + Number(delta || 0);
-            entry.measurementCleared = false;
-            entry.repTimes = normalizeRepTimes([...entry.repTimes, ...(pendingTimes[pid] || [])]);
-            entries[pid] = entry;
-          });
-          return entries;
-        });
-
-        if (currentRaceId === raceId) {
-          Object.keys(pendingDeltas).forEach(pid => {
-            const savedEntry = updatedAssessment.entries[String(pid)];
-            const stillPending = Number(pendingRepsByRace[raceId]?.[pid] || 0);
-            localReps[pid] = Number(savedEntry?.measurement || 0) + stillPending;
-            const el = document.querySelector(`.reps-btn[data-pid="${pid}"] .reps-count`);
-            if (el) el.textContent = String(localReps[pid]);
-          });
-        }
+        // המונה המקומי (localReps) כבר כולל כל הקשה; לשרת נשלחת רק התוספת
+        await evaluationRepository.addRepetitions(raceId, pendingDeltas, pendingTimes);
         return true;
       } catch (e) {
         const retry = pendingRepsByRace[raceId] || {};
@@ -4915,9 +4899,20 @@
       return;
     }
     let teamData = teamsCache[team] || null;
-    if (!teamData || !candidatesByTeam.has(team)) teamData = await loadTeamData(team) || teamData;
+    if (!teamData || !candidatesByTeam.has(team)) {
+      // בזמן הטעינה (קליטה חלשה) לא מציגים "אין מועמדים" — זה נראה כמו צוות ריק
+      if (!uniqueParticipantIds(teamData?.participants || []).length) {
+        picker.innerHTML = '';
+        empty.hidden = false;
+        empty.textContent = 'טוען את רשימת המועמדים…';
+      }
+      teamData = await loadTeamData(team) || teamData;
+    }
     const participants = uniqueParticipantIds(teamData?.participants || [])
       .sort((a, b) => a.localeCompare(b, 'he', { numeric: true }));
+    empty.textContent = teamData
+      ? 'אין מועמדים בצוות.'
+      : 'לא ניתן לטעון את רשימת המועמדים. בדוק קליטה ונסה שוב.';
     const operationalStates = new Map((candidatesByTeam.get(team) || [])
       .map(state => [String(state.participantId), normalizeCandidateRecord(state, { team, participantId: state.participantId })]));
     sizeParticipantGrid(picker, participants.length);
@@ -5560,6 +5555,10 @@
     const text = String(error?.message || error || '');
     if (['unavailable', 'deadline-exceeded'].includes(code) || /offline|connection failed|network|failed to fetch|failed to get document/i.test(text)) {
       return 'אין קליטה — הפעולה לא בוצעה. נסה שוב כשתחזור קליטה.';
+    }
+    // הודעת החוקים של Firestore היא באנגלית טכנית ("PERMISSION_DENIED: evaluation error…")
+    if (code === 'permission-denied' || /PERMISSION_DENIED|insufficient permissions/i.test(text)) {
+      return 'השרת דחה את השמירה. רענן את הדף ונסה שוב; אם זה חוזר — פנה למנהל.';
     }
     return text;
   }

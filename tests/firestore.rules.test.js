@@ -6,7 +6,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection, doc, getDoc, getDocs, query, where,
-  addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction, writeBatch
+  addDoc, deleteDoc, setDoc, updateDoc, serverTimestamp, Timestamp, runTransaction, writeBatch, waitForPendingWrites
 } from 'firebase/firestore';
 import {
   buildIssueReportData, ISSUE_REPORT_SCHEMA_VERSION
@@ -2070,4 +2070,22 @@ test('general station: id, team, owner and shape are enforced', async () => {
   await assertFails(setDoc(stationEvaluationRef(own, '01_08_evaluator1', 'event-old'), stationEvaluationPayload('evaluator1')), 'closed event');
   await assertSucceeds(setDoc(stationEvaluationRef(own, '01_08_evaluator1'), stationEvaluationPayload('evaluator1')));
   await assertFails(updateDoc(stationEvaluationRef(own, '01_08_evaluator1'), { team: '02', updatedAt: serverTimestamp() }));
+});
+
+// ---- מונה חזרות: הקשות רצופות לא נדרסות ----
+test('counter taps add atomically: back-to-back saves by an evaluator all land', async () => {
+  const db = userDb('evaluator1');
+  const errors = [];
+  const repo = createEvaluationRepository(db, { uid: 'evaluator1' }, { onWriteError: error => errors.push(error) });
+  // שלוש שמירות ברצף בלי לחכות לשרת — כמו הקשות בקליטה חלשה
+  await repo.addRepetitions('race_01_07_1', { '100': 1 }, { '100': [1000] });
+  await repo.addRepetitions('race_01_07_1', { '100': 1 }, { '100': [2000] });
+  await repo.addRepetitions('race_01_07_1', { '100': 2, '200': 1 }, { '100': [3000, 4000], '200': [3500] });
+  await waitForPendingWrites(db);
+  assert.deepEqual(errors, []);
+  const stored = (await getDoc(doc(db, 'races', 'race_01_07_1', 'evaluatorAssessments', 'evaluator1'))).data();
+  assert.equal(stored.entries['100'].measurement, 4);
+  assert.deepEqual(stored.entries['100'].repTimes, [1000, 2000, 3000, 4000]);
+  assert.equal(stored.entries['200'].measurement, 1);
+  assert.ok(stored.createdAt, 'createdAt kept from the first save');
 });
